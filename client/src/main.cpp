@@ -110,7 +110,8 @@ struct ListResult
 static HINSTANCE g_inst;
 static HWND g_wnd, g_list, g_path, g_progress;
 static HWND g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel;
-static wstring g_sendDir; // "Send to PC" destination (settings)
+static wstring g_sendDir;                // "Send to PC" destination folder (settings)
+static std::vector<wstring> g_sendItems; // "Send to PC" 3DS paths (settings)
 static bool g_dark = true;     // dark theme (saved in config)
 static wstring g_statusText[2]; // connection state, transfer/messages
 static void setStatus (int part, wstring const &text);
@@ -578,13 +579,17 @@ struct Job
 		Rename,
 		Delete,
 		Upload,
-		Download
+		Download,
+		SendToPc
 	} type;
 
 	wstring path;  // List/Mkdir: target. Rename: from. Upload: remote dir. Download/Delete: remote dir
 	wstring path2; // Rename: to. Download: local dir
 	std::vector<wstring> locals; // Upload sources
 	std::vector<Entry> remotes;  // Download/Delete: entries inside path
+	std::vector<wstring> sendPaths; // SendToPc: absolute 3DS paths, copied under path2
+	HWND notify = nullptr;          // List: window receiving WM_APP_LIST (main window if null)
+	int missing = 0;                // SendToPc: paths not found on the 3DS
 
 	// transfer state, kept across reconnects so the job resumes
 	struct Item
@@ -641,7 +646,7 @@ public:
 				// only the latest listing matters
 				m_jobs.erase (std::remove_if (m_jobs.begin (),
 				                  m_jobs.end (),
-				                  [&] (JobPtr const &j) { return j->type == Job::List && j != m_running; }),
+				                  [&] (JobPtr const &j) { return j->type == Job::List && j->notify == job->notify && j != m_running; }),
 				    m_jobs.end ());
 			}
 			m_jobs.push_back (std::move (job));
@@ -838,7 +843,8 @@ private:
 				delete r;
 				throw;
 			}
-			PostMessageW (g_wnd, WM_APP_LIST, 0, (LPARAM)r);
+			if (!PostMessageW (job.notify ? job.notify : g_wnd, WM_APP_LIST, 0, (LPARAM)r))
+				delete r; // the picker closed meanwhile
 			break;
 		}
 		case Job::Mkdir:
@@ -854,6 +860,7 @@ private:
 			break;
 		case Job::Upload:
 		case Job::Download:
+		case Job::SendToPc:
 			transfer (job);
 			break;
 		}
@@ -909,6 +916,38 @@ private:
 			if (up)
 				for (auto const &l : job.locals)
 					expandLocal (job, l, joinRemote (job.path, l.substr (l.find_last_of (L"\\/") + 1)));
+			else if (job.type == Job::SendToPc)
+			{
+				for (auto const &rp : job.sendPaths)
+				{
+					wstring local = job.path2;
+					for (wchar_t c : rp)
+						local += c == L'/' ? L'\\' : c;
+					if (rp == L"/")
+					{
+						expandRemote (job, rp, job.path2, Entry{L"", true, 0});
+						continue;
+					}
+					// find the item in its parent folder to know if it is a folder or a file
+					wstring name = rp.substr (rp.find_last_of (L'/') + 1);
+					std::vector<Entry> siblings;
+					try
+					{
+						siblings = m_ftp.list (parentRemote (rp));
+					}
+					catch (FtpError &)
+					{
+					}
+					auto it = std::find_if (siblings.begin (), siblings.end (), [&] (Entry const &e) { return e.name == name; });
+					if (it == siblings.end ())
+					{
+						++job.missing;
+						continue;
+					}
+					SHCreateDirectoryExW (nullptr, local.substr (0, local.find_last_of (L'\\')).c_str (), nullptr);
+					expandRemote (job, rp, local, *it);
+				}
+			}
 			else
 				for (auto const &e : job.remotes)
 					expandRemote (job, joinRemote (job.path, e.name), job.path2 + L"\\" + e.name, e);
@@ -1006,9 +1045,10 @@ private:
 			job.done    = base + it.size;
 		}
 
+		wstring missing = job.missing ? L"  (" + std::to_wstring (job.missing) + L" item(s) not found on the 3DS)" : L"";
 		if (!job.errors)
-			postMessageText (wstring (up ? L"Upload" : L"Download") + L" complete: " + std::to_wstring (fileCount) +
-			                 L" file(s), " + formatSize (job.total));
+			postMessageText (wstring (up ? L"Upload" : job.type == Job::SendToPc ? L"Send to PC" : L"Download") +
+			                 L" complete: " + std::to_wstring (fileCount) + L" file(s), " + formatSize (job.total) + missing);
 	}
 
 	bool m_transfer;
@@ -1058,6 +1098,40 @@ static wstring configPath ()
 	return path;
 }
 
+// "%XX"-escape non-ASCII so the list survives an ANSI ini file
+static wstring escapeIni (wstring const &w)
+{
+	wstring out;
+	for (unsigned char c : utf8 (w))
+	{
+		if (c >= 0x80 || c < 0x20 || c == '%')
+		{
+			wchar_t buf[4];
+			swprintf (buf, 4, L"%%%02X", c);
+			out += buf;
+		}
+		else
+			out += (wchar_t)c;
+	}
+	return out;
+}
+
+static wstring unescapeIni (wstring const &w)
+{
+	string s;
+	for (size_t i = 0; i < w.size (); ++i)
+	{
+		if (w[i] == L'%' && i + 2 < w.size ())
+		{
+			s += (char)wcstoul (w.substr (i + 1, 2).c_str (), nullptr, 16);
+			i += 2;
+		}
+		else
+			s += (char)w[i];
+	}
+	return wide (s);
+}
+
 static bool loadConfig ()
 {
 	wchar_t host[256] = {};
@@ -1068,6 +1142,15 @@ static bool loadConfig ()
 	wchar_t dir[MAX_PATH] = {};
 	GetPrivateProfileStringW (L"transfer", L"sendto", L"", dir, MAX_PATH, path.c_str ());
 	g_sendDir = dir;
+	g_sendItems.clear ();
+	int count = GetPrivateProfileIntW (L"sendtopc", L"count", 0, path.c_str ());
+	for (int i = 0; i < count; ++i)
+	{
+		wchar_t item[4096] = {};
+		GetPrivateProfileStringW (L"sendtopc", (L"item" + std::to_wstring (i)).c_str (), L"", item, 4096, path.c_str ());
+		if (item[0])
+			g_sendItems.push_back (unescapeIni (item));
+	}
 	if (!host[0])
 		return false;
 	std::lock_guard lk (g_cfgLock);
@@ -1084,6 +1167,10 @@ static void saveConfig ()
 	WritePrivateProfileStringW (L"server", L"port", std::to_wstring (g_port).c_str (), path.c_str ());
 	WritePrivateProfileStringW (L"ui", L"dark", g_dark ? L"1" : L"0", path.c_str ());
 	WritePrivateProfileStringW (L"transfer", L"sendto", g_sendDir.c_str (), path.c_str ());
+	WritePrivateProfileStringW (L"sendtopc", nullptr, nullptr, path.c_str ()); // drop the old list
+	WritePrivateProfileStringW (L"sendtopc", L"count", std::to_wstring (g_sendItems.size ()).c_str (), path.c_str ());
+	for (size_t i = 0; i < g_sendItems.size (); ++i)
+		WritePrivateProfileStringW (L"sendtopc", (L"item" + std::to_wstring (i)).c_str (), escapeIni (g_sendItems[i]).c_str (), path.c_str ());
 }
 
 // ---------------------------------------------------------------------------
@@ -1156,7 +1243,7 @@ static LRESULT ctlColor (UINT msg, HDC dc)
 {
 	auto t = theme ();
 	SetTextColor (dc, t.text);
-	if (msg == WM_CTLCOLOREDIT)
+	if (msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX)
 	{
 		SetBkColor (dc, t.edit);
 		return (LRESULT)g_editBrush;
@@ -1197,6 +1284,41 @@ static bool pickFolder (HWND owner, wchar_t const *title, wstring &out)
 }
 
 static void applyTheme ();
+static bool pickRemote (HWND owner, std::vector<wstring> &out);
+static bool browseConnected ();
+static HWND s_settingsDlg;
+
+// "/a/b" form: forward slashes, leading slash, no trailing slash
+static wstring normalizeRemote (wstring p)
+{
+	for (auto &c : p)
+		if (c == L'\\')
+			c = L'/';
+	p.erase (0, p.find_first_not_of (L' '));
+	p.erase (p.find_last_not_of (L' ') + 1);
+	wstring out;
+	for (wchar_t c : L"/" + p)
+		if (!(c == L'/' && !out.empty () && out.back () == L'/'))
+			out += c;
+	if (out.size () > 1 && out.back () == L'/')
+		out.pop_back ();
+	return out;
+}
+
+static void addSendItem (HWND dlg, wstring const &path)
+{
+	HWND list = GetDlgItem (dlg, IDC_ITEMS);
+	if (SendMessageW (list, LB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)path.c_str ()) == LB_ERR)
+		SendMessageW (list, LB_ADDSTRING, 0, (LPARAM)path.c_str ());
+}
+
+static void updateSendSection (HWND dlg)
+{
+	bool on = browseConnected ();
+	for (int id : {IDC_ITEMS, IDC_ADDPICK, IDC_REMOVE, IDC_NEWPATH, IDC_ADDPATH})
+		EnableWindow (GetDlgItem (dlg, id), on);
+	SetDlgItemTextW (dlg, IDC_SENDNOTE, on ? L"" : L"Connect to the 3DS to change this list.");
+}
 
 static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 {
@@ -1206,14 +1328,26 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 	case WM_CTLCOLORSTATIC:
 	case WM_CTLCOLOREDIT:
 	case WM_CTLCOLORBTN:
+	case WM_CTLCOLORLISTBOX:
 		return (INT_PTR)ctlColor (msg, (HDC)wp);
+	case WM_APP_STATE:
+		updateSendSection (dlg);
+		return TRUE;
+	case WM_DESTROY:
+		s_settingsDlg = nullptr;
+		break;
 	case WM_INITDIALOG:
 	{
+		s_settingsDlg = dlg;
 		darkTitleBar (dlg);
-		for (int id : {IDOK, IDCANCEL, IDC_BROWSE, IDC_DARK})
+		for (int id : {IDOK, IDCANCEL, IDC_BROWSE, IDC_DARK, IDC_ADDPICK, IDC_REMOVE, IDC_ADDPATH, IDC_ITEMS})
 			themeControl (GetDlgItem (dlg, id));
-		for (int id : {IDC_HOST, IDC_PORT, IDC_SENDDIR})
+		for (int id : {IDC_HOST, IDC_PORT, IDC_SENDDIR, IDC_NEWPATH})
 			themeControl (GetDlgItem (dlg, id), true);
+		SendDlgItemMessageW (dlg, IDC_NEWPATH, EM_SETCUEBANNER, TRUE, (LPARAM)L"/path/to/folder or file");
+		for (auto const &item : g_sendItems)
+			addSendItem (dlg, item);
+		updateSendSection (dlg);
 		SetDlgItemTextW (dlg, IDC_SENDDIR, g_sendDir.c_str ());
 		CheckDlgButton (dlg, IDC_DARK, g_dark ? BST_CHECKED : BST_UNCHECKED);
 		std::lock_guard lk (g_cfgLock);
@@ -1222,6 +1356,34 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 		return TRUE;
 	}
 	case WM_COMMAND:
+		if (LOWORD (wp) == IDC_ADDPICK)
+		{
+			std::vector<wstring> picked;
+			if (pickRemote (dlg, picked))
+				for (auto const &p : picked)
+					addSendItem (dlg, p);
+			return TRUE;
+		}
+		if (LOWORD (wp) == IDC_ADDPATH)
+		{
+			wchar_t text[1024];
+			GetDlgItemTextW (dlg, IDC_NEWPATH, text, 1024);
+			wstring p = normalizeRemote (text);
+			if (text[0] && p.size () > 1)
+			{
+				addSendItem (dlg, p);
+				SetDlgItemTextW (dlg, IDC_NEWPATH, L"");
+			}
+			return TRUE;
+		}
+		if (LOWORD (wp) == IDC_REMOVE)
+		{
+			HWND list = GetDlgItem (dlg, IDC_ITEMS);
+			for (int i = (int)SendMessageW (list, LB_GETCOUNT, 0, 0) - 1; i >= 0; --i)
+				if (SendMessageW (list, LB_GETSEL, i, 0) > 0)
+					SendMessageW (list, LB_DELETESTRING, i, 0);
+			return TRUE;
+		}
 		if (LOWORD (wp) == IDC_BROWSE)
 		{
 			wstring dir;
@@ -1254,6 +1416,14 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 				g_port = (int)port;
 			}
 			g_sendDir = dir;
+			g_sendItems.clear ();
+			HWND list = GetDlgItem (dlg, IDC_ITEMS);
+			for (int i = 0, n = (int)SendMessageW (list, LB_GETCOUNT, 0, 0); i < n; ++i)
+			{
+				wstring item ((size_t)SendMessageW (list, LB_GETTEXTLEN, i, 0), 0);
+				SendMessageW (list, LB_GETTEXT, i, (LPARAM)item.data ());
+				g_sendItems.push_back (item);
+			}
 			if (dark != g_dark)
 			{
 				g_dark = dark;
@@ -1823,13 +1993,13 @@ static void downloadTo ()
 		startDownload (sel, dir, nullptr);
 }
 
-// one click: copy the selected folders/files to the folder set in Settings
+// one click: copy every 3DS item listed in Settings to the PC folder,
+// keeping the SD card layout (/3ds/x/saves -> <folder>\\3ds\\x\\saves)
 static void sendToPc ()
 {
-	auto sel = selectedEntries ();
-	if (sel.empty ())
+	if (g_sendItems.empty ())
 	{
-		setStatus (1, L"Select the folders or files to send to the PC first");
+		setStatus (1, L"Add the 3DS folders/files to send in Settings first");
 		return;
 	}
 	if (g_sendDir.empty ())
@@ -1847,8 +2017,155 @@ static void sendToPc ()
 		setStatus (1, L"Can't use the Send to PC folder: " + g_sendDir);
 		return;
 	}
-	startDownload (sel, g_sendDir, nullptr);
+	g_cancel        = false;
+	auto job        = std::make_shared<Job> ();
+	job->type       = Job::SendToPc;
+	job->path2      = g_sendDir;
+	job->sendPaths  = g_sendItems;
+	{
+		std::lock_guard lk (g_prog.lock);
+		g_prog.active = true;
+	}
+	g_xfer.push (job);
 }
+
+// ---------------------------------------------------------------------------
+// 3DS picker (Settings > Add from 3DS...)
+
+static LRESULT CALLBACK listProc (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+
+static struct
+{
+	wstring cwd;
+	std::vector<Entry> entries;
+	std::vector<wstring> *out;
+} s_pick;
+
+static void pickNavigate (HWND dlg, wstring const &path)
+{
+	s_pick.cwd = path;
+	SetDlgItemTextW (dlg, IDC_PICKPATH, path.c_str ());
+	ListView_DeleteAllItems (GetDlgItem (dlg, IDC_PICKLIST));
+	auto job    = std::make_shared<Job> ();
+	job->type   = Job::List;
+	job->path   = path;
+	job->notify = dlg;
+	g_browse.push (job);
+}
+
+static INT_PTR CALLBACK pickDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+	HWND list = GetDlgItem (dlg, IDC_PICKLIST);
+	switch (msg)
+	{
+	case WM_CTLCOLORDLG:
+	case WM_CTLCOLORSTATIC:
+	case WM_CTLCOLOREDIT:
+	case WM_CTLCOLORBTN:
+		return (INT_PTR)ctlColor (msg, (HDC)wp);
+	case WM_INITDIALOG:
+	{
+		darkTitleBar (dlg);
+		for (int id : {IDOK, IDCANCEL, IDC_PICKUP})
+			themeControl (GetDlgItem (dlg, id));
+		themeControl (GetDlgItem (dlg, IDC_PICKPATH), true);
+		auto t = theme ();
+		ListView_SetExtendedListViewStyle (list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+		SetWindowTheme (list, g_dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+		SetWindowTheme (ListView_GetHeader (list), g_dark ? L"DarkMode_ItemsView" : nullptr, nullptr);
+		SetWindowSubclass (list, listProc, 0, 0);
+		ListView_SetBkColor (list, t.list);
+		ListView_SetTextBkColor (list, t.list);
+		ListView_SetTextColor (list, t.text);
+		SHFILEINFOW fi{};
+		auto images = (HIMAGELIST)SHGetFileInfoW (L"folder", FILE_ATTRIBUTE_DIRECTORY, &fi, sizeof (fi), SHGFI_USEFILEATTRIBUTES | SHGFI_SYSICONINDEX | SHGFI_SMALLICON);
+		ListView_SetImageList (list, images, LVSIL_SMALL);
+		RECT rc;
+		GetClientRect (list, &rc);
+		LVCOLUMNW col{LVCF_TEXT | LVCF_WIDTH, 0, rc.right - GetSystemMetrics (SM_CXVSCROLL) - 4, (LPWSTR)L"Name"};
+		ListView_InsertColumn (list, 0, &col);
+		pickNavigate (dlg, L"/");
+		return TRUE;
+	}
+	case WM_APP_LIST:
+	{
+		std::unique_ptr<ListResult> r ((ListResult *)lp);
+		if (r->path != s_pick.cwd)
+			return TRUE;
+		s_pick.entries = r->entries;
+		std::sort (s_pick.entries.begin (), s_pick.entries.end (), [] (Entry const &a, Entry const &b) {
+			return a.dir != b.dir ? a.dir : _wcsicmp (a.name.c_str (), b.name.c_str ()) < 0;
+		});
+		ListView_DeleteAllItems (list);
+		int row = 0;
+		if (s_pick.cwd != L"/")
+		{
+			LVITEMW it{LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM, row++};
+			it.pszText = (LPWSTR)L"..";
+			it.iImage  = iconFor (L"", true);
+			it.lParam  = -1;
+			ListView_InsertItem (list, &it);
+		}
+		for (size_t i = 0; i < s_pick.entries.size (); ++i)
+		{
+			LVITEMW it{LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM, row++};
+			it.pszText = (LPWSTR)s_pick.entries[i].name.c_str ();
+			it.iImage  = iconFor (s_pick.entries[i].name, s_pick.entries[i].dir);
+			it.lParam  = (LPARAM)i;
+			ListView_InsertItem (list, &it);
+		}
+		return TRUE;
+	}
+	case WM_NOTIFY:
+		if (((NMHDR *)lp)->idFrom == IDC_PICKLIST && ((NMHDR *)lp)->code == NM_DBLCLK)
+		{
+			LVITEMW it{LVIF_PARAM, ((NMITEMACTIVATE *)lp)->iItem};
+			if (it.iItem < 0 || !ListView_GetItem (list, &it))
+				return TRUE;
+			if (it.lParam == -1)
+				pickNavigate (dlg, parentRemote (s_pick.cwd));
+			else if (s_pick.entries[it.lParam].dir)
+				pickNavigate (dlg, joinRemote (s_pick.cwd, s_pick.entries[it.lParam].name));
+			return TRUE;
+		}
+		break;
+	case WM_COMMAND:
+		switch (LOWORD (wp))
+		{
+		case IDC_PICKUP:
+			if (s_pick.cwd != L"/")
+				pickNavigate (dlg, parentRemote (s_pick.cwd));
+			return TRUE;
+		case IDOK:
+		{
+			for (int i = -1; (i = ListView_GetNextItem (list, i, LVNI_SELECTED)) >= 0;)
+			{
+				LVITEMW it{LVIF_PARAM, i};
+				if (ListView_GetItem (list, &it) && it.lParam >= 0)
+					s_pick.out->push_back (joinRemote (s_pick.cwd, s_pick.entries[it.lParam].name));
+			}
+			if (s_pick.out->empty ()) // nothing selected: take the folder being shown
+				s_pick.out->push_back (s_pick.cwd);
+			EndDialog (dlg, IDOK);
+			return TRUE;
+		}
+		case IDCANCEL:
+			EndDialog (dlg, IDCANCEL);
+			return TRUE;
+		}
+		break;
+	}
+	return FALSE;
+}
+
+static bool pickRemote (HWND owner, std::vector<wstring> &out)
+{
+	s_pick = {};
+	s_pick.out = &out;
+	return DialogBoxW (g_inst, MAKEINTRESOURCEW (IDD_PICK), owner, pickDlgProc) == IDOK && !out.empty ();
+}
+
+static bool browseConnected () { return g_browse.state == Worker::Connected; }
 
 // ---------------------------------------------------------------------------
 // main window
@@ -2101,7 +2418,6 @@ static void showContextMenu (int x, int y)
 		AppendMenuW (menu, MF_STRING, ID_OPEN, L"Open");
 	if (!sel.empty ())
 	{
-		AppendMenuW (menu, MF_STRING, ID_SEND, L"Send to PC\tCtrl+S");
 		AppendMenuW (menu, MF_STRING, ID_DOWNLOAD, L"Download to...");
 		AppendMenuW (menu, MF_STRING | (sel.size () == 1 ? 0 : MF_GRAYED), ID_RENAME, L"Rename\tF2");
 		AppendMenuW (menu, MF_STRING, ID_DELETE, L"Delete\tDel");
@@ -2343,6 +2659,8 @@ static LRESULT CALLBACK wndProc (HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 		return 0;
 	case WM_APP_STATE:
 		updateConnState ();
+		if (s_settingsDlg)
+			PostMessageW (s_settingsDlg, WM_APP_STATE, 0, 0);
 		return 0;
 	case WM_APP_LIST:
 	{

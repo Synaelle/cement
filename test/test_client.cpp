@@ -206,6 +206,32 @@ int main (int argc, char **argv)
 	    "recursive download intact");
 	check (GetFileAttributesW ((back + L"\\tree\\empty").c_str ()) & FILE_ATTRIBUTE_DIRECTORY, "empty folder downloaded");
 
+	printf ("send to PC (paths from settings, SD layout kept)\n");
+	{
+		wstring dest = back + L"\\sendto";
+		SHCreateDirectoryExW (nullptr, (s_root + L"\\3ds\\Checkpoint\\saves\\Game é").c_str (), nullptr);
+		writeRandom (s_root + L"\\3ds\\Checkpoint\\saves\\Game é\\main", 123456, 7);
+		writeRandom (s_root + L"\\boot.firm", 5000, 8);
+		g_cancel       = false;
+		auto job       = std::make_shared<Job> ();
+		job->type      = Job::SendToPc;
+		job->path2     = dest;
+		job->sendPaths = {L"/3ds/Checkpoint/saves", L"/boot.firm", L"/does/not/exist"};
+		job->doneEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+		SHCreateDirectoryExW (nullptr, dest.c_str (), nullptr);
+		g_xfer.push (job);
+		check (waitFor ([&] { return finished (job); }, 20000) && job->ok, "send to PC job finished");
+		check (readFile (dest + L"\\3ds\\Checkpoint\\saves\\Game é\\main") ==
+		           readFile (s_root + L"\\3ds\\Checkpoint\\saves\\Game é\\main"),
+		    "nested folder copied under its SD path");
+		check (readFile (dest + L"\\boot.firm") == readFile (s_root + L"\\boot.firm"), "single file copied");
+		check (job->missing == 1, "missing path skipped and counted");
+		check (escapeIni (L"/3ds/café 100%") == L"/3ds/caf%C3%A9 100%25" &&
+		           unescapeIni (escapeIni (L"/3ds/café 100%")) == L"/3ds/café 100%",
+		    "config escaping round-trips");
+		check (normalizeRemote (L" 3ds\\\\Checkpoint//saves/ ") == L"/3ds/Checkpoint/saves", "typed paths normalized");
+	}
+
 	printf ("explorer operations\n");
 	auto run = [] (JobPtr j) { g_browse.push (j); };
 	auto mk  = [] (Job::Type t, wstring a, wstring b = L"") {
@@ -220,7 +246,7 @@ int main (int argc, char **argv)
 	run (mk (Job::Rename, L"/single.bin", L"/newdir/moved.bin"));
 	check (waitFor ([&] { return GetFileAttributesW ((s_root + L"\\newdir\\moved.bin").c_str ()) != INVALID_FILE_ATTRIBUTES; }, 5000), "rename/move");
 	auto del     = mk (Job::Delete, L"/");
-	del->remotes = {Entry{L"tree", true, 0}, Entry{L"newdir", true, 0}};
+	del->remotes = {Entry{L"tree", true, 0}, Entry{L"newdir", true, 0}, Entry{L"3ds", true, 0}, Entry{L"boot.firm", false, 0}};
 	run (del);
 	check (waitFor ([&] { return GetFileAttributesW ((s_root + L"\\tree").c_str ()) == INVALID_FILE_ATTRIBUTES &&
 		                         GetFileAttributesW ((s_root + L"\\newdir").c_str ()) == INVALID_FILE_ATTRIBUTES; }, 5000),

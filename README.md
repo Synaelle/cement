@@ -24,9 +24,13 @@ Client details:
   interrupted transfers resume where they stopped (SIZE + REST).
   **Force reconnect** drops both connections and reconnects immediately.
 - Keys: Enter open, Backspace up, F2 rename, Del delete, F5 refresh, Ctrl+A.
-- **Send to PC**: select folders/files on the 3DS and press the button (or
-  Ctrl+S): they are copied to the folder set in **Settings...** in one go
-  (asked once if not set yet). Existing files there are overwritten.
+- **Send to PC**: in **Settings...** (while connected) build a list of 3DS
+  folders/files with **Add from 3DS...** (SD card browser) or by typing a path
+  that may not exist yet, and pick a PC folder. The **Send to PC** button (or
+  Ctrl+S) then copies everything in the list in one go, keeping the SD card
+  layout (`/3ds/Checkpoint/saves` -> `<PC folder>ds\Checkpoint\saves`).
+  Items missing on the 3DS are skipped and counted; existing PC files are
+  overwritten.
 - Dark mode by default; toggle it in **Settings...**.
 - `SYNA3DS_CONFIG` can point the client to another config file.
 

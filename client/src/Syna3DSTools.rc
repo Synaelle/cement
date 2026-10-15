@@ -1,24 +1,48 @@
 #include <windows.h>
+#include <commctrl.h>
 #include "resource.h"
 
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "Syna3DSTools.manifest"
 IDI_APP ICON "icon.ico"
 
-IDD_SETTINGS DIALOGEX 0, 0, 262, 140
+IDD_SETTINGS DIALOGEX 0, 0, 300, 262
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Syna 3DS Tools - Settings"
 FONT 9, "Segoe UI", 0, 0, 1
 BEGIN
-    LTEXT           "Enter the IP address and port shown on the 3DS top screen.", -1, 8, 8, 246, 10
+    LTEXT           "Enter the IP address and port shown on the 3DS top screen.", -1, 8, 8, 284, 10
     LTEXT           "IP address:", -1, 8, 27, 66, 10
-    EDITTEXT        IDC_HOST, 78, 25, 176, 13, ES_AUTOHSCROLL
+    EDITTEXT        IDC_HOST, 78, 25, 214, 13, ES_AUTOHSCROLL
     LTEXT           "Port:", -1, 8, 46, 66, 10
     EDITTEXT        IDC_PORT, 78, 44, 50, 13, ES_NUMBER
-    LTEXT           "Send to PC folder:", -1, 8, 69, 66, 10
-    EDITTEXT        IDC_SENDDIR, 78, 67, 124, 13, ES_AUTOHSCROLL
-    PUSHBUTTON      "Browse...", IDC_BROWSE, 206, 66, 48, 15
-    AUTOCHECKBOX    "", IDC_DARK, 78, 90, 10, 10
-    LTEXT           "Dark mode", -1, 91, 90, 100, 10
-    DEFPUSHBUTTON   "OK", IDOK, 150, 118, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 204, 118, 50, 14
+
+    LTEXT           "Send to PC", -1, 8, 70, 284, 10
+    LTEXT           "PC folder:", -1, 8, 87, 66, 10
+    EDITTEXT        IDC_SENDDIR, 78, 85, 162, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "Browse...", IDC_BROWSE, 244, 84, 48, 15
+    LTEXT           "3DS folders and files to copy:", -1, 8, 106, 200, 10
+    LISTBOX         IDC_ITEMS, 8, 118, 222, 72, LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | LBS_SORT | WS_VSCROLL | WS_TABSTOP | WS_BORDER
+    PUSHBUTTON      "Add from 3DS...", IDC_ADDPICK, 234, 118, 58, 15
+    PUSHBUTTON      "Remove", IDC_REMOVE, 234, 137, 58, 15
+    EDITTEXT        IDC_NEWPATH, 8, 195, 222, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "Add path", IDC_ADDPATH, 234, 194, 58, 15
+    LTEXT           "", IDC_SENDNOTE, 8, 212, 284, 10
+
+    AUTOCHECKBOX    "", IDC_DARK, 8, 228, 10, 10
+    LTEXT           "Dark mode", -1, 21, 228, 100, 10
+    DEFPUSHBUTTON   "OK", IDOK, 188, 242, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 242, 242, 50, 14
+END
+
+IDD_PICK DIALOGEX 0, 0, 260, 220
+STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Choose from the 3DS SD card"
+FONT 9, "Segoe UI", 0, 0, 1
+BEGIN
+    PUSHBUTTON      "Up", IDC_PICKUP, 8, 7, 34, 14
+    EDITTEXT        IDC_PICKPATH, 46, 8, 206, 13, ES_READONLY | ES_AUTOHSCROLL
+    CONTROL         "", IDC_PICKLIST, "SysListView32", LVS_REPORT | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS | LVS_NOCOLUMNHEADER | WS_BORDER | WS_TABSTOP, 8, 26, 244, 164
+    LTEXT           "Double-click to open a folder. Nothing selected adds the open folder.", -1, 8, 194, 244, 10
+    DEFPUSHBUTTON   "Add selected", IDOK, 148, 202, 52, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 204, 202, 48, 14
 END
