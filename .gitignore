@@ -1,0 +1,6 @@
+server/build/
+server/*.elf
+server/*.cia
+client/*.exe
+client/*.o
+test/*.exe
