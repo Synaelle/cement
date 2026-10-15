@@ -206,7 +206,7 @@ int main (int argc, char **argv)
 	    "recursive download intact");
 	check (GetFileAttributesW ((back + L"\\tree\\empty").c_str ()) & FILE_ATTRIBUTE_DIRECTORY, "empty folder downloaded");
 
-	printf ("send to PC (paths from settings, SD layout kept)\n");
+	printf ("send to PC (paths from settings, each item directly in the PC folder)\n");
 	{
 		wstring dest = back + L"\\sendto";
 		SHCreateDirectoryExW (nullptr, (s_root + L"\\3ds\\Checkpoint\\saves\\Game é").c_str (), nullptr);
@@ -221,9 +221,9 @@ int main (int argc, char **argv)
 		SHCreateDirectoryExW (nullptr, dest.c_str (), nullptr);
 		g_xfer.push (job);
 		check (waitFor ([&] { return finished (job); }, 20000) && job->ok, "send to PC job finished");
-		check (readFile (dest + L"\\3ds\\Checkpoint\\saves\\Game é\\main") ==
-		           readFile (s_root + L"\\3ds\\Checkpoint\\saves\\Game é\\main"),
-		    "nested folder copied under its SD path");
+		check (readFile (dest + L"\\saves\\Game é\\main") == readFile (s_root + L"\\3ds\\Checkpoint\\saves\\Game é\\main"),
+		    "folder copied directly into the PC folder");
+		check (GetFileAttributesW ((dest + L"\\3ds").c_str ()) == INVALID_FILE_ATTRIBUTES, "no parent folders created");
 		check (readFile (dest + L"\\boot.firm") == readFile (s_root + L"\\boot.firm"), "single file copied");
 		check (job->missing == 1, "missing path skipped and counted");
 		check (escapeIni (L"/3ds/café 100%") == L"/3ds/caf%C3%A9 100%25" &&

@@ -980,16 +980,15 @@ private:
 				}
 				for (auto const &rp : job.sendPaths)
 				{
-					wstring local = job.path2;
-					for (wchar_t c : rp)
-						local += c == L'/' ? L'\\' : c;
-					if (rp == L"/")
+					if (rp == L"/") // the whole SD card: its contents go straight into the PC folder
 					{
 						expandRemote (job, rp, job.path2, Entry{L"", true, 0});
 						continue;
 					}
+					// each item lands directly in the PC folder: /openmw/logs -> <PC folder>\logs
+					wstring name  = rp.substr (rp.find_last_of (L'/') + 1);
+					wstring local = job.path2 + L"\\" + name;
 					// find the item in its parent folder to know if it is a folder or a file
-					wstring name = rp.substr (rp.find_last_of (L'/') + 1);
 					std::vector<Entry> siblings;
 					try
 					{
@@ -1004,7 +1003,6 @@ private:
 						++job.missing;
 						continue;
 					}
-					SHCreateDirectoryExW (nullptr, local.substr (0, local.find_last_of (L'\\')).c_str (), nullptr);
 					expandRemote (job, rp, local, *it);
 				}
 			}
@@ -2077,8 +2075,8 @@ static void downloadTo ()
 		startDownload (sel, dir, nullptr);
 }
 
-// one click: copy every 3DS item listed in Settings to the PC folder,
-// keeping the SD card layout (/3ds/x/saves -> <folder>\\3ds\\x\\saves)
+// one click: copy every 3DS item listed in Settings directly into the PC
+// folder (/openmw/logs -> <folder>\logs)
 static void sendToPc ()
 {
 	if (g_sendItems.empty ())

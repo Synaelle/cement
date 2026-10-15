@@ -27,8 +27,8 @@ Client details:
 - **Send to PC**: in **Settings...** (while connected) build a list of 3DS
   folders/files with **Add from 3DS...** (SD card browser) or by typing a path
   that may not exist yet, and pick a PC folder. The **Send to PC** button (or
-  Ctrl+S) then copies everything in the list in one go, keeping the SD card
-  layout (`/3ds/Checkpoint/saves` -> `<PC folder>ds\Checkpoint\saves`).
+  Ctrl+S) then copies everything in the list in one go, each item directly
+  into the PC folder (`/openmw/logs` -> `<PC folder>\logs`).
   Items missing on the 3DS are skipped and counted; existing PC files are
   overwritten. With **Replace PC folder contents** ticked, the PC folder is
   emptied first (old files go to the Recycle Bin) so it ends up as an exact
