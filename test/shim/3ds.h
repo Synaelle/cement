@@ -350,15 +350,91 @@ static inline bool aptMainLoop (void)
 	}
 	return true;
 }
+#define KEY_A BIT (0)
 #define KEY_START BIT (3)
 #define KEY_SELECT BIT (2)
-static inline void hidScanInput (void) {}
-static inline u32 hidKeysDown (void) { return 0; }
+#define KEY_UP BIT (6)
+#define KEY_DOWN BIT (7)
+static u32 s_keys;
+// keys are injected by writing "A", "UP" or "DOWN" into the file named by
+// env SYNAFTP_KEYS; the file is consumed on the next frame
+static inline void hidScanInput (void)
+{
+	static wchar_t file[MAX_PATH];
+	s_keys = 0;
+	if (!file[0] && !GetEnvironmentVariableW (L"SYNAFTP_KEYS", file, MAX_PATH))
+		wcscpy (file, L"keys.txt");
+	FILE *f = _wfopen (file, L"r");
+	if (!f)
+		return;
+	char buf[16] = {0};
+	fread (buf, 1, sizeof (buf) - 1, f);
+	fclose (f);
+	_wremove (file);
+	s_keys = !strncmp (buf, "A", 1) ? KEY_A : !strncmp (buf, "UP", 2) ? KEY_UP : !strncmp (buf, "DOWN", 4) ? KEY_DOWN : 0;
+}
+static inline u32 hidKeysDown (void) { return s_keys; }
 static inline void gfxInitDefault (void) {}
 static inline void gfxExit (void) {}
 static inline void gspWaitForVBlank (void) { Sleep (16); }
 #define GFX_TOP 0
+#define GFX_BOTTOM 1
+typedef struct { int dummy; } PrintConsole;
 static inline void *consoleInit (int s, void *c) { (void)s, (void)c; return NULL; }
+static inline void consoleSelect (PrintConsole *c) { (void)c; }
+
+// ---- am: a CIA "install" is written to the file named by env SYNAFTP_AMOUT
+typedef enum { MEDIATYPE_NAND = 0, MEDIATYPE_SD = 1, MEDIATYPE_GAME_CARD = 2 } FS_MediaType;
+typedef int NS_APPID;
+static inline Result amInit (void) { return 0; }
+static inline void amExit (void) {}
+static inline Result AM_InitializeExternalTitleDatabase (bool o) { (void)o; return 0; }
+static inline Result AM_QueryAvailableExternalTitleDatabase (bool *a) { if (a) *a = true; return 0; }
+static inline Result AM_DeleteTitle (FS_MediaType m, u64 id)
+{
+	fprintf (stderr, "[shim] AM_DeleteTitle media=%d id=%016llx\n", (int)m, (unsigned long long)id);
+	return 0;
+}
+static inline Result AM_DeleteTicket (u64 id) { (void)id; return 0; }
+static inline Result AM_StartCiaInstall (FS_MediaType m, Handle *h)
+{
+	wchar_t out[MAX_PATH];
+	if (!GetEnvironmentVariableW (L"SYNAFTP_AMOUT", out, MAX_PATH))
+		wcscpy (out, L"am-installed.bin");
+	HANDLE f = CreateFileW (out, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+	if (f == INVALID_HANDLE_VALUE)
+		return -1;
+	fprintf (stderr, "[shim] AM_StartCiaInstall media=%d\n", (int)m);
+	*h           = shimAlloc ();
+	s_h[*h].file = f;
+	return 0;
+}
+static inline Result AM_FinishCiaInstall (Handle h)
+{
+	fprintf (stderr, "[shim] AM_FinishCiaInstall\n");
+	CloseHandle (s_h[h].file);
+	s_h[h].used = false;
+	return 0;
+}
+static inline Result AM_CancelCIAInstall (Handle h)
+{
+	fprintf (stderr, "[shim] AM_CancelCIAInstall\n");
+	CloseHandle (s_h[h].file);
+	s_h[h].used = false;
+	return 0;
+}
+static inline Result AM_InstallFirm (u64 id) { (void)id; return 0; }
+static inline Result APT_CheckNew3DS (bool *n3ds) { *n3ds = false; return 0; }
+static inline bool envIsHomebrew (void) { return false; }
+static inline int envGetAptAppId (void) { return 0x300; }
+static inline Result APT_GetAppletInfo (NS_APPID id, u64 *tid, u8 *mt, bool *a, bool *b, void *c)
+{
+	(void)id, (void)a, (void)b, (void)c;
+	*tid = 0x000400000F7A5100ull; // synaftp itself
+	*mt  = MEDIATYPE_SD;
+	return 0;
+}
+static inline void aptSetSleepAllowed (bool a) { fprintf (stderr, "[shim] sleep allowed=%d\n", (int)a); }
 #define printf(...) ((void)0) // keep the test log readable
 enum { GSPLCD_SCREEN_TOP = 1, GSPLCD_SCREEN_BOTTOM = 2, GSPLCD_SCREEN_BOTH = 3 };
 static inline Result gspLcdInit (void) { return 0; }

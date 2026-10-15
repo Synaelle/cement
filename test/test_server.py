@@ -47,6 +47,21 @@ def download(f, name, rest=None):
     return out.getvalue()
 
 
+def fake_cia(title_id, size):
+    """Minimal CIA layout: header, cert chain, ticket, then a TMD whose
+    title ID sits where FBI's tmd_get_title_id reads it."""
+    header, cert, ticket = 0x2020, 0xA00, 0x350
+    align = lambda v: (v + 0x3F) & ~0x3F
+    tmd = align(header) + align(cert) + align(ticket)
+    data = bytearray(os.urandom(max(size, tmd + 0x200)))
+    data[0:4] = header.to_bytes(4, "little")
+    data[8:12] = cert.to_bytes(4, "little")
+    data[12:16] = ticket.to_bytes(4, "little")
+    data[tmd:tmd + 4] = (0x00010004).to_bytes(4, "big")  # RSA-2048 SHA-256 -> 0x140 bytes
+    data[tmd + 0x140 + 0x4C: tmd + 0x140 + 0x54] = title_id.to_bytes(8, "big")
+    return bytes(data)
+
+
 def mlsd(f, path):
     return {n: facts for n, facts in f.mlsd(path)}
 
@@ -59,13 +74,21 @@ def main():
     outside = os.path.join(os.path.dirname(root), os.path.basename(root) + "-outside.txt")
     with open(outside, "w") as fh:
         fh.write("secret")
+    os.environ["SYNAFTP_AMOUT"] = os.path.abspath(root + "-am.bin")
+    os.environ["SYNAFTP_KEYS"] = os.path.abspath(root + "-keys.txt")
     env = dict(os.environ, SYNAFTP_ROOT=root, SYNAFTP_SLEEPFLAG=flag)
     srv = subprocess.Popen([exe], env=env, stderr=subprocess.PIPE, text=True)
     try:
         run(root, flag)
     finally:
         srv.kill()
-        print("server log:", srv.stderr.read().strip().replace("\n", " | "))
+        log = srv.stderr.read()
+        print("server log:", log.strip().replace("\n", " | "))
+        check(log.count("AM_StartCiaInstall media=1") == 1, "exactly one install started, to SD")
+        check("AM_DeleteTitle media=1 id=0004000000123400" in log, "old copy of the title removed first (as FBI)")
+        check("sleep allowed=0" in log and "sleep allowed=1" in log, "sleep blocked during install, then allowed")
+        if os.path.exists(os.environ["SYNAFTP_AMOUT"]):
+            os.remove(os.environ["SYNAFTP_AMOUT"])
         shutil.rmtree(root, ignore_errors=True)
         os.remove(outside)
         if os.path.exists(flag):
@@ -182,6 +205,37 @@ def run(root, flag):
     except ftplib.Error:
         pass
     check(f.sendcmd("NOOP").startswith("200"), "session usable after aborted RETR")
+
+    print("CIA install from the bottom screen")
+    am_out = os.environ["SYNAFTP_AMOUT"]
+    keys = os.environ["SYNAFTP_KEYS"]
+
+    def press(key):
+        with open(keys, "w") as fh:
+            fh.write(key)
+        for _ in range(100):
+            if not os.path.exists(keys):
+                break
+            time.sleep(0.02)
+        time.sleep(0.5)
+
+    good = fake_cia(0x0004000000123400, 3 * CHUNK + 99)
+    f.mkd("/cias")
+    upload(f, "/cias/good.cia", good)
+    upload(f, "/cias/bad.cia", os.urandom(5000))
+    upload(f, "/cias/n3ds only.CIA", fake_cia(0x0004000020123400, 4096))
+    upload(f, "/cias/not-a-cia.bin", b"x")
+    press("A")  # first entry: good.cia
+    check(os.path.exists(am_out) and open(am_out, "rb").read() == good, "CIA streamed to AM intact")
+    check(not os.path.exists(os.path.join(root, "cias", "good.cia")), "installed CIA deleted from SD")
+    os.remove(am_out)
+    press("A")  # list is now bad.cia, n3ds only.CIA
+    check(os.path.exists(os.path.join(root, "cias", "bad.cia")), "invalid CIA kept after failed install")
+    check(not os.path.exists(am_out), "invalid CIA never reached AM")
+    press("DOWN")
+    press("A")
+    check(os.path.exists(os.path.join(root, "cias", "n3ds only.CIA")), "New 3DS title refused on Old 3DS, file kept")
+    check(not os.path.exists(am_out), "New 3DS title never reached AM")
 
     print("lid close (sleep) and wake")
     open(flag, "w").close()

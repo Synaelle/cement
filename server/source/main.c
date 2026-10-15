@@ -6,6 +6,8 @@
 //   SD writes overlap (NBUF buffers of CHUNK bytes per session)
 // - closing the lid lets the system sleep: the network is torn down in the
 //   APT sleep hook and brought back up after wake-up
+// - uploaded .cia files are listed on the bottom screen; A installs one
+//   (same steps as FBI) and deletes the file afterwards
 
 #include <3ds.h>
 
@@ -19,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -150,7 +153,8 @@ typedef struct
 
 	int mode; // X_*: current/pending data transfer
 	bool started;
-	char name[64]; // file name shown on screen
+	char name[64];        // file name shown on screen
+	char path[PATH_SIZE]; // full path of the current file transfer
 
 	char *list;
 	u32 listLen, listPos, listCap;
@@ -175,6 +179,7 @@ static bool s_ndmLocked;
 static u32 s_ip;
 static u16 s_pasvPort = 5001;
 static bool s_backlight = true;
+static bool s_bottomOn;
 static aptHookCookie s_hook;
 static u64 s_nextNetCheck;
 static u64 s_lastBytes, s_lastTime;
@@ -197,8 +202,8 @@ static void setBacklight (u32 screens, bool on)
 
 static void applyBacklight (void)
 {
-	// the bottom screen is never used: keep it dark
-	setBacklight (GSPLCD_SCREEN_BOTTOM, false);
+	// the bottom screen is only lit while it lists CIA files
+	setBacklight (GSPLCD_SCREEN_BOTTOM, s_bottomOn);
 	setBacklight (GSPLCD_SCREEN_TOP, s_backlight);
 }
 
@@ -320,8 +325,62 @@ static bool fileSize (char const *path, u64 *size)
 
 static void setName (Session *s, char const *path)
 {
+	snprintf (s->path, sizeof (s->path), "%s", path);
 	char const *base = strrchr (path, '/');
 	snprintf (s->name, sizeof (s->name), "%.63s", base ? base + 1 : path);
+}
+
+// ---------------------------------------------------------------------------
+// uploaded CIA list (bottom screen)
+
+#define MAX_CIAS 64
+
+typedef struct
+{
+	char path[PATH_SIZE];
+	u64 size;
+} Cia;
+
+static Cia s_cias[MAX_CIAS];
+static int s_ciaCount, s_ciaSel;
+static bool s_bottomDirty = true;
+
+static bool isCia (char const *path)
+{
+	size_t n = strlen (path);
+	return n > 4 && strcasecmp (path + n - 4, ".cia") == 0;
+}
+
+// remove path, or everything under it when it is a folder
+static void ciaRemove (char const *path)
+{
+	size_t n = strlen (path);
+	for (int i = 0; i < s_ciaCount;)
+	{
+		char const *p = s_cias[i].path;
+		if (strcmp (p, path) == 0 || (strncmp (p, path, n) == 0 && (p[n] == '/' || strcmp (path, "/") == 0)))
+		{
+			memmove (&s_cias[i], &s_cias[i + 1], (s_ciaCount - i - 1) * sizeof (Cia));
+			--s_ciaCount;
+			s_bottomDirty = true;
+		}
+		else
+			++i;
+	}
+	if (s_ciaSel >= s_ciaCount)
+		s_ciaSel = s_ciaCount ? s_ciaCount - 1 : 0;
+}
+
+static void ciaAdd (char const *path, u64 size)
+{
+	if (!isCia (path))
+		return;
+	ciaRemove (path);
+	if (s_ciaCount == MAX_CIAS)
+		return;
+	snprintf (s_cias[s_ciaCount].path, PATH_SIZE, "%s", path);
+	s_cias[s_ciaCount++].size = size;
+	s_bottomDirty             = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +602,7 @@ static bool prepareFile (Session *s, char const *path, int mode, bool append)
 
 	if (x->up)
 	{
+		ciaRemove (path);
 		if (R_FAILED (FSUSER_OpenFile (&x->fh, s_sd, p, FS_OPEN_WRITE | FS_OPEN_CREATE, 0)))
 		{
 			reply (s, "550 Can't create file\r\n");
@@ -597,12 +657,16 @@ static void startData (Session *s)
 
 static void finishData (Session *s, bool ok, char const *msg)
 {
+	bool upload = s->mode == X_STOR;
+	u64 size    = s->x.pos;
 	if (s->xferOpen)
 	{
 		xferClose (s);
 		if (s->x.err)
 			ok = false, msg = "451 SD card error";
 	}
+	if (upload && ok)
+		ciaAdd (s->path, size);
 	if (ok)
 		closeGraceful (&s->data);
 	else
@@ -728,7 +792,10 @@ static void handleCommand (Session *s, char *line)
 	else if (strcmp (cmd, "DELE") == 0)
 	{
 		if (resolvePath (s->cwd, arg, path) && toFsPath (path, buf, &p) && R_SUCCEEDED (FSUSER_DeleteFile (s_sd, p)))
+		{
+			ciaRemove (path);
 			reply (s, "250 Deleted\r\n");
+		}
 		else
 			reply (s, "550 Delete failed\r\n");
 	}
@@ -737,7 +804,10 @@ static void handleCommand (Session *s, char *line)
 		// recursive on purpose: removing a folder in one command is much faster
 		if (resolvePath (s->cwd, arg, path) && strcmp (path, "/") != 0 && toFsPath (path, buf, &p) &&
 		    R_SUCCEEDED (FSUSER_DeleteDirectoryRecursively (s_sd, p)))
+		{
+			ciaRemove (path);
 			reply (s, "250 Removed\r\n");
+		}
 		else
 			reply (s, "550 Remove failed\r\n");
 	}
@@ -766,7 +836,13 @@ static void handleCommand (Session *s, char *line)
 		    toFsPath (path, buf2, &p2) &&
 		    (R_SUCCEEDED (FSUSER_RenameFile (s_sd, p, s_sd, p2)) ||
 		        R_SUCCEEDED (FSUSER_RenameDirectory (s_sd, p, s_sd, p2))))
+		{
+			ciaRemove (s->rnfr);
+			u64 size = 0;
+			if (fileSize (path, &size))
+				ciaAdd (path, size);
 			reply (s, "250 Renamed\r\n");
+		}
 		else
 			reply (s, "550 Rename failed\r\n");
 		s->rnfr[0] = 0;
@@ -1213,6 +1289,219 @@ static void serve (void)
 }
 
 // ---------------------------------------------------------------------------
+// CIA install, following FBI (source/fbi/action/installcias.c)
+
+#define INSTALL_CHUNK (256 * 1024)
+
+static struct
+{
+	char path[PATH_SIZE];
+	char err[48];
+	volatile u64 done;
+	u64 total;
+	volatile Result rc;
+	volatile bool finished;
+	bool running;
+	Thread thread;
+} s_inst;
+
+static char s_ciaMsg[48];
+static u64 s_ciaMsgTime;
+
+// FBI fs_get_title_destination: DSiWare, system and DLP titles go to NAND
+static FS_MediaType titleDestination (u64 titleId)
+{
+	u16 platform  = (u16)((titleId >> 48) & 0xFFFF);
+	u16 category  = (u16)((titleId >> 32) & 0xFFFF);
+	u8 variation  = (u8)(titleId & 0xFF);
+	bool nand     = platform == 0x0003 ||
+	            (platform == 0x0004 && ((category & 0x8011) != 0 || (category == 0x0000 && variation == 0x02)));
+	return nand ? MEDIATYPE_NAND : MEDIATYPE_SD;
+}
+
+// FBI cia_get_title_id + tmd_get_title_id
+static bool ciaTitleId (u8 const *cia, u32 size, u64 *titleId)
+{
+	static u32 const sigSizes[6] = {0x240, 0x140, 0x80, 0x240, 0x140, 0x80};
+	if (size < 0x10)
+		return false;
+	u32 hdr[4];
+	memcpy (hdr, cia, sizeof (hdr));
+	u32 offset = ((hdr[0] + 0x3F) & ~0x3F) + ((hdr[2] + 0x3F) & ~0x3F) + ((hdr[3] + 0x3F) & ~0x3F);
+	if (offset + 4 > size || cia[offset + 3] >= 6)
+		return false;
+	u32 pos = offset + sigSizes[cia[offset + 3]] + 0x4C;
+	if (pos + 8 > size)
+		return false;
+	u64 id = 0;
+	for (int i = 0; i < 8; ++i)
+		id = (id << 8) | cia[pos + i];
+	*titleId = id;
+	return true;
+}
+
+static void installThread (void *arg)
+{
+	(void)arg;
+	Result r     = 0;
+	Handle src   = 0, dst = 0;
+	bool started = false, opened = false;
+	u64 titleId  = 0;
+	u16 wpath[PATH_SIZE];
+	FS_Path p;
+	u8 *buf = memalign (64, INSTALL_CHUNK);
+
+#define FAIL(msg) (r = R_FAILED (r) ? r : -1, snprintf (s_inst.err, sizeof (s_inst.err), "%s", msg))
+
+	if (!buf)
+		FAIL ("Out of memory");
+	else if (!toFsPath (s_inst.path, wpath, &p) || R_FAILED (r = FSUSER_OpenFile (&src, s_sd, p, FS_OPEN_READ, 0)))
+		FAIL ("Can't open the file");
+	else
+	{
+		opened = true;
+		u64 off = 0;
+		if (s_inst.total == 0)
+			FAIL ("Empty file");
+		while (R_SUCCEEDED (r) && off < s_inst.total)
+		{
+			u32 n = 0;
+			if (R_FAILED (r = FSFILE_Read (src, &n, off, buf, INSTALL_CHUNK)) || n == 0)
+			{
+				FAIL ("SD card read error");
+				break;
+			}
+			if (!started)
+			{
+				if (!ciaTitleId (buf, n, &titleId))
+				{
+					FAIL ("Not a valid CIA file");
+					break;
+				}
+				FS_MediaType dest = titleDestination (titleId);
+				bool n3ds         = false;
+				if (R_SUCCEEDED (APT_CheckNew3DS (&n3ds)) && !n3ds && ((titleId >> 28) & 0xF) == 2)
+				{
+					FAIL ("This title is for New 3DS only");
+					break;
+				}
+				// like FBI: replace an existing install, except when updating ourselves
+				u64 selfId          = 0;
+				FS_MediaType selfMt = MEDIATYPE_NAND;
+				if (envIsHomebrew () ||
+				    R_FAILED (APT_GetAppletInfo ((NS_APPID)envGetAptAppId (), &selfId, (u8 *)&selfMt, NULL, NULL, NULL)) ||
+				    titleId != selfId || dest != selfMt)
+				{
+					AM_DeleteTitle (dest, titleId);
+					AM_DeleteTicket (titleId);
+					if (dest == MEDIATYPE_SD)
+						AM_QueryAvailableExternalTitleDatabase (NULL);
+				}
+				if (R_FAILED (r = AM_StartCiaInstall (dest, &dst)))
+				{
+					FAIL ("Install could not start");
+					break;
+				}
+				started = true;
+			}
+			u32 w = 0;
+			if (R_FAILED (r = FSFILE_Write (dst, &w, off, buf, n, 0)))
+			{
+				FAIL ("Install write failed");
+				break;
+			}
+			off += n;
+			s_inst.done = off;
+		}
+	}
+
+	if (started)
+	{
+		if (R_SUCCEEDED (r))
+		{
+			if (R_FAILED (r = AM_FinishCiaInstall (dst)))
+				FAIL ("Install could not finish");
+			else if ((titleId & 0xFFFFFFF) == 0x0000002 && R_FAILED (r = AM_InstallFirm (titleId)))
+				FAIL ("FIRM install failed");
+		}
+		else
+			AM_CancelCIAInstall (dst);
+	}
+	if (opened)
+		FSFILE_Close (src);
+	if (R_SUCCEEDED (r))
+		FSUSER_DeleteFile (s_sd, p);
+	free (buf);
+#undef FAIL
+
+	s_inst.rc = r;
+	__atomic_store_n (&s_inst.finished, true, __ATOMIC_RELEASE);
+}
+
+static char const *baseName (char const *path)
+{
+	char const *slash = strrchr (path, '/');
+	return slash ? slash + 1 : path;
+}
+
+static void startInstall (void)
+{
+	if (s_inst.running || s_ciaSel >= s_ciaCount)
+		return;
+	snprintf (s_inst.path, sizeof (s_inst.path), "%s", s_cias[s_ciaSel].path);
+	s_inst.total    = s_cias[s_ciaSel].size;
+	s_inst.done     = 0;
+	s_inst.err[0]   = 0;
+	s_inst.finished = false;
+	s_inst.running  = true;
+	s_ciaMsg[0]     = 0;
+	aptSetSleepAllowed (false); // never sleep in the middle of an install
+	s_inst.thread = threadCreate (installThread, NULL, 0x4000, 0x30, -2, false);
+	if (!s_inst.thread)
+	{
+		s_inst.running = false;
+		aptSetSleepAllowed (true);
+		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "Could not start the install");
+		s_ciaMsgTime = osGetTime ();
+	}
+	s_bottomDirty = true;
+}
+
+static void pollInstall (void)
+{
+	if (!s_inst.running || !__atomic_load_n (&s_inst.finished, __ATOMIC_ACQUIRE))
+		return;
+	threadJoin (s_inst.thread, U64_MAX);
+	threadFree (s_inst.thread);
+	s_inst.running = false;
+	aptSetSleepAllowed (true);
+	if (R_SUCCEEDED (s_inst.rc))
+	{
+		ciaRemove (s_inst.path);
+		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "Installed %.30s", baseName (s_inst.path));
+	}
+	else
+		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "%.30s (%08lX)", s_inst.err, (unsigned long)s_inst.rc);
+	s_ciaMsgTime  = osGetTime ();
+	s_bottomDirty = true;
+}
+
+static void ciaInput (u32 down)
+{
+	if (s_inst.running || !s_ciaCount)
+		return;
+	if (down & KEY_UP)
+		s_ciaSel = (s_ciaSel + s_ciaCount - 1) % s_ciaCount;
+	else if (down & KEY_DOWN)
+		s_ciaSel = (s_ciaSel + 1) % s_ciaCount;
+	else if (down & KEY_A)
+		startInstall ();
+	else
+		return;
+	s_bottomDirty = true;
+}
+
+// ---------------------------------------------------------------------------
 // screen
 
 static void formatSize (char *out, size_t n, u64 v)
@@ -1223,9 +1512,61 @@ static void formatSize (char *out, size_t n, u64 v)
 		snprintf (out, n, "%.1f KB", v / 1024.0);
 }
 
+static PrintConsole s_topConsole, s_bottomConsole;
+
+static void drawBottom (void)
+{
+	u64 now      = osGetTime ();
+	bool showMsg = s_ciaMsg[0] && now - s_ciaMsgTime < 8000;
+	bool on      = s_ciaCount > 0 || s_inst.running || showMsg;
+	if (on != s_bottomOn)
+	{
+		s_bottomOn = on;
+		setBacklight (GSPLCD_SCREEN_BOTTOM, on);
+	}
+	if (!on || (!s_bottomDirty && !s_inst.running && !showMsg))
+		return;
+	s_bottomDirty = false;
+
+	consoleSelect (&s_bottomConsole);
+	printf ("\x1b[1;1H\x1b[36m CIA files ready to install\x1b[0m\x1b[K\n");
+	printf (" --------------------------------------\x1b[K\n");
+	enum { ROWS = 20 };
+	int first = s_ciaSel >= ROWS ? s_ciaSel - ROWS + 1 : 0;
+	for (int row = 0; row < ROWS; ++row)
+	{
+		int i = first + row;
+		if (i >= s_ciaCount)
+		{
+			printf ("\x1b[K\n");
+			continue;
+		}
+		char size[16];
+		formatSize (size, sizeof (size), s_cias[i].size);
+		bool sel = i == s_ciaSel;
+		printf ("%s%c %-27.27s %9s\x1b[0m\x1b[K\n", sel ? "\x1b[33m" : "", sel ? '>' : ' ', baseName (s_cias[i].path), size);
+	}
+
+	printf ("\x1b[K\n");
+	if (s_inst.running)
+	{
+		char done[16], total[16];
+		formatSize (done, sizeof (done), s_inst.done);
+		formatSize (total, sizeof (total), s_inst.total);
+		printf (" Installing %.27s\x1b[K\n", baseName (s_inst.path));
+		printf ("   %s / %s  %u%%\x1b[K\n", done, total, s_inst.total ? (unsigned)(s_inst.done * 100 / s_inst.total) : 0);
+	}
+	else
+		printf ("\x1b[K\n\x1b[K\n");
+	printf (" %s%.38s\x1b[0m\x1b[K\n", showMsg ? (strncmp (s_ciaMsg, "Installed", 9) == 0 ? "\x1b[32m" : "\x1b[31m") : "", showMsg ? s_ciaMsg : "");
+	printf ("\x1b[30;1H A: install + delete   Up/Down: select\x1b[K");
+	consoleSelect (&s_topConsole);
+}
+
 static void draw (void)
 {
 	u64 now = osGetTime ();
+	drawBottom ();
 	if (now - s_lastTime < 500)
 		return;
 
@@ -1293,7 +1634,10 @@ int main (int argc, char **argv)
 	acInit ();
 	ndmuInit ();
 	gfxInitDefault ();
-	consoleInit (GFX_TOP, NULL);
+	amInit ();
+	AM_InitializeExternalTitleDatabase (false); // as FBI does at startup
+	consoleInit (GFX_BOTTOM, &s_bottomConsole);
+	consoleInit (GFX_TOP, &s_topConsole);
 
 	for (int i = 0; i < MAX_SESSIONS; ++i)
 		s_sess[i].ctrl = s_sess[i].pasv = s_sess[i].data = -1;
@@ -1329,8 +1673,16 @@ int main (int argc, char **argv)
 	{
 		hidScanInput ();
 		u32 down = hidKeysDown ();
+		pollInstall ();
 		if (down & KEY_START)
-			break;
+		{
+			if (!s_inst.running)
+				break;
+			snprintf (s_ciaMsg, sizeof (s_ciaMsg), "Wait for the install to finish");
+			s_ciaMsgTime  = osGetTime ();
+			s_bottomDirty = true;
+		}
+		ciaInput (down);
 		if (down & KEY_SELECT)
 		{
 			s_backlight = !s_backlight;
@@ -1374,6 +1726,7 @@ int main (int argc, char **argv)
 	FSUSER_CloseArchive (s_sd);
 	free (s_socBuf);
 	ndmuExit ();
+	amExit ();
 	acExit ();
 	gfxExit ();
 	return 0;

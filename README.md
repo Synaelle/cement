@@ -27,8 +27,16 @@ Client details:
 - Close the lid: the 3DS really sleeps (Wi-Fi off, best battery). Connections
   are closed cleanly and the server comes back on its own when you open it;
   the client reconnects and resumes.
-- The bottom screen backlight is always off. SELECT toggles the top screen.
-  START exits.
+- Every `.cia` file that finishes uploading is listed on the bottom screen
+  (its backlight is only on while there is something to show). Up/Down
+  selects, **A installs it and deletes the CIA** once the install succeeded.
+  FTP keeps working during the install; sleep is blocked until it is done.
+  The install follows FBI's steps: title ID from the TMD, NAND for
+  DSiWare/system titles and SD otherwise, existing title/ticket removed
+  first, FIRM titles also get `AM_InstallFirm`. A failed install keeps the
+  file. Differences from FBI: New 3DS-only titles are refused on an Old 3DS
+  (FBI asks), and title seeds are not downloaded.
+- SELECT toggles the top screen. START exits (not during an install).
 
 ## Performance notes
 
