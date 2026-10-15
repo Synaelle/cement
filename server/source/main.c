@@ -1,4 +1,4 @@
-// synaftp - minimal, fast FTP server for the 3DS (SD card only)
+// Syna 3DS Tools - minimal, fast FTP server for the 3DS (SD card only)
 //
 // Design:
 // - one non-blocking poll() loop on the main thread handles every socket
@@ -25,7 +25,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define VERSION        "1.0"
+#define VERSION        "1.1"
 #define CTRL_PORT      5000
 #define MAX_SESSIONS   4
 #define SOC_ALIGN      0x1000
@@ -1147,7 +1147,7 @@ static void acceptClient (void)
 		s->rnfr[0] = 0;
 		s->lastCmd = osGetTime ();
 		strcpy (s->cwd, "/");
-		reply (s, "220 synaftp ready\r\n");
+		reply (s, "220 Syna 3DS Tools ready\r\n");
 		return;
 	}
 	char const msg[] = "421 Too many connections\r\n";
@@ -1593,7 +1593,7 @@ static void draw (void)
 		snprintf (s_status, sizeof (s_status), clients ? "%d client(s) connected" : "Ready", clients);
 
 	u8 const *a = (u8 const *)&s_ip;
-	printf ("\x1b[1;1H\x1b[36m synaftp v" VERSION "\x1b[0m\x1b[K\n");
+	printf ("\x1b[1;1H\x1b[31m Syna 3DS Tools\x1b[0m v" VERSION "\x1b[K\n");
 	printf (" ------------------------------------------------\x1b[K\n\x1b[K\n");
 	if (s_ip)
 		printf (" IP   : \x1b[33m%u.%u.%u.%u\x1b[0m\x1b[K\n", a[0], a[1], a[2], a[3]);

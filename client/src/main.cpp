@@ -1,4 +1,4 @@
-// synaftp client - minimal Windows FTP explorer for the synaftp 3DS server
+// Syna 3DS Tools client - minimal Windows FTP explorer for the Syna 3DS Tools server
 //
 // - two FTP connections: one for browsing, one for transfers, so the
 //   explorer stays responsive during uploads
@@ -109,7 +109,8 @@ struct ListResult
 
 static HINSTANCE g_inst;
 static HWND g_wnd, g_list, g_path, g_progress;
-static HWND g_btnUp, g_btnRefresh, g_btnMkdir, g_btnTheme, g_btnReconnect, g_btnServer, g_btnCancel;
+static HWND g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel;
+static wstring g_sendDir; // "Send to PC" destination (settings)
 static bool g_dark = true;     // dark theme (saved in config)
 static wstring g_statusText[2]; // connection state, transfer/messages
 static void setStatus (int part, wstring const &text);
@@ -191,7 +192,7 @@ public:
 				throw NetError ();
 			int code = cmd ("USER anonymous");
 			if (code == 331)
-				code = cmd ("PASS synaftp");
+				code = cmd ("PASS syna3dstools");
 			if (code != 230)
 				throw NetError ();
 			cmd ("TYPE I");
@@ -1037,13 +1038,21 @@ void Worker::refreshAfter ()
 
 static wstring configPath ()
 {
+	// SYNA3DS_CONFIG points to another config file (tests, portable use)
+	wchar_t custom[MAX_PATH];
+	if (GetEnvironmentVariableW (L"SYNA3DS_CONFIG", custom, MAX_PATH))
+		return custom;
 	PWSTR base = nullptr;
 	wstring path;
 	if (SUCCEEDED (SHGetKnownFolderPath (FOLDERID_RoamingAppData, 0, nullptr, &base)))
 	{
-		path = wstring (base) + L"\\synaftp";
+		path = wstring (base) + L"\\Syna 3DS Tools";
 		CreateDirectoryW (path.c_str (), nullptr);
 		path += L"\\config.ini";
+		// settings from before the rename
+		wstring old = wstring (base) + L"\\synaftp\\config.ini";
+		if (GetFileAttributesW (path.c_str ()) == INVALID_FILE_ATTRIBUTES)
+			CopyFileW (old.c_str (), path.c_str (), TRUE);
 	}
 	CoTaskMemFree (base);
 	return path;
@@ -1056,6 +1065,9 @@ static bool loadConfig ()
 	g_dark            = GetPrivateProfileIntW (L"ui", L"dark", 1, path.c_str ()) != 0;
 	GetPrivateProfileStringW (L"server", L"host", L"", host, 256, path.c_str ());
 	int port = GetPrivateProfileIntW (L"server", L"port", 5000, path.c_str ());
+	wchar_t dir[MAX_PATH] = {};
+	GetPrivateProfileStringW (L"transfer", L"sendto", L"", dir, MAX_PATH, path.c_str ());
+	g_sendDir = dir;
 	if (!host[0])
 		return false;
 	std::lock_guard lk (g_cfgLock);
@@ -1071,6 +1083,7 @@ static void saveConfig ()
 	WritePrivateProfileStringW (L"server", L"host", wide (g_host).c_str (), path.c_str ());
 	WritePrivateProfileStringW (L"server", L"port", std::to_wstring (g_port).c_str (), path.c_str ());
 	WritePrivateProfileStringW (L"ui", L"dark", g_dark ? L"1" : L"0", path.c_str ());
+	WritePrivateProfileStringW (L"transfer", L"sendto", g_sendDir.c_str (), path.c_str ());
 }
 
 // ---------------------------------------------------------------------------
@@ -1157,7 +1170,35 @@ static void themeControl (HWND h, bool edit = false)
 	SetWindowTheme (h, g_dark ? (edit ? L"DarkMode_CFD" : L"DarkMode_Explorer") : nullptr, nullptr);
 }
 
-static INT_PTR CALLBACK serverDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
+static bool pickFolder (HWND owner, wchar_t const *title, wstring &out)
+{
+	IFileOpenDialog *dlg = nullptr;
+	if (FAILED (CoCreateInstance (CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS (&dlg))))
+		return false;
+	DWORD opts = 0;
+	dlg->GetOptions (&opts);
+	dlg->SetOptions (opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+	dlg->SetTitle (title);
+	bool ok          = false;
+	IShellItem *item = nullptr;
+	if (SUCCEEDED (dlg->Show (owner)) && SUCCEEDED (dlg->GetResult (&item)))
+	{
+		PWSTR path = nullptr;
+		if (SUCCEEDED (item->GetDisplayName (SIGDN_FILESYSPATH, &path)))
+		{
+			out = path;
+			ok  = true;
+			CoTaskMemFree (path);
+		}
+		item->Release ();
+	}
+	dlg->Release ();
+	return ok;
+}
+
+static void applyTheme ();
+
+static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 {
 	switch (msg)
 	{
@@ -1169,16 +1210,25 @@ static INT_PTR CALLBACK serverDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 	case WM_INITDIALOG:
 	{
 		darkTitleBar (dlg);
-		for (int id : {IDOK, IDCANCEL})
+		for (int id : {IDOK, IDCANCEL, IDC_BROWSE, IDC_DARK})
 			themeControl (GetDlgItem (dlg, id));
-		for (int id : {IDC_HOST, IDC_PORT})
+		for (int id : {IDC_HOST, IDC_PORT, IDC_SENDDIR})
 			themeControl (GetDlgItem (dlg, id), true);
+		SetDlgItemTextW (dlg, IDC_SENDDIR, g_sendDir.c_str ());
+		CheckDlgButton (dlg, IDC_DARK, g_dark ? BST_CHECKED : BST_UNCHECKED);
 		std::lock_guard lk (g_cfgLock);
 		SetDlgItemTextW (dlg, IDC_HOST, wide (g_host).c_str ());
 		SetDlgItemInt (dlg, IDC_PORT, g_port, FALSE);
 		return TRUE;
 	}
 	case WM_COMMAND:
+		if (LOWORD (wp) == IDC_BROWSE)
+		{
+			wstring dir;
+			if (pickFolder (dlg, L"Send to PC folder", dir))
+				SetDlgItemTextW (dlg, IDC_SENDDIR, dir.c_str ());
+			return TRUE;
+		}
 		if (LOWORD (wp) == IDOK)
 		{
 			wchar_t host[256];
@@ -1190,16 +1240,28 @@ static INT_PTR CALLBACK serverDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 			h.erase (h.find_last_not_of (L' ') + 1);
 			if (h.empty () || !ok || port == 0 || port > 65535)
 			{
-				MessageBoxW (dlg, L"Enter the IP address and port shown on the 3DS.", L"synaftp", MB_ICONWARNING);
+				MessageBoxW (dlg, L"Enter the IP address and port shown on the 3DS.", L"Syna 3DS Tools", MB_ICONWARNING);
 				return TRUE;
 			}
+			wchar_t dir[MAX_PATH];
+			GetDlgItemTextW (dlg, IDC_SENDDIR, dir, MAX_PATH);
+			bool dark = IsDlgButtonChecked (dlg, IDC_DARK) == BST_CHECKED;
+			bool moved;
 			{
 				std::lock_guard lk (g_cfgLock);
+				moved  = g_host != utf8 (h) || g_port != (int)port;
 				g_host = utf8 (h);
 				g_port = (int)port;
 			}
+			g_sendDir = dir;
+			if (dark != g_dark)
+			{
+				g_dark = dark;
+				if (g_wnd)
+					applyTheme ();
+			}
 			saveConfig ();
-			EndDialog (dlg, IDOK);
+			EndDialog (dlg, moved ? IDOK : IDRETRY); // IDRETRY: saved, same server
 			return TRUE;
 		}
 		if (LOWORD (wp) == IDCANCEL)
@@ -1366,7 +1428,7 @@ static void deleteSelected ()
 		return;
 	wstring q = sel.size () == 1 ? L"Delete \"" + sel[0].name + L"\"" + (sel[0].dir ? L" and everything in it" : L"") + L"?"
 	                             : L"Delete " + std::to_wstring (sel.size ()) + L" items?";
-	if (MessageBoxW (g_wnd, q.c_str (), L"synaftp", MB_YESNO | MB_ICONWARNING) != IDYES)
+	if (MessageBoxW (g_wnd, q.c_str (), L"Syna 3DS Tools", MB_YESNO | MB_ICONWARNING) != IDYES)
 		return;
 	auto job     = std::make_shared<Job> ();
 	job->type    = Job::Delete;
@@ -1676,7 +1738,7 @@ static wstring tempRoot ()
 {
 	wchar_t tmp[MAX_PATH];
 	GetTempPathW (MAX_PATH, tmp);
-	return wstring (tmp) + L"synaftp";
+	return wstring (tmp) + L"Syna3DSTools";
 }
 
 static void deleteTree (wstring const &path)
@@ -1756,27 +1818,36 @@ static void beginDragOut ()
 static void downloadTo ()
 {
 	auto sel = selectedEntries ();
+	wstring dir;
+	if (!sel.empty () && pickFolder (g_wnd, L"Download to", dir))
+		startDownload (sel, dir, nullptr);
+}
+
+// one click: copy the selected folders/files to the folder set in Settings
+static void sendToPc ()
+{
+	auto sel = selectedEntries ();
 	if (sel.empty ())
-		return;
-	IFileOpenDialog *dlg = nullptr;
-	if (FAILED (CoCreateInstance (CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS (&dlg))))
-		return;
-	DWORD opts = 0;
-	dlg->GetOptions (&opts);
-	dlg->SetOptions (opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
-	dlg->SetTitle (L"Download to");
-	IShellItem *item = nullptr;
-	if (SUCCEEDED (dlg->Show (g_wnd)) && SUCCEEDED (dlg->GetResult (&item)))
 	{
-		PWSTR path = nullptr;
-		if (SUCCEEDED (item->GetDisplayName (SIGDN_FILESYSPATH, &path)))
-		{
-			startDownload (sel, path, nullptr);
-			CoTaskMemFree (path);
-		}
-		item->Release ();
+		setStatus (1, L"Select the folders or files to send to the PC first");
+		return;
 	}
-	dlg->Release ();
+	if (g_sendDir.empty ())
+	{
+		wstring dir;
+		if (!pickFolder (g_wnd, L"Choose the Send to PC folder (saved in Settings)", dir))
+			return;
+		g_sendDir = dir;
+		saveConfig ();
+	}
+	SHCreateDirectoryExW (nullptr, g_sendDir.c_str (), nullptr);
+	if (!(GetFileAttributesW (g_sendDir.c_str ()) & FILE_ATTRIBUTE_DIRECTORY) ||
+	    GetFileAttributesW (g_sendDir.c_str ()) == INVALID_FILE_ATTRIBUTES)
+	{
+		setStatus (1, L"Can't use the Send to PC folder: " + g_sendDir);
+		return;
+	}
+	startDownload (sel, g_sendDir, nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -1789,9 +1860,9 @@ enum
 	ID_REFRESH,
 	ID_MKDIR,
 	ID_RECONNECT,
-	ID_SERVER,
+	ID_SETTINGS,
 	ID_CANCEL,
-	ID_THEME,
+	ID_SEND,
 	ID_OPEN,
 	ID_DOWNLOAD,
 	ID_RENAME,
@@ -1807,7 +1878,7 @@ static void updateFont ()
 	SystemParametersInfoForDpi (SPI_GETNONCLIENTMETRICS, sizeof (ncm), &ncm, 0, g_dpi);
 	HFONT old = g_font;
 	g_font    = CreateFontIndirectW (&ncm.lfMessageFont);
-	for (HWND h : {g_list, g_path, g_btnUp, g_btnRefresh, g_btnMkdir, g_btnTheme, g_btnReconnect, g_btnServer, g_btnCancel})
+	for (HWND h : {g_list, g_path, g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel})
 		SendMessageW (h, WM_SETFONT, (WPARAM)g_font, TRUE);
 	if (old)
 		DeleteObject (old);
@@ -1836,7 +1907,7 @@ static void applyTheme ()
 	makeBrushes ();
 	darkTitleBar (g_wnd);
 	setMenuMode ();
-	for (HWND h : {g_btnUp, g_btnRefresh, g_btnMkdir, g_btnTheme, g_btnReconnect, g_btnServer, g_btnCancel})
+	for (HWND h : {g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel})
 		themeControl (h);
 	SetWindowTheme (g_list, g_dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
 	SetWindowTheme (ListView_GetHeader (g_list), g_dark ? L"DarkMode_ItemsView" : nullptr, nullptr);
@@ -1847,7 +1918,6 @@ static void applyTheme ()
 	SetWindowTheme (g_progress, g_dark ? L"" : nullptr, g_dark ? L"" : nullptr);
 	SendMessageW (g_progress, PBM_SETBKCOLOR, 0, g_dark ? (LPARAM)t.panel : (LPARAM)CLR_DEFAULT);
 	SendMessageW (g_progress, PBM_SETBARCOLOR, 0, g_dark ? (LPARAM)t.accent : (LPARAM)CLR_DEFAULT);
-	SetWindowTextW (g_btnTheme, g_dark ? L"Light mode" : L"Dark mode");
 	RedrawWindow (g_wnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 }
 
@@ -1919,12 +1989,12 @@ static void layout ()
 	place (g_btnUp, S (48));
 	place (g_btnRefresh, S (70));
 	place (g_btnMkdir, S (86));
-	int right = rc.right - pad - S (90) - S (4) - S (110) - S (4) - S (80);
+	int right = rc.right - pad - S (96) - S (4) - S (110) - S (4) - S (80);
 	MoveWindow (g_path, x, y + S (2), std::max (S (40), right - x - S (4)), h - S (4), TRUE);
 	x = right;
-	place (g_btnTheme, S (90));
+	place (g_btnSend, S (96));
 	place (g_btnReconnect, S (110));
-	place (g_btnServer, S (80));
+	place (g_btnSettings, S (80));
 
 	int top    = y + h + pad;
 	int bottom = rc.bottom - statusH;
@@ -2031,6 +2101,7 @@ static void showContextMenu (int x, int y)
 		AppendMenuW (menu, MF_STRING, ID_OPEN, L"Open");
 	if (!sel.empty ())
 	{
+		AppendMenuW (menu, MF_STRING, ID_SEND, L"Send to PC\tCtrl+S");
 		AppendMenuW (menu, MF_STRING, ID_DOWNLOAD, L"Download to...");
 		AppendMenuW (menu, MF_STRING | (sel.size () == 1 ? 0 : MF_GRAYED), ID_RENAME, L"Rename\tF2");
 		AppendMenuW (menu, MF_STRING, ID_DELETE, L"Delete\tDel");
@@ -2071,8 +2142,8 @@ static void onCommand (int id)
 		g_browse.reconnect ();
 		g_xfer.reconnect ();
 		break;
-	case ID_SERVER:
-		if (DialogBoxW (g_inst, MAKEINTRESOURCEW (IDD_SERVER), g_wnd, serverDlgProc) == IDOK)
+	case ID_SETTINGS:
+		if (DialogBoxW (g_inst, MAKEINTRESOURCEW (IDD_SETTINGS), g_wnd, settingsDlgProc) == IDOK)
 		{
 			updateConnState ();
 			navigate (L"/");
@@ -2080,10 +2151,8 @@ static void onCommand (int id)
 			g_xfer.reconnect ();
 		}
 		break;
-	case ID_THEME:
-		g_dark = !g_dark;
-		saveConfig ();
-		applyTheme ();
+	case ID_SEND:
+		sendToPc ();
 		break;
 	case ID_CANCEL:
 		g_cancel = true;
@@ -2142,6 +2211,10 @@ static LRESULT onNotify (NMHDR *nm)
 			if (GetKeyState (VK_CONTROL) < 0)
 				ListView_SetItemState (g_list, -1, LVIS_SELECTED, LVIS_SELECTED);
 			break;
+		case 'S':
+			if (GetKeyState (VK_CONTROL) < 0)
+				sendToPc ();
+			break;
 		}
 		break;
 	case LVN_BEGINDRAG:
@@ -2185,9 +2258,9 @@ static LRESULT CALLBACK wndProc (HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 		g_btnUp        = makeButton (L"Up", ID_UP);
 		g_btnRefresh   = makeButton (L"Refresh", ID_REFRESH);
 		g_btnMkdir     = makeButton (L"New folder", ID_MKDIR);
-		g_btnTheme     = makeButton (L"Light mode", ID_THEME);
+		g_btnSend      = makeButton (L"Send to PC", ID_SEND);
 		g_btnReconnect = makeButton (L"Force reconnect", ID_RECONNECT);
-		g_btnServer    = makeButton (L"Server...", ID_SERVER);
+		g_btnSettings  = makeButton (L"Settings...", ID_SETTINGS);
 		g_btnCancel    = makeButton (L"Cancel", ID_CANCEL);
 		g_path         = CreateWindowExW (0, L"EDIT", L"/", WS_CHILD | WS_VISIBLE | ES_READONLY | ES_AUTOHSCROLL, 0, 0, 0, 0, wnd, nullptr, g_inst, nullptr);
 		g_progress     = CreateWindowExW (0, PROGRESS_CLASSW, nullptr, WS_CHILD | PBS_SMOOTH, 0, 0, 0, 0, wnd, nullptr, g_inst, nullptr);
@@ -2311,7 +2384,7 @@ int WINAPI wWinMain (HINSTANCE inst, HINSTANCE, PWSTR, int show)
 	bool configured = loadConfig ();
 	makeBrushes ();
 	setMenuMode ();
-	if (!configured && DialogBoxW (inst, MAKEINTRESOURCEW (IDD_SERVER), nullptr, serverDlgProc) != IDOK)
+	if (!configured && DialogBoxW (inst, MAKEINTRESOURCEW (IDD_SETTINGS), nullptr, settingsDlgProc) == IDCANCEL)
 		return 0;
 
 	WNDCLASSEXW wc{sizeof (wc)};
@@ -2319,11 +2392,11 @@ int WINAPI wWinMain (HINSTANCE inst, HINSTANCE, PWSTR, int show)
 	wc.hInstance     = inst;
 	wc.hCursor       = LoadCursor (nullptr, IDC_ARROW);
 	wc.hbrBackground = nullptr; // painted in WM_PAINT
-	wc.lpszClassName = L"synaftp";
+	wc.lpszClassName = L"Syna3DSTools";
 	wc.hIcon         = LoadIconW (inst, MAKEINTRESOURCEW (IDI_APP));
 	RegisterClassExW (&wc);
 
-	HWND wnd = CreateWindowExW (0, L"synaftp", L"synaftp", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr, nullptr, inst, nullptr);
+	HWND wnd = CreateWindowExW (0, L"Syna3DSTools", L"Syna 3DS Tools", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr, nullptr, inst, nullptr);
 	RECT r{0, 0, S (760), S (520)};
 	AdjustWindowRectExForDpi (&r, WS_OVERLAPPEDWINDOW, FALSE, 0, g_dpi);
 	SetWindowPos (wnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);
