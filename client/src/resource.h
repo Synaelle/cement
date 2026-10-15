@@ -13,6 +13,7 @@
 #define IDC_NEWPATH  109
 #define IDC_ADDPATH  110
 #define IDC_SENDNOTE 111
+#define IDC_REPLACE  112
 #define IDD_PICK     200
 #define IDC_PICKPATH 201
 #define IDC_PICKUP   202

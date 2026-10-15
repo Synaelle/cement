@@ -83,6 +83,54 @@ static wstring formatSize (uint64_t v)
 	return buf;
 }
 
+// "Replace PC folder" must never empty a drive or a personal/system folder
+static bool unsafeReplaceTarget (wstring const &dir)
+{
+	wchar_t full[MAX_PATH];
+	if (dir.empty () || !GetFullPathNameW (dir.c_str (), MAX_PATH, full, nullptr))
+		return true;
+	wstring f = full;
+	while (f.size () > 3 && (f.back () == L'\\' || f.back () == L'/'))
+		f.pop_back ();
+	if (f.size () <= 3) // "C:\" or shorter
+		return true;
+	for (auto const &id : {FOLDERID_Profile, FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads,
+	         FOLDERID_Pictures, FOLDERID_Music, FOLDERID_Videos, FOLDERID_Windows, FOLDERID_ProgramFiles,
+	         FOLDERID_ProgramFilesX86, FOLDERID_RoamingAppData, FOLDERID_LocalAppData, FOLDERID_Public})
+	{
+		PWSTR known = nullptr;
+		bool same   = SUCCEEDED (SHGetKnownFolderPath (id, 0, nullptr, &known)) && _wcsicmp (known, f.c_str ()) == 0;
+		CoTaskMemFree (known);
+		if (same)
+			return true;
+	}
+	return false;
+}
+
+// delete everything inside dir (not dir itself); to the Recycle Bin when recycle
+static bool emptyFolder (wstring const &dir, bool recycle)
+{
+	wstring list; // double-null-terminated list for SHFileOperation
+	WIN32_FIND_DATAW fd;
+	HANDLE h = FindFirstFileW ((dir + L"\\*").c_str (), &fd);
+	if (h == INVALID_HANDLE_VALUE)
+		return true;
+	do
+	{
+		if (wcscmp (fd.cFileName, L".") && wcscmp (fd.cFileName, L".."))
+			list += dir + L"\\" + fd.cFileName + L'\0';
+	} while (FindNextFileW (h, &fd));
+	FindClose (h);
+	if (list.empty ())
+		return true;
+	list += L'\0';
+	SHFILEOPSTRUCTW op{};
+	op.wFunc  = FO_DELETE;
+	op.pFrom  = list.c_str ();
+	op.fFlags = FOF_NO_UI | (recycle ? FOF_ALLOWUNDO : 0);
+	return SHFileOperationW (&op) == 0 && !op.fAnyOperationsAborted;
+}
+
 // ---------------------------------------------------------------------------
 // shared state
 
@@ -112,6 +160,7 @@ static HWND g_wnd, g_list, g_path, g_progress;
 static HWND g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel;
 static wstring g_sendDir;                // "Send to PC" destination folder (settings)
 static std::vector<wstring> g_sendItems; // "Send to PC" 3DS paths (settings)
+static bool g_sendReplace;                // "Send to PC" empties the PC folder first
 static bool g_dark = true;     // dark theme (saved in config)
 static wstring g_statusText[2]; // connection state, transfer/messages
 static void setStatus (int part, wstring const &text);
@@ -590,6 +639,8 @@ struct Job
 	std::vector<wstring> sendPaths; // SendToPc: absolute 3DS paths, copied under path2
 	HWND notify = nullptr;          // List: window receiving WM_APP_LIST (main window if null)
 	int missing = 0;                // SendToPc: paths not found on the 3DS
+	bool replace = false;           // SendToPc: empty path2 first (once, when connected)
+	bool recycle = true;            // ...into the Recycle Bin
 
 	// transfer state, kept across reconnects so the job resumes
 	struct Item
@@ -704,6 +755,7 @@ private:
 
 	void run ()
 	{
+		CoInitializeEx (nullptr, COINIT_APARTMENTTHREADED);
 		for (;;)
 		{
 			if (!m_ftp.connected ())
@@ -918,6 +970,14 @@ private:
 					expandLocal (job, l, joinRemote (job.path, l.substr (l.find_last_of (L"\\/") + 1)));
 			else if (job.type == Job::SendToPc)
 			{
+				if (job.replace)
+				{
+					if (unsafeReplaceTarget (job.path2))
+						throw FtpError{"Refusing to empty " + utf8 (job.path2) + " (drive or personal/system folder)"};
+					if (!emptyFolder (job.path2, job.recycle))
+						throw FtpError{"Could not empty " + utf8 (job.path2) + " (a file may be in use)"};
+					job.replace = false; // only once, even if the job resumes after a reconnect
+				}
 				for (auto const &rp : job.sendPaths)
 				{
 					wstring local = job.path2;
@@ -1141,7 +1201,8 @@ static bool loadConfig ()
 	int port = GetPrivateProfileIntW (L"server", L"port", 5000, path.c_str ());
 	wchar_t dir[MAX_PATH] = {};
 	GetPrivateProfileStringW (L"transfer", L"sendto", L"", dir, MAX_PATH, path.c_str ());
-	g_sendDir = dir;
+	g_sendDir     = dir;
+	g_sendReplace = GetPrivateProfileIntW (L"transfer", L"replace", 0, path.c_str ()) != 0;
 	g_sendItems.clear ();
 	int count = GetPrivateProfileIntW (L"sendtopc", L"count", 0, path.c_str ());
 	for (int i = 0; i < count; ++i)
@@ -1167,6 +1228,7 @@ static void saveConfig ()
 	WritePrivateProfileStringW (L"server", L"port", std::to_wstring (g_port).c_str (), path.c_str ());
 	WritePrivateProfileStringW (L"ui", L"dark", g_dark ? L"1" : L"0", path.c_str ());
 	WritePrivateProfileStringW (L"transfer", L"sendto", g_sendDir.c_str (), path.c_str ());
+	WritePrivateProfileStringW (L"transfer", L"replace", g_sendReplace ? L"1" : L"0", path.c_str ());
 	WritePrivateProfileStringW (L"sendtopc", nullptr, nullptr, path.c_str ()); // drop the old list
 	WritePrivateProfileStringW (L"sendtopc", L"count", std::to_wstring (g_sendItems.size ()).c_str (), path.c_str ());
 	for (size_t i = 0; i < g_sendItems.size (); ++i)
@@ -1340,7 +1402,7 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 	{
 		s_settingsDlg = dlg;
 		darkTitleBar (dlg);
-		for (int id : {IDOK, IDCANCEL, IDC_BROWSE, IDC_DARK, IDC_ADDPICK, IDC_REMOVE, IDC_ADDPATH, IDC_ITEMS})
+		for (int id : {IDOK, IDCANCEL, IDC_BROWSE, IDC_DARK, IDC_ADDPICK, IDC_REMOVE, IDC_ADDPATH, IDC_ITEMS, IDC_REPLACE})
 			themeControl (GetDlgItem (dlg, id));
 		for (int id : {IDC_HOST, IDC_PORT, IDC_SENDDIR, IDC_NEWPATH})
 			themeControl (GetDlgItem (dlg, id), true);
@@ -1350,6 +1412,7 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 		updateSendSection (dlg);
 		SetDlgItemTextW (dlg, IDC_SENDDIR, g_sendDir.c_str ());
 		CheckDlgButton (dlg, IDC_DARK, g_dark ? BST_CHECKED : BST_UNCHECKED);
+		CheckDlgButton (dlg, IDC_REPLACE, g_sendReplace ? BST_CHECKED : BST_UNCHECKED);
 		std::lock_guard lk (g_cfgLock);
 		SetDlgItemTextW (dlg, IDC_HOST, wide (g_host).c_str ());
 		SetDlgItemInt (dlg, IDC_PORT, g_port, FALSE);
@@ -1374,6 +1437,16 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 				addSendItem (dlg, p);
 				SetDlgItemTextW (dlg, IDC_NEWPATH, L"");
 			}
+			return TRUE;
+		}
+		if (LOWORD (wp) == IDC_REPLACE && IsDlgButtonChecked (dlg, IDC_REPLACE) == BST_CHECKED &&
+		    MessageBoxW (dlg,
+		        L"Each Send to PC will first empty the PC folder (its current files and folders go to the "
+		        L"Recycle Bin), then copy the 3DS items into it.\n\nOnly use a folder dedicated to this. Turn it on?",
+		        L"Replace PC folder contents",
+		        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+		{
+			CheckDlgButton (dlg, IDC_REPLACE, BST_UNCHECKED);
 			return TRUE;
 		}
 		if (LOWORD (wp) == IDC_REMOVE)
@@ -1407,7 +1480,18 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 			}
 			wchar_t dir[MAX_PATH];
 			GetDlgItemTextW (dlg, IDC_SENDDIR, dir, MAX_PATH);
-			bool dark = IsDlgButtonChecked (dlg, IDC_DARK) == BST_CHECKED;
+			bool dark    = IsDlgButtonChecked (dlg, IDC_DARK) == BST_CHECKED;
+			bool replace = IsDlgButtonChecked (dlg, IDC_REPLACE) == BST_CHECKED;
+			if (replace && dir[0] && unsafeReplaceTarget (dir))
+			{
+				MessageBoxW (dlg,
+				    L"\"Replace PC folder contents\" can't be used with a drive or with your Desktop, Documents, "
+				    L"Downloads, user, Windows or Program Files folder. Choose a dedicated folder.",
+				    L"Syna 3DS Tools",
+				    MB_ICONWARNING);
+				return TRUE;
+			}
+			g_sendReplace = replace;
 			bool moved;
 			{
 				std::lock_guard lk (g_cfgLock);
@@ -2022,6 +2106,7 @@ static void sendToPc ()
 	job->type       = Job::SendToPc;
 	job->path2      = g_sendDir;
 	job->sendPaths  = g_sendItems;
+	job->replace    = g_sendReplace;
 	{
 		std::lock_guard lk (g_prog.lock);
 		g_prog.active = true;

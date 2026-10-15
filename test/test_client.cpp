@@ -232,6 +232,45 @@ int main (int argc, char **argv)
 		check (normalizeRemote (L" 3ds\\\\Checkpoint//saves/ ") == L"/3ds/Checkpoint/saves", "typed paths normalized");
 	}
 
+	printf ("send to PC with \"replace PC folder contents\"\n");
+	{
+		wstring dest = back + L"\\sendto";
+		writeRandom (dest + L"\\old file.txt", 10, 9);
+		SHCreateDirectoryExW (nullptr, (dest + L"\\old dir\\deep").c_str (), nullptr);
+		g_cancel       = false;
+		auto job       = std::make_shared<Job> ();
+		job->type      = Job::SendToPc;
+		job->path2     = dest;
+		job->sendPaths = {L"/boot.firm"};
+		job->replace   = true;
+		job->recycle   = false; // keep the test out of the Recycle Bin
+		job->doneEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+		g_xfer.push (job);
+		check (waitFor ([&] { return finished (job); }, 20000) && job->ok, "replace job finished");
+		check (GetFileAttributesW ((dest + L"\\old file.txt").c_str ()) == INVALID_FILE_ATTRIBUTES &&
+		           GetFileAttributesW ((dest + L"\\old dir").c_str ()) == INVALID_FILE_ATTRIBUTES &&
+		           GetFileAttributesW ((dest + L"\\3ds").c_str ()) == INVALID_FILE_ATTRIBUTES,
+		    "old PC folder contents removed");
+		check (readFile (dest + L"\\boot.firm") == readFile (s_root + L"\\boot.firm"), "3DS content copied after emptying");
+		check (GetFileAttributesW (dest.c_str ()) & FILE_ATTRIBUTE_DIRECTORY, "the PC folder itself is kept");
+
+		PWSTR docs = nullptr;
+		SHGetKnownFolderPath (FOLDERID_Documents, 0, nullptr, &docs);
+		check (unsafeReplaceTarget (L"C:\\") && unsafeReplaceTarget (docs) && unsafeReplaceTarget (wstring (docs) + L"\\") &&
+		           !unsafeReplaceTarget (wstring (docs) + L"\\3DS backup"),
+		    "drives and personal folders refused, subfolders allowed");
+		CoTaskMemFree (docs);
+
+		job            = std::make_shared<Job> ();
+		job->type      = Job::SendToPc;
+		job->path2     = L"C:\\";
+		job->sendPaths = {L"/boot.firm"};
+		job->replace   = true;
+		job->doneEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+		g_xfer.push (job);
+		check (waitFor ([&] { return finished (job); }, 10000) && !job->ok, "worker refuses to empty a drive root");
+	}
+
 	printf ("explorer operations\n");
 	auto run = [] (JobPtr j) { g_browse.push (j); };
 	auto mk  = [] (Job::Type t, wstring a, wstring b = L"") {

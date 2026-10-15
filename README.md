@@ -30,7 +30,11 @@ Client details:
   Ctrl+S) then copies everything in the list in one go, keeping the SD card
   layout (`/3ds/Checkpoint/saves` -> `<PC folder>ds\Checkpoint\saves`).
   Items missing on the 3DS are skipped and counted; existing PC files are
-  overwritten.
+  overwritten. With **Replace PC folder contents** ticked, the PC folder is
+  emptied first (old files go to the Recycle Bin) so it ends up as an exact
+  copy. It is emptied only once the transfer actually starts (3DS
+  connected), and drives or personal/system folders (Desktop, Documents,
+  Downloads, user folder, Windows, Program Files...) are refused.
 - Dark mode by default; toggle it in **Settings...**.
 - `SYNA3DS_CONFIG` can point the client to another config file.
 

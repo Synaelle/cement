@@ -5,7 +5,7 @@
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "Syna3DSTools.manifest"
 IDI_APP ICON "icon.ico"
 
-IDD_SETTINGS DIALOGEX 0, 0, 300, 262
+IDD_SETTINGS DIALOGEX 0, 0, 300, 278
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Syna 3DS Tools - Settings"
 FONT 9, "Segoe UI", 0, 0, 1
@@ -20,18 +20,20 @@ BEGIN
     LTEXT           "PC folder:", -1, 8, 87, 66, 10
     EDITTEXT        IDC_SENDDIR, 78, 85, 162, 13, ES_AUTOHSCROLL
     PUSHBUTTON      "Browse...", IDC_BROWSE, 244, 84, 48, 15
-    LTEXT           "3DS folders and files to copy:", -1, 8, 106, 200, 10
-    LISTBOX         IDC_ITEMS, 8, 118, 222, 72, LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | LBS_SORT | WS_VSCROLL | WS_TABSTOP | WS_BORDER
-    PUSHBUTTON      "Add from 3DS...", IDC_ADDPICK, 234, 118, 58, 15
-    PUSHBUTTON      "Remove", IDC_REMOVE, 234, 137, 58, 15
-    EDITTEXT        IDC_NEWPATH, 8, 195, 222, 13, ES_AUTOHSCROLL
-    PUSHBUTTON      "Add path", IDC_ADDPATH, 234, 194, 58, 15
-    LTEXT           "", IDC_SENDNOTE, 8, 212, 284, 10
+    AUTOCHECKBOX    "", IDC_REPLACE, 78, 104, 10, 10
+    LTEXT           "Replace PC folder contents (old files go to the Recycle Bin)", -1, 91, 104, 201, 10
+    LTEXT           "3DS folders and files to copy:", -1, 8, 122, 200, 10
+    LISTBOX         IDC_ITEMS, 8, 134, 222, 72, LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | LBS_SORT | WS_VSCROLL | WS_TABSTOP | WS_BORDER
+    PUSHBUTTON      "Add from 3DS...", IDC_ADDPICK, 234, 134, 58, 15
+    PUSHBUTTON      "Remove", IDC_REMOVE, 234, 153, 58, 15
+    EDITTEXT        IDC_NEWPATH, 8, 211, 222, 13, ES_AUTOHSCROLL
+    PUSHBUTTON      "Add path", IDC_ADDPATH, 234, 210, 58, 15
+    LTEXT           "", IDC_SENDNOTE, 8, 228, 284, 10
 
-    AUTOCHECKBOX    "", IDC_DARK, 8, 228, 10, 10
-    LTEXT           "Dark mode", -1, 21, 228, 100, 10
-    DEFPUSHBUTTON   "OK", IDOK, 188, 242, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 242, 242, 50, 14
+    AUTOCHECKBOX    "", IDC_DARK, 8, 244, 10, 10
+    LTEXT           "Dark mode", -1, 21, 244, 100, 10
+    DEFPUSHBUTTON   "OK", IDOK, 188, 258, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 242, 258, 50, 14
 END
 
 IDD_PICK DIALOGEX 0, 0, 260, 220
