@@ -1,7 +1,8 @@
 BasicInfo:
   Title                   : "Cement"
   ProductCode             : "CTR-H-CMNT"
-  Logo                    : Homebrew # Nintendo / Licensed / Distributed / iQue / iQueForSystem
+  Logo                    : Homebrew
+
 
 TitleInfo:
   Category                : Application
@@ -31,28 +32,8 @@ AccessControlInfo:
   # FS:USER Archive Access Permissions
   # Uncomment as required
   FileSystemAccess:
-   #- CategorySystemApplication
-   #- CategoryHardwareCheck
    - CategoryFileSystemTool
-   #- Debug
-   #- TwlCardBackup
-   #- TwlNandData
-   #- Boss
    - DirectSdmc
-   #- Core
-   #- CtrNandRo
-   #- CtrNandRw
-   #- CtrNandRoWrite
-   #- CategorySystemSettings
-   #- CardBoard
-   #- ExportImportIvs
-   #- DirectSdmcWrite
-   #- SwitchCleanup
-   #- SaveDataMove
-   #- Shop
-   #- Shell
-   #- CategoryHomeMenu
-
   # Process Settings
   MemoryType                    : Application # Application/System/Base
   SystemMode                    : 64MB # 64MB(Default)/96MB/80MB/72MB/32MB
@@ -73,7 +54,7 @@ AccessControlInfo:
 
   # New3DS Exclusive Process Settings
   SystemModeExt                 : Legacy # Legacy(Default)/124MB/178MB  Legacy:Use Old3DS SystemMode
-  CpuSpeed                      : 804MHz # 256MHz(Default)/804MHz
+  CpuSpeed                      : 804MHz # 268MHz(Default)/804MHz
   EnableL2Cache                 : true # false(default)/true
   CanAccessCore2                : true 
 
@@ -138,7 +119,6 @@ AccessControlInfo:
     UnmapMemoryBlock: 32
     WaitSynchronization1: 36
     WaitSynchronizationN: 37
-
   # Service List
   # Maximum 34 services (32 if firmware is prior to 9.6.0)
   ServiceAccessControl:
@@ -170,8 +150,6 @@ AccessControlInfo:
    - soc:U
    - ssl:C
    - y2r:u
-
-
 SystemControlInfo:
   SaveDataSize: 0KB # Change if the app uses savedata
   RemasterVersion: 0

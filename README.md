@@ -22,3 +22,7 @@ Windows, with MinGW-w64:
 ```
 client\build.bat
 ```
+
+## License
+
+MIT, like [FBI](https://github.com/Steveice10/FBI). See [LICENSE](LICENSE).
