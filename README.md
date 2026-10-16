@@ -38,6 +38,16 @@ Client details:
 - Dark mode by default; toggle it in **Settings...**.
 - `SYNA3DS_CONFIG` can point the client to another config file.
 
+Command line (agents, scripts): `client/syna3ds.exe`
+- `status`, `wait`, `ls`, `stat`, `put`, `get`, `rm`, `mkdir`, `mv`; `--json`
+  for machine-readable output, exit codes 0 ok / 1 usage / 2 unreachable /
+  3 failed / 4 still busy. `syna3ds.exe --help` lists everything.
+- Uses the address saved by the GUI. Commands that change files wait until no
+  other transfer is running (the 3DS reports transfers, progress and time left
+  with `SITE STATUS`; clients announce whole jobs with `SITE BATCH`), and
+  dropped connections are retried with resume.
+- A local, git-ignored `AGENT_GUIDE.md` explains its use to coding agents.
+
 3DS details:
 - Close the lid: the 3DS really sleeps (Wi-Fi off, best battery). Connections
   are closed cleanly and the server comes back on its own when you open it;

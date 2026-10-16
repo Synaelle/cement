@@ -4,3 +4,4 @@ server/*.cia
 client/*.exe
 client/*.o
 test/*.exe
+AGENT_GUIDE.md

@@ -162,6 +162,17 @@ typedef struct
 
 	Xfer x;
 	bool xferOpen;
+
+	// progress reporting (SITE STATUS)
+	u64 allo;      // size announced with ALLO for the next STOR (0 = unknown)
+	u64 xferBase;  // REST offset of the current transfer
+	u64 xferTotal; // full size of the current file (0 = unknown)
+	u64 xferStart; // osGetTime when the data started flowing
+
+	// whole job announced with SITE BATCH <files> <bytes> <kind>: busy between files, ETA
+	char batchKind[8]; // "up", "down" or "delete"
+	u32 batchFiles, batchFilesDone;
+	u64 batchBytes, batchBytesDone, batchStart;
 } Session;
 
 typedef struct
@@ -187,6 +198,7 @@ static u64 s_lastBytes, s_lastTime;
 static u32 s_rate;
 static char s_status[64] = "Starting...";
 static u64 s_fsBusyUntil; // a delete/rename/mkdir happened recently (blocks CIA installs)
+static u64 s_lastActivity; // last transfer end or file system change (SITE STATUS idle_ms)
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -449,6 +461,9 @@ static void endTransfer (Session *s)
 static void closeSession (Session *s)
 {
 	endTransfer (s);
+	s->allo = 0;
+	s->batchFiles = s->batchFilesDone = 0;
+	s->batchBytes = s->batchBytesDone = 0;
 	closeNow (&s->data);
 	closeNow (&s->pasv);
 	closeNow (&s->ctrl);
@@ -619,7 +634,10 @@ static bool prepareFile (Session *s, char const *path, int mode, bool append)
 			reply (s, "554 Invalid restart position\r\n");
 			return false;
 		}
-		x->pos = start;
+		x->pos       = start;
+		s->xferBase  = start;
+		s->xferTotal = s->allo;
+		s->allo      = 0;
 	}
 	else
 	{
@@ -635,7 +653,9 @@ static bool prepareFile (Session *s, char const *path, int mode, bool append)
 			reply (s, "554 Invalid restart position\r\n");
 			return false;
 		}
-		x->pos = s->rest;
+		x->pos       = s->rest;
+		s->xferBase  = s->rest;
+		s->xferTotal = x->size;
 	}
 	s->xferOpen = true;
 	return true;
@@ -643,7 +663,8 @@ static bool prepareFile (Session *s, char const *path, int mode, bool append)
 
 static void startData (Session *s)
 {
-	s->started = true;
+	s->started   = true;
+	s->xferStart = osGetTime ();
 	if (s->mode == X_RETR)
 	{
 		// read ahead into every buffer
@@ -669,6 +690,13 @@ static void finishData (Session *s, bool ok, char const *msg)
 	}
 	if (upload && ok)
 		ciaAdd (s->path, size);
+	if ((s->mode == X_STOR || s->mode == X_RETR) && s->batchFiles)
+	{
+		s->batchBytesDone += s->x.done;
+		if (ok)
+			s->batchFilesDone++;
+	}
+	s_lastActivity = osGetTime ();
 	if (ok)
 		closeGraceful (&s->data);
 	else
@@ -676,6 +704,8 @@ static void finishData (Session *s, bool ok, char const *msg)
 	endTransfer (s);
 	reply (s, "%s\r\n", msg);
 }
+
+static void siteStatus (Session *self);
 
 static void handleCommand (Session *s, char *line)
 {
@@ -697,7 +727,10 @@ static void handleCommand (Session *s, char *line)
 	// a deletion is a stream of DELE/RMD commands: count it as busy for a moment
 	if (!strcmp (cmd, "DELE") || !strcmp (cmd, "RMD") || !strcmp (cmd, "XRMD") || !strcmp (cmd, "RNFR") ||
 	    !strcmp (cmd, "RNTO") || !strcmp (cmd, "MKD") || !strcmp (cmd, "XMKD"))
-		s_fsBusyUntil = s->lastCmd + 2000;
+		s_fsBusyUntil = s_lastActivity = s->lastCmd + 2000;
+	if ((!strcmp (cmd, "DELE") || !strcmp (cmd, "RMD") || !strcmp (cmd, "XRMD")) && s->batchFiles &&
+	    !strcmp (s->batchKind, "delete") && s->batchFilesDone < s->batchFiles)
+		s->batchFilesDone++;
 
 	bool busy = s->mode != X_NONE;
 	if (busy && (strcmp (cmd, "PASV") == 0 || strcmp (cmd, "EPSV") == 0 || strcmp (cmd, "LIST") == 0 ||
@@ -713,8 +746,40 @@ static void handleCommand (Session *s, char *line)
 		    "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n"
 		    "211 End\r\n");
 	else if (strcmp (cmd, "OPTS") == 0 || strcmp (cmd, "TYPE") == 0 || strcmp (cmd, "MODE") == 0 ||
-	         strcmp (cmd, "STRU") == 0 || strcmp (cmd, "NOOP") == 0 || strcmp (cmd, "ALLO") == 0)
+	         strcmp (cmd, "STRU") == 0 || strcmp (cmd, "NOOP") == 0)
 		reply (s, "200 OK\r\n");
+	else if (strcmp (cmd, "ALLO") == 0)
+	{
+		s->allo = strtoull (arg, NULL, 10); // size of the next STOR, for progress/ETA
+		reply (s, "200 OK\r\n");
+	}
+	else if (strcmp (cmd, "SITE") == 0)
+	{
+		char sub[16] = {0};
+		sscanf (arg, "%15s", sub);
+		for (char *c = sub; *c; ++c)
+			if (*c >= 'a' && *c <= 'z')
+				*c -= 32;
+		if (strcmp (sub, "STATUS") == 0)
+			siteStatus (s);
+		else if (strcmp (sub, "BATCH") == 0)
+		{
+			// SITE BATCH <files> <bytes> [up|down|delete]; "SITE BATCH 0 0" ends it
+			unsigned long long files = 0, bytes = 0;
+			char kind[8]             = "up";
+			sscanf (arg + 5, "%llu %llu %7s", &files, &bytes, kind);
+			s->batchFiles     = (u32)files;
+			s->batchBytes     = bytes;
+			s->batchFilesDone = 0;
+			s->batchBytesDone = 0;
+			s->batchStart     = osGetTime ();
+			snprintf (s->batchKind, sizeof (s->batchKind), "%s", kind);
+			s_lastActivity = s->batchStart;
+			reply (s, "200 OK\r\n");
+		}
+		else
+			reply (s, "502 SITE STATUS or SITE BATCH\r\n");
+	}
 	else if (strcmp (cmd, "PWD") == 0 || strcmp (cmd, "XPWD") == 0)
 		reply (s, "257 \"%s\"\r\n", s->cwd);
 	else if (strcmp (cmd, "CWD") == 0 || strcmp (cmd, "CDUP") == 0 || strcmp (cmd, "XCUP") == 0)
@@ -1458,7 +1523,7 @@ static bool fsBusy (void)
 	if (osGetTime () < s_fsBusyUntil)
 		return true;
 	for (int i = 0; i < MAX_SESSIONS; ++i)
-		if (s_sess[i].ctrl >= 0 && (s_sess[i].mode == X_STOR || s_sess[i].mode == X_RETR))
+		if (s_sess[i].ctrl >= 0 && (s_sess[i].mode == X_STOR || s_sess[i].mode == X_RETR || s_sess[i].batchFiles))
 			return true;
 	return false;
 }
@@ -1510,6 +1575,106 @@ static void pollInstall (void)
 		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "%.30s (%08lX)", s_inst.err, (unsigned long)s_inst.rc);
 	s_ciaMsgTime  = osGetTime ();
 	s_bottomDirty = true;
+}
+
+// ---------------------------------------------------------------------------
+// SITE STATUS: what the other connections are doing, for agents and scripts
+
+typedef struct
+{
+	bool active;                   // a file transfer is flowing right now
+	u64 done, size, bps;           // current file (size 0 = unknown)
+	long long eta;                 // seconds, -1 = unknown
+	u64 batchDone, batchBytes;     // whole announced job
+	long long batchEta;
+} Progress;
+
+static Progress progressOf (Session const *s, u64 now)
+{
+	Progress p   = {0};
+	p.eta        = -1;
+	p.batchEta   = -1;
+	p.active     = s->started && (s->mode == X_STOR || s->mode == X_RETR);
+	if (p.active)
+	{
+		u64 ms = now - s->xferStart;
+		p.done = s->xferBase + s->x.done;
+		p.size = s->xferTotal;
+		p.bps  = ms >= 500 ? s->x.done * 1000 / ms : 0;
+		if (p.size >= p.done && p.bps)
+			p.eta = (long long)((p.size - p.done) / p.bps);
+	}
+	if (s->batchFiles)
+	{
+		u64 ms       = now - s->batchStart;
+		p.batchDone  = s->batchBytesDone + (p.active ? s->x.done : 0);
+		p.batchBytes = s->batchBytes;
+		u64 bps      = ms >= 500 ? p.batchDone * 1000 / ms : 0;
+		if (p.batchBytes >= p.batchDone && bps)
+			p.batchEta = (long long)((p.batchBytes - p.batchDone) / bps);
+		else if (!strcmp (s->batchKind, "delete") && s->batchFilesDone && ms >= 500)
+			p.batchEta = (long long)((u64)(s->batchFiles - s->batchFilesDone) * ms / s->batchFilesDone / 1000);
+	}
+	return p;
+}
+
+static void siteStatus (Session *self)
+{
+	u64 now     = osGetTime ();
+	bool busy   = s_inst.running || now < s_fsBusyUntil;
+	int clients = 0;
+	for (int i = 0; i < MAX_SESSIONS; ++i)
+	{
+		Session *s = &s_sess[i];
+		if (s->ctrl < 0)
+			continue;
+		++clients;
+		if (s != self && (s->mode == X_STOR || s->mode == X_RETR || s->batchFiles))
+			busy = true;
+	}
+	reply (self, "211-Status\r\n");
+	reply (self,
+	    " busy=%d idle_ms=%llu installing=%d connections=%d version=" VERSION "\r\n",
+	    busy,
+	    busy || now < s_lastActivity ? 0ull : (unsigned long long)(now - s_lastActivity),
+	    s_inst.running,
+	    clients);
+	for (int i = 0; i < MAX_SESSIONS; ++i)
+	{
+		Session *s = &s_sess[i];
+		if (s->ctrl < 0 || s == self || !(s->mode == X_STOR || s->mode == X_RETR || s->batchFiles))
+			continue;
+		Progress p  = progressOf (s, now);
+		u8 const *a = (u8 const *)&s->peer;
+		char batch[160] = "";
+		if (s->batchFiles)
+			snprintf (batch,
+			    sizeof (batch),
+			    " batch=%s batch_files_done=%lu batch_files=%lu batch_bytes_done=%llu batch_bytes=%llu batch_eta=%lld",
+			    s->batchKind,
+			    (unsigned long)s->batchFilesDone,
+			    (unsigned long)s->batchFiles,
+			    (unsigned long long)p.batchDone,
+			    (unsigned long long)p.batchBytes,
+			    p.batchEta);
+		reply (self,
+		    " transfer peer=%u.%u.%u.%u dir=%s done=%llu size=%llu bps=%llu eta=%lld%s file=%s\r\n",
+		    a[0], a[1], a[2], a[3],
+		    !p.active ? "none" : s->mode == X_STOR ? "up" : "down",
+		    (unsigned long long)p.done,
+		    (unsigned long long)p.size,
+		    (unsigned long long)p.bps,
+		    p.eta,
+		    batch,
+		    p.active ? s->path : "");
+	}
+	if (s_inst.running)
+		reply (self,
+		    " install done=%llu size=%llu file=%s\r\n",
+		    (unsigned long long)s_inst.done,
+		    (unsigned long long)s_inst.total,
+		    s_inst.path);
+	reply (self, "211 End\r\n");
 }
 
 static void ciaInput (u32 down)
@@ -1659,6 +1824,26 @@ static void draw (void)
 	}
 	else
 		printf ("\x1b[9;1H\x1b[K\x1b[10;1H\x1b[K");
+
+	// whole job announced by the PC (SITE BATCH): files left and time left
+	Session *batch = NULL;
+	for (int i = 0; i < MAX_SESSIONS && !batch; ++i)
+		if (s_sess[i].ctrl >= 0 && s_sess[i].batchFiles)
+			batch = &s_sess[i];
+	if (batch)
+	{
+		Progress p = progressOf (batch, now);
+		char left[48] = "";
+		if (p.batchEta >= 0)
+			snprintf (left, sizeof (left), ", %lld:%02lld left", p.batchEta / 60, p.batchEta % 60);
+		printf ("\x1b[11;1H %s %lu/%lu files%s\x1b[K",
+		    !strcmp (batch->batchKind, "delete") ? "Deleting" : !strcmp (batch->batchKind, "down") ? "Sending  " : "Receiving",
+		    (unsigned long)batch->batchFilesDone,
+		    (unsigned long)batch->batchFiles,
+		    left);
+	}
+	else
+		printf ("\x1b[11;1H\x1b[K");
 
 	printf ("\x1b[26;1H START: exit   SELECT: top screen on/off\x1b[K");
 	printf ("\x1b[27;1H Close the lid to sleep (Wi-Fi turns off)\x1b[K");
