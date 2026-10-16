@@ -225,6 +225,21 @@ def run(root, flag):
     upload(f, "/cias/bad.cia", os.urandom(5000))
     upload(f, "/cias/n3ds only.CIA", fake_cia(0x0004000020123400, 4096))
     upload(f, "/cias/not-a-cia.bin", b"x")
+    # installs wait while a transfer runs or right after a deletion
+    g = connect()
+    g.voidcmd("TYPE I")
+    slow = g.transfercmd("STOR /cias/slow.bin")
+    slow.sendall(b"x" * 100000)
+    press("A")
+    check(not os.path.exists(am_out), "install refused while an upload is running")
+    slow.close()
+    g.voidresp()
+    g.quit()
+    f.delete("/cias/not-a-cia.bin")
+    press("A")
+    check(not os.path.exists(am_out), "install refused right after a deletion")
+    time.sleep(2.2)
+
     press("A")  # first entry: good.cia
     check(os.path.exists(am_out) and open(am_out, "rb").read() == good, "CIA streamed to AM intact")
     check(not os.path.exists(os.path.join(root, "cias", "good.cia")), "installed CIA deleted from SD")

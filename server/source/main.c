@@ -143,6 +143,7 @@ static void xferDrain (Xfer *x)
 typedef struct
 {
 	int ctrl, pasv, data;
+	u32 peer; // client IP: one PC opens several connections
 	char cmd[CMD_SIZE];
 	int cmdLen;
 	char cwd[PATH_SIZE];
@@ -185,6 +186,7 @@ static u64 s_nextNetCheck;
 static u64 s_lastBytes, s_lastTime;
 static u32 s_rate;
 static char s_status[64] = "Starting...";
+static u64 s_fsBusyUntil; // a delete/rename/mkdir happened recently (blocks CIA installs)
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -692,6 +694,11 @@ static void handleCommand (Session *s, char *line)
 	char const *cmd = line;
 	s->lastCmd      = osGetTime ();
 
+	// a deletion is a stream of DELE/RMD commands: count it as busy for a moment
+	if (!strcmp (cmd, "DELE") || !strcmp (cmd, "RMD") || !strcmp (cmd, "XRMD") || !strcmp (cmd, "RNFR") ||
+	    !strcmp (cmd, "RNTO") || !strcmp (cmd, "MKD") || !strcmp (cmd, "XMKD"))
+		s_fsBusyUntil = s->lastCmd + 2000;
+
 	bool busy = s->mode != X_NONE;
 	if (busy && (strcmp (cmd, "PASV") == 0 || strcmp (cmd, "EPSV") == 0 || strcmp (cmd, "LIST") == 0 ||
 	                strcmp (cmd, "NLST") == 0 || strcmp (cmd, "MLSD") == 0 || strcmp (cmd, "RETR") == 0 ||
@@ -1141,6 +1148,7 @@ static void acceptClient (void)
 		if (s->ctrl >= 0)
 			continue;
 		s->ctrl = fd;
+		s->peer = addr.sin_addr.s_addr;
 		setNonBlocking (fd);
 		s->cmdLen  = 0;
 		s->rest    = 0;
@@ -1444,10 +1452,28 @@ static char const *baseName (char const *path)
 	return slash ? slash + 1 : path;
 }
 
+// installs wait for transfers and deletions: they share the SD card
+static bool fsBusy (void)
+{
+	if (osGetTime () < s_fsBusyUntil)
+		return true;
+	for (int i = 0; i < MAX_SESSIONS; ++i)
+		if (s_sess[i].ctrl >= 0 && (s_sess[i].mode == X_STOR || s_sess[i].mode == X_RETR))
+			return true;
+	return false;
+}
+
 static void startInstall (void)
 {
 	if (s_inst.running || s_ciaSel >= s_ciaCount)
 		return;
+	if (fsBusy ())
+	{
+		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "Busy: wait for the transfer to end");
+		s_ciaMsgTime  = osGetTime ();
+		s_bottomDirty = true;
+		return;
+	}
 	snprintf (s_inst.path, sizeof (s_inst.path), "%s", s_cias[s_ciaSel].path);
 	s_inst.total    = s_cias[s_ciaSel].size;
 	s_inst.done     = 0;
@@ -1524,6 +1550,13 @@ static void drawBottom (void)
 		s_bottomOn = on;
 		setBacklight (GSPLCD_SCREEN_BOTTOM, on);
 	}
+	static bool lastBusy;
+	bool busy = fsBusy ();
+	if (busy != lastBusy)
+	{
+		lastBusy      = busy;
+		s_bottomDirty = true;
+	}
 	if (!on || (!s_bottomDirty && !s_inst.running && !showMsg))
 		return;
 	s_bottomDirty = false;
@@ -1559,7 +1592,10 @@ static void drawBottom (void)
 	else
 		printf ("\x1b[K\n\x1b[K\n");
 	printf (" %s%.38s\x1b[0m\x1b[K\n", showMsg ? (strncmp (s_ciaMsg, "Installed", 9) == 0 ? "\x1b[32m" : "\x1b[31m") : "", showMsg ? s_ciaMsg : "");
-	printf ("\x1b[30;1H A: install + delete   Up/Down: select\x1b[K");
+	if (busy && !s_inst.running)
+		printf ("\x1b[30;1H\x1b[33m A: install (waits for transfers)\x1b[0m\x1b[K");
+	else
+		printf ("\x1b[30;1H A: install + delete   Up/Down: select\x1b[K");
 	consoleSelect (&s_topConsole);
 }
 
@@ -1570,14 +1606,17 @@ static void draw (void)
 	if (now - s_lastTime < 500)
 		return;
 
-	int clients = 0;
+	int clients = 0; // distinct PCs: the client opens a browse and a transfer connection
 	u64 bytes   = 0;
 	Session *active = NULL;
 	for (int i = 0; i < MAX_SESSIONS; ++i)
 	{
 		if (s_sess[i].ctrl < 0)
 			continue;
-		++clients;
+		bool seen = false;
+		for (int j = 0; j < i; ++j)
+			seen |= s_sess[j].ctrl >= 0 && s_sess[j].peer == s_sess[i].peer;
+		clients += !seen;
 		bytes += s_sess[i].x.done;
 		if (s_sess[i].name[0] && (s_sess[i].mode == X_STOR || s_sess[i].mode == X_RETR))
 			active = &s_sess[i];
@@ -1590,37 +1629,39 @@ static void draw (void)
 	s_lastTime  = now;
 
 	if (s_netUp && s_listen >= 0)
-		snprintf (s_status, sizeof (s_status), clients ? "%d client(s) connected" : "Ready", clients);
+		snprintf (s_status, sizeof (s_status), clients ? "%d PC(s) connected" : "Ready", clients);
 
+	// every line on a fixed row, cleared to the end and kept under the 50
+	// column width (a wrapped line used to leave old text behind)
 	u8 const *a = (u8 const *)&s_ip;
-	printf ("\x1b[1;1H\x1b[31m Syna 3DS Tools\x1b[0m v" VERSION "\x1b[K\n");
-	printf (" ------------------------------------------------\x1b[K\n\x1b[K\n");
+	printf ("\x1b[1;1H\x1b[31m Syna 3DS Tools\x1b[0m v" VERSION "\x1b[K");
+	printf ("\x1b[2;1H ------------------------------------------------\x1b[K");
 	if (s_ip)
-		printf (" IP   : \x1b[33m%u.%u.%u.%u\x1b[0m\x1b[K\n", a[0], a[1], a[2], a[3]);
+		printf ("\x1b[4;1H IP   : \x1b[33m%u.%u.%u.%u\x1b[0m\x1b[K", a[0], a[1], a[2], a[3]);
 	else
-		printf (" IP   : -\x1b[K\n");
-	printf (" Port : \x1b[33m%u\x1b[0m\x1b[K\n\x1b[K\n", CTRL_PORT);
-	printf (" Status: %s\x1b[K\n\x1b[K\n", s_status);
+		printf ("\x1b[4;1H IP   : -\x1b[K");
+	printf ("\x1b[5;1H Port : \x1b[33m%u\x1b[0m\x1b[K", CTRL_PORT);
+	printf ("\x1b[7;1H Status: %.40s\x1b[K", s_status);
 
 	if (active)
 	{
 		char done[32], total[32], speed[32];
 		formatSize (done, sizeof (done), active->x.done);
 		formatSize (speed, sizeof (speed), s_rate);
-		printf (" %s %.40s\x1b[K\n", active->mode == X_STOR ? "Receiving" : "Sending", active->name);
+		printf ("\x1b[9;1H %s %.36s\x1b[K", active->mode == X_STOR ? "Receiving" : "Sending  ", active->name);
 		if (active->mode == X_RETR)
 		{
 			formatSize (total, sizeof (total), active->x.size);
-			printf ("   %s / %s   %s/s\x1b[K\n", done, total, speed);
+			printf ("\x1b[10;1H   %s / %s   %s/s\x1b[K", done, total, speed);
 		}
 		else
-			printf ("   %s   %s/s\x1b[K\n", done, speed);
+			printf ("\x1b[10;1H   %s   %s/s\x1b[K", done, speed);
 	}
 	else
-		printf ("\x1b[K\n\x1b[K\n");
+		printf ("\x1b[9;1H\x1b[K\x1b[10;1H\x1b[K");
 
-	printf ("\x1b[26;1H START: exit   SELECT: top screen on/off\x1b[K\n");
-	printf (" Close the lid to sleep (Wi-Fi turns off)\x1b[K");
+	printf ("\x1b[26;1H START: exit   SELECT: top screen on/off\x1b[K");
+	printf ("\x1b[27;1H Close the lid to sleep (Wi-Fi turns off)\x1b[K");
 }
 
 // ---------------------------------------------------------------------------

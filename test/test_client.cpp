@@ -294,6 +294,56 @@ int main (int argc, char **argv)
 	navigate (L"/");
 	check (waitFor ([] { return !s_lists.empty (); }, 5000) && s_lists.back ().entries.empty (), "root listing empty after delete");
 
+	printf ("tracked deletion of many files, surviving a forced reconnect\n");
+	{
+		for (int d = 0; d < 8; ++d)
+		{
+			wstring dir = s_root + L"\\many\\d" + std::to_wstring (d) + L"\\sub";
+			SHCreateDirectoryExW (nullptr, dir.c_str (), nullptr);
+			for (int f = 0; f < 60; ++f)
+				writeRandom (dir + L"\\f" + std::to_wstring (f) + L".bin", 100, f);
+		}
+		g_cancel       = false;
+		auto job       = std::make_shared<Job> ();
+		job->type      = Job::Delete;
+		job->path      = L"/";
+		job->remotes   = {Entry{L"many", true, 0}};
+		job->doneEvent = CreateEventW (nullptr, TRUE, FALSE, nullptr);
+		g_xfer.push (job);
+		bool sawProgress = false;
+		waitFor ([&] {
+			std::lock_guard lk (g_prog.lock);
+			sawProgress |= g_prog.del && g_prog.fileCount == 8 * 60 + 8 * 2 + 1;
+			return g_prog.del && g_prog.done > 120;
+		}, 20000);
+		g_xfer.reconnect ();
+		check (sawProgress, "deletion reports progress per item (497 items)");
+		check (waitFor ([&] { return finished (job); }, 60000) && job->ok, "deletion finished without errors after a reconnect");
+		check (GetFileAttributesW ((s_root + L"\\many").c_str ()) == INVALID_FILE_ATTRIBUTES, "every file and folder deleted");
+	}
+
+	printf ("opening folders while the 3DS does not answer (no ghost paths)\n");
+	{
+		INITCOMMONCONTROLSEX icc{sizeof (icc), ICC_LISTVIEW_CLASSES};
+		InitCommonControlsEx (&icc);
+		HWND host = CreateWindowW (L"STATIC", L"", WS_POPUP, 0, 0, 300, 300, nullptr, nullptr, nullptr, nullptr);
+		g_list    = CreateWindowW (WC_LISTVIEWW, L"", WS_CHILD | LVS_REPORT, 0, 0, 300, 300, host, nullptr, nullptr, nullptr);
+		LVCOLUMNW col{LVCF_TEXT | LVCF_WIDTH, 0, 200, (LPWSTR)L"Name"};
+		ListView_InsertColumn (g_list, 0, &col);
+		ListView_InsertColumn (g_list, 1, &col);
+		navigate (L"/");
+		ListResult root{L"/", {Entry{L"luma", true, 0}}, true};
+		showList (&root);
+		check (ListView_GetItemCount (g_list) == 1, "root listing shown");
+		openRow (0); // -> /luma; its listing has not arrived yet
+		check (ListView_GetItemCount (g_list) == 0, "old listing cleared when opening a folder");
+		openRow (0); // clicking again where "luma" was
+		openRow (0);
+		check (currentDir () == L"/luma", "path stays /luma, not /luma/luma/luma");
+		DestroyWindow (host);
+		g_list = nullptr;
+	}
+
 	g_cancel = true;
 	g_browse.stop ();
 	g_xfer.stop ();

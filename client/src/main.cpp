@@ -184,6 +184,7 @@ static struct
 	std::mutex lock;
 	bool active = false;
 	bool up     = true;
+	bool del    = false; // deletion: done/total count items, not bytes
 	wstring name;
 	uint64_t done = 0, total = 0; // whole job
 	int fileIndex = 0, fileCount = 0;
@@ -907,8 +908,7 @@ private:
 			m_ftp.simple ("RNTO " + utf8 (job.path2), 250);
 			break;
 		case Job::Delete:
-			for (auto const &e : job.remotes)
-				m_ftp.simple ((e.dir ? "RMD " : "DELE ") + utf8 (joinRemote (job.path, e.name)), 250);
+			deleteItems (job);
 			break;
 		case Job::Upload:
 		case Job::Download:
@@ -958,6 +958,60 @@ private:
 			job.items.push_back ({local, remote, false, e.size});
 			job.total += e.size;
 		}
+	}
+
+	// folder contents first, the folder itself last
+	void expandDelete (Job &job, wstring const &remote, bool dir)
+	{
+		if (dir)
+			for (auto const &child : m_ftp.list (remote))
+				expandDelete (job, joinRemote (remote, child.name), child.dir);
+		job.items.push_back ({L"", remote, dir, 0});
+	}
+
+	// file by file, so no single command runs long on the 3DS; resumable like transfers
+	void deleteItems (Job &job)
+	{
+		if (!job.expanded)
+		{
+			for (auto const &e : job.remotes)
+				expandDelete (job, joinRemote (job.path, e.name), e.dir);
+			job.expanded = true;
+		}
+		string firstError;
+		bool resuming = job.partial; // the last attempt was cut off mid-item
+		for (; job.next < job.items.size (); ++job.next)
+		{
+			if (g_cancel)
+				throw CancelError ();
+			auto const &it = job.items[job.next];
+			{
+				std::lock_guard lk (g_prog.lock);
+				g_prog.active    = true;
+				g_prog.del       = true;
+				g_prog.name      = it.remote.substr (it.remote.find_last_of (L'/') + 1);
+				g_prog.fileIndex = (int)job.next + 1;
+				g_prog.fileCount = (int)job.items.size ();
+				g_prog.done      = job.next;
+				g_prog.total     = job.items.size ();
+			}
+			job.partial = true;
+			string text;
+			int code = m_ftp.cmd ((it.dir ? "RMD " : "DELE ") + utf8 (it.remote), &text);
+			// after a reconnect the interrupted item may already be gone: that is fine
+			if (code / 100 != 2 && !resuming)
+			{
+				++job.errors;
+				if (firstError.empty ())
+					firstError = utf8 (it.remote) + ": " + text.substr (0, text.find_last_not_of ("\r\n") + 1);
+			}
+			job.partial = false;
+			resuming    = false;
+		}
+		if (job.errors)
+			postMessageText (L"Deleted with " + std::to_wstring (job.errors) + L" error(s), first: " + wide (firstError));
+		else
+			postMessageText (L"Deleted " + std::to_wstring (job.items.size ()) + L" item(s)");
 	}
 
 	void transfer (Job &job)
@@ -1061,6 +1115,7 @@ private:
 				std::lock_guard lk (g_prog.lock);
 				g_prog.active    = true;
 				g_prog.up        = up;
+				g_prog.del       = false;
 				g_prog.name      = it.remote.substr (it.remote.find_last_of (L'/') + 1);
 				g_prog.fileIndex = index;
 				g_prog.fileCount = fileCount;
@@ -1552,6 +1607,8 @@ static int iconFor (wstring const &name, bool dir)
 	return cache[ext] = fi.iIcon;
 }
 
+static wstring g_shown; // folder whose listing the list view shows (UI thread)
+
 static void navigate (wstring const &path)
 {
 	{
@@ -1559,6 +1616,14 @@ static void navigate (wstring const &path)
 		g_cwd = path;
 	}
 	SetWindowTextW (g_path, path.c_str ());
+	if (path != g_shown)
+	{
+		// never leave the previous folder clickable under the new path: while the
+		// 3DS is unreachable that turned /luma into /luma/luma/luma...
+		ListView_DeleteAllItems (g_list);
+		g_entries.clear ();
+		g_shown.clear ();
+	}
 	auto job  = std::make_shared<Job> ();
 	job->type = Job::List;
 	job->path = path;
@@ -1605,6 +1670,7 @@ static void showList (ListResult *r)
 	}
 
 	g_entries = std::move (r->entries);
+	g_shown   = cwd;
 	SendMessageW (g_list, WM_SETREDRAW, FALSE, 0);
 	ListView_DeleteAllItems (g_list);
 	int row = 0;
@@ -1682,11 +1748,17 @@ static void deleteSelected ()
 	                             : L"Delete " + std::to_wstring (sel.size ()) + L" items?";
 	if (MessageBoxW (g_wnd, q.c_str (), L"Syna 3DS Tools", MB_YESNO | MB_ICONWARNING) != IDYES)
 		return;
+	// on the transfer connection: tracked with the progress bar, cancellable, resumable
+	g_cancel     = false;
 	auto job     = std::make_shared<Job> ();
 	job->type    = Job::Delete;
 	job->path    = currentDir ();
 	job->remotes = sel;
-	g_browse.push (job);
+	{
+		std::lock_guard lk (g_prog.lock);
+		g_prog.active = true;
+	}
+	g_xfer.push (job);
 }
 
 static void newFolder ()
@@ -2438,9 +2510,10 @@ static void updateProgress ()
 	wstring name;
 	uint64_t done, total;
 	int index, count;
-	bool up;
+	bool up, del;
 	{
 		std::lock_guard lk (g_prog.lock);
+		del    = g_prog.del;
 		active = g_prog.active;
 		name   = g_prog.name;
 		done   = g_prog.done;
@@ -2475,6 +2548,8 @@ static void updateProgress ()
 	wstring text;
 	if (g_browse.state != Worker::Connected && g_xfer.state != Worker::Connected)
 		text = L"Paused, waiting for 3DS...";
+	else if (count && del)
+		text = L"Deleting " + std::to_wstring (index) + L"/" + std::to_wstring (count) + L": " + name;
 	else if (count)
 	{
 		text = wstring (up ? L"Uploading " : L"Downloading ") + std::to_wstring (index) + L"/" + std::to_wstring (count) +
