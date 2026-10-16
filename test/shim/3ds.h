@@ -1,6 +1,6 @@
 // PC test shim for the subset of libctru used by server/source/main.c.
-// The SD card is a folder (env SYNAFTP_ROOT); creating the file named by
-// env SYNAFTP_SLEEPFLAG simulates closing the lid until it is deleted.
+// The SD card is a folder (env CEMENT_ROOT); creating the file named by
+// env CEMENT_SLEEPFLAG simulates closing the lid until it is deleted.
 #pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -62,7 +62,7 @@ static ShimHandle s_h[256];
 static wchar_t const *shimRoot (void)
 {
 	static wchar_t root[MAX_PATH];
-	if (!root[0] && !GetEnvironmentVariableW (L"SYNAFTP_ROOT", root, MAX_PATH))
+	if (!root[0] && !GetEnvironmentVariableW (L"CEMENT_ROOT", root, MAX_PATH))
 		wcscpy (root, L".");
 	return root;
 }
@@ -337,7 +337,7 @@ static inline void aptUnhook (aptHookCookie *c) { (void)c; s_cookie = NULL; }
 static inline bool aptMainLoop (void)
 {
 	static wchar_t flag[MAX_PATH];
-	if (!flag[0] && !GetEnvironmentVariableW (L"SYNAFTP_SLEEPFLAG", flag, MAX_PATH))
+	if (!flag[0] && !GetEnvironmentVariableW (L"CEMENT_SLEEPFLAG", flag, MAX_PATH))
 		wcscpy (flag, L"sleep.flag");
 	if (s_cookie && GetFileAttributesW (flag) != INVALID_FILE_ATTRIBUTES)
 	{
@@ -357,12 +357,12 @@ static inline bool aptMainLoop (void)
 #define KEY_DOWN BIT (7)
 static u32 s_keys;
 // keys are injected by writing "A", "UP" or "DOWN" into the file named by
-// env SYNAFTP_KEYS; the file is consumed on the next frame
+// env CEMENT_KEYS; the file is consumed on the next frame
 static inline void hidScanInput (void)
 {
 	static wchar_t file[MAX_PATH];
 	s_keys = 0;
-	if (!file[0] && !GetEnvironmentVariableW (L"SYNAFTP_KEYS", file, MAX_PATH))
+	if (!file[0] && !GetEnvironmentVariableW (L"CEMENT_KEYS", file, MAX_PATH))
 		wcscpy (file, L"keys.txt");
 	FILE *f = _wfopen (file, L"r");
 	if (!f)
@@ -383,7 +383,7 @@ typedef struct { int dummy; } PrintConsole;
 static inline void *consoleInit (int s, void *c) { (void)s, (void)c; return NULL; }
 static inline void consoleSelect (PrintConsole *c) { (void)c; }
 
-// ---- am: a CIA "install" is written to the file named by env SYNAFTP_AMOUT
+// ---- am: a CIA "install" is written to the file named by env CEMENT_AMOUT
 typedef enum { MEDIATYPE_NAND = 0, MEDIATYPE_SD = 1, MEDIATYPE_GAME_CARD = 2 } FS_MediaType;
 typedef int NS_APPID;
 static inline Result amInit (void) { return 0; }
@@ -399,7 +399,7 @@ static inline Result AM_DeleteTicket (u64 id) { (void)id; return 0; }
 static inline Result AM_StartCiaInstall (FS_MediaType m, Handle *h)
 {
 	wchar_t out[MAX_PATH];
-	if (!GetEnvironmentVariableW (L"SYNAFTP_AMOUT", out, MAX_PATH))
+	if (!GetEnvironmentVariableW (L"CEMENT_AMOUT", out, MAX_PATH))
 		wcscpy (out, L"am-installed.bin");
 	HANDLE f = CreateFileW (out, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
 	if (f == INVALID_HANDLE_VALUE)
@@ -430,7 +430,7 @@ static inline int envGetAptAppId (void) { return 0x300; }
 static inline Result APT_GetAppletInfo (NS_APPID id, u64 *tid, u8 *mt, bool *a, bool *b, void *c)
 {
 	(void)id, (void)a, (void)b, (void)c;
-	*tid = 0x000400000F7A5100ull; // synaftp itself
+	*tid = 0x000400000F7A5100ull; // Cement itself
 	*mt  = MEDIATYPE_SD;
 	return 0;
 }

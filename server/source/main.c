@@ -1,4 +1,4 @@
-// Syna 3DS Tools - minimal, fast FTP server for the 3DS (SD card only)
+// Cement - minimal, fast FTP server for the 3DS (SD card only)
 //
 // Design:
 // - one non-blocking poll() loop on the main thread handles every socket
@@ -1223,7 +1223,7 @@ static void acceptClient (void)
 		s->rnfr[0] = 0;
 		s->lastCmd = osGetTime ();
 		strcpy (s->cwd, "/");
-		reply (s, "220 Syna 3DS Tools ready\r\n");
+		reply (s, "220 Cement ready\r\n");
 		return;
 	}
 	char const msg[] = "421 Too many connections\r\n";
@@ -1581,7 +1581,7 @@ static void pollInstall (void)
 }
 
 // ---------------------------------------------------------------------------
-// SITE STATUS: what the other connections are doing, for agents and scripts
+// SITE STATUS: what the other connections are doing, for scripts and tools
 
 typedef struct
 {
@@ -1802,7 +1802,7 @@ static void draw (void)
 	// every line on a fixed row, cleared to the end and kept under the 50
 	// column width (a wrapped line used to leave old text behind)
 	u8 const *a = (u8 const *)&s_ip;
-	printf ("\x1b[1;1H\x1b[31m Syna 3DS Tools\x1b[0m v" VERSION "\x1b[K");
+	printf ("\x1b[1;1H\x1b[31m Cement\x1b[0m v" VERSION "\x1b[K");
 	printf ("\x1b[2;1H ------------------------------------------------\x1b[K");
 	if (s_ip)
 		printf ("\x1b[4;1H IP   : \x1b[33m%u.%u.%u.%u\x1b[0m\x1b[K", a[0], a[1], a[2], a[3]);

@@ -2,12 +2,12 @@
 #include <commctrl.h>
 #include "resource.h"
 
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "Syna3DSTools.manifest"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "Cement.manifest"
 IDI_APP ICON "icon.ico"
 
 IDD_SETTINGS DIALOGEX 0, 0, 300, 278
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Syna 3DS Tools - Settings"
+CAPTION "Cement - Settings"
 FONT 9, "Segoe UI", 0, 0, 1
 BEGIN
     LTEXT           "Enter the IP address and port shown on the 3DS top screen.", -1, 8, 8, 284, 10

@@ -1,4 +1,4 @@
-"""Protocol tests for the synaftp server, run against the PC shim build.
+"""Protocol tests for the Cement server, run against the PC shim build.
 
 usage: python test_server.py <server_pc.exe>
 """
@@ -68,15 +68,15 @@ def mlsd(f, path):
 
 def main():
     exe = os.path.abspath(sys.argv[1])
-    root = tempfile.mkdtemp(prefix="synaftp-sd-")
+    root = tempfile.mkdtemp(prefix="cement-sd-")
     flag = os.path.join(root, "..", os.path.basename(root) + ".sleep")
     flag = os.path.abspath(flag)
     outside = os.path.join(os.path.dirname(root), os.path.basename(root) + "-outside.txt")
     with open(outside, "w") as fh:
         fh.write("secret")
-    os.environ["SYNAFTP_AMOUT"] = os.path.abspath(root + "-am.bin")
-    os.environ["SYNAFTP_KEYS"] = os.path.abspath(root + "-keys.txt")
-    env = dict(os.environ, SYNAFTP_ROOT=root, SYNAFTP_SLEEPFLAG=flag)
+    os.environ["CEMENT_AMOUT"] = os.path.abspath(root + "-am.bin")
+    os.environ["CEMENT_KEYS"] = os.path.abspath(root + "-keys.txt")
+    env = dict(os.environ, CEMENT_ROOT=root, CEMENT_SLEEPFLAG=flag)
     srv = subprocess.Popen([exe], env=env, stderr=subprocess.PIPE, text=True)
     try:
         run(root, flag)
@@ -87,8 +87,8 @@ def main():
         check(log.count("AM_StartCiaInstall media=1") == 1, "exactly one install started, to SD")
         check("AM_DeleteTitle media=1 id=0004000000123400" in log, "old copy of the title removed first (as FBI)")
         check("sleep allowed=0" in log and "sleep allowed=1" in log, "sleep blocked during install, then allowed")
-        if os.path.exists(os.environ["SYNAFTP_AMOUT"]):
-            os.remove(os.environ["SYNAFTP_AMOUT"])
+        if os.path.exists(os.environ["CEMENT_AMOUT"]):
+            os.remove(os.environ["CEMENT_AMOUT"])
         shutil.rmtree(root, ignore_errors=True)
         os.remove(outside)
         if os.path.exists(flag):
@@ -207,8 +207,8 @@ def run(root, flag):
     check(f.sendcmd("NOOP").startswith("200"), "session usable after aborted RETR")
 
     print("CIA install from the bottom screen")
-    am_out = os.environ["SYNAFTP_AMOUT"]
-    keys = os.environ["SYNAFTP_KEYS"]
+    am_out = os.environ["CEMENT_AMOUT"]
+    keys = os.environ["CEMENT_KEYS"]
 
     def press(key):
         with open(keys, "w") as fh:

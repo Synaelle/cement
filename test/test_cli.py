@@ -1,6 +1,6 @@
-"""Tests for syna3ds.exe (the agent/script CLI) against the PC build of the server.
+"""Tests for cement-cli.exe (the command-line tool) against the PC build of the server.
 
-usage: python test_cli.py <server_pc.exe> <syna3ds.exe>
+usage: python test_cli.py <server_pc.exe> <cement-cli.exe>
 """
 import ftplib
 import hashlib
@@ -42,13 +42,13 @@ def sha(path):
 def main():
     global CLI
     server, CLI = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
-    work = tempfile.mkdtemp(prefix="syna3ds-cli-")
+    work = tempfile.mkdtemp(prefix="cement-cli-test-")
     sd, local, back = (os.path.join(work, d) for d in ("sd", "local", "back"))
     for d in (sd, local, back):
         os.makedirs(d)
     flag = os.path.join(work, "sleep.flag")
-    env = dict(os.environ, SYNAFTP_ROOT=sd, SYNAFTP_SLEEPFLAG=flag, SYNAFTP_KEYS=os.path.join(work, "keys"),
-               SYNAFTP_AMOUT=os.path.join(work, "am.bin"))
+    env = dict(os.environ, CEMENT_ROOT=sd, CEMENT_SLEEPFLAG=flag, CEMENT_KEYS=os.path.join(work, "keys"),
+               CEMENT_AMOUT=os.path.join(work, "am.bin"))
     srv = subprocess.Popen([server], env=env, stderr=subprocess.DEVNULL)
     try:
         time.sleep(0.5)

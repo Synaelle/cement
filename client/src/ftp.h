@@ -1,5 +1,5 @@
-// Syna 3DS Tools - FTP engine shared by the GUI client (main.cpp) and the
-// command-line tool for agents and scripts (cli.cpp)
+// Cement - FTP engine shared by the GUI client (main.cpp) and the
+// command-line tool for scripts and automation (cli.cpp)
 #pragma once
 
 #include <winsock2.h>
@@ -127,7 +127,7 @@ public:
 				throw NetError ();
 			int code = cmd ("USER anonymous");
 			if (code == 331)
-				code = cmd ("PASS syna3dstools");
+				code = cmd ("PASS cement");
 			if (code != 230)
 				throw NetError ();
 			cmd ("TYPE I");
@@ -271,7 +271,7 @@ public:
 			throw FtpError{text};
 	}
 
-	// version of the Syna 3DS Tools app on the 3DS ("" if it does not say:
+	// version of the Cement app on the 3DS ("" if it does not say:
 	// a build older than 1.2, or another FTP server)
 	string serverVersion ()
 	{

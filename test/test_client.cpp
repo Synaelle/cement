@@ -1,6 +1,6 @@
 // Headless test of the client's FTP engine and workers against the PC build
 // of the server. usage: test_client.exe <server_pc.exe>
-#define wWinMain synaftp_wWinMain
+#define wWinMain cement_wWinMain
 #include "../client/src/main.cpp"
 #undef wWinMain
 
@@ -56,8 +56,8 @@ static bool waitFor (F cond, int ms)
 
 static void startServer ()
 {
-	SetEnvironmentVariableW (L"SYNAFTP_ROOT", s_root.c_str ());
-	SetEnvironmentVariableW (L"SYNAFTP_SLEEPFLAG", s_flag.c_str ());
+	SetEnvironmentVariableW (L"CEMENT_ROOT", s_root.c_str ());
+	SetEnvironmentVariableW (L"CEMENT_SLEEPFLAG", s_flag.c_str ());
 	STARTUPINFOW si{sizeof (si)};
 	wstring cmd = L"\"" + s_exe + L"\"";
 	CreateProcessW (nullptr, cmd.data (), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &s_srv);
@@ -113,7 +113,7 @@ int main (int argc, char **argv)
 	s_exe = wide (argv[1]);
 	wchar_t tmp[MAX_PATH];
 	GetTempPathW (MAX_PATH, tmp);
-	wstring base = wstring (tmp) + L"synaftp-client-test-" + std::to_wstring (GetTickCount64 ());
+	wstring base = wstring (tmp) + L"cement-client-test-" + std::to_wstring (GetTickCount64 ());
 	s_root       = base + L"-sd";
 	s_flag       = base + L".sleep";
 	wstring local = base + L"-local", back = base + L"-back";
@@ -125,9 +125,9 @@ int main (int argc, char **argv)
 	WSAStartup (MAKEWORD (2, 2), &wsa);
 	WNDCLASSW wc{};
 	wc.lpfnWndProc   = testProc;
-	wc.lpszClassName = L"synaftp-test";
+	wc.lpszClassName = L"cement-test";
 	RegisterClassW (&wc);
-	g_wnd  = CreateWindowW (L"synaftp-test", L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, nullptr, nullptr);
+	g_wnd  = CreateWindowW (L"cement-test", L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, nullptr, nullptr);
 	g_host = "127.0.0.1";
 	g_port = 5000;
 

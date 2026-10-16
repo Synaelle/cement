@@ -1,7 +1,20 @@
+# build output
 server/build/
 server/*.elf
 server/*.cia
 client/*.exe
 client/*.o
 test/*.exe
+
+# AI agent files
 AGENT_GUIDE.md
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.github/copilot-instructions.md

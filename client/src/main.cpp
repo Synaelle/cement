@@ -1,4 +1,4 @@
-// Syna 3DS Tools client - minimal Windows FTP explorer for the Syna 3DS Tools server
+// Cement client - minimal Windows FTP explorer for the Cement server
 //
 // - two FTP connections: one for browsing, one for transfers, so the
 //   explorer stays responsive during uploads
@@ -118,7 +118,7 @@ static UINT g_dpi = 96;
 
 static std::mutex g_cfgLock;
 static string g_host;
-static string g_serverVersion; // Syna 3DS Tools version on the 3DS ("" = too old to say)
+static string g_serverVersion; // Cement version on the 3DS ("" = too old to say)
 static int g_port = 5000;
 
 static std::mutex g_cwdLock;
@@ -624,7 +624,7 @@ private:
 			fileCount += !job.items[i].dir;
 			filesLeft += !job.items[i].dir && i >= job.next;
 		}
-		// let the 3DS (and agents asking it) know what is left of this job
+		// let the 3DS (and other clients asking it) know what is left of this job
 		m_ftp.announceBatch (filesLeft, job.total - job.done, up ? "up" : "down");
 		Ftp::BatchGuard batch{m_ftp};
 
@@ -749,21 +749,21 @@ void Worker::refreshAfter ()
 
 static wstring configPath ()
 {
-	// SYNA3DS_CONFIG points to another config file (tests, portable use)
+	// CEMENT_CONFIG points to another config file (tests, portable use)
 	wchar_t custom[MAX_PATH];
-	if (GetEnvironmentVariableW (L"SYNA3DS_CONFIG", custom, MAX_PATH))
+	if (GetEnvironmentVariableW (L"CEMENT_CONFIG", custom, MAX_PATH))
 		return custom;
 	PWSTR base = nullptr;
 	wstring path;
 	if (SUCCEEDED (SHGetKnownFolderPath (FOLDERID_RoamingAppData, 0, nullptr, &base)))
 	{
-		path = wstring (base) + L"\\Syna 3DS Tools";
+		path = wstring (base) + L"\\Cement";
 		CreateDirectoryW (path.c_str (), nullptr);
 		path += L"\\config.ini";
-		// settings from before the rename
-		wstring old = wstring (base) + L"\\synaftp\\config.ini";
-		if (GetFileAttributesW (path.c_str ()) == INVALID_FILE_ATTRIBUTES)
-			CopyFileW (old.c_str (), path.c_str (), TRUE);
+		// settings saved under the project's earlier names
+		for (wchar_t const *old : {L"\\Syna 3DS Tools\\config.ini", L"\\synaftp\\config.ini"})
+			if (GetFileAttributesW (path.c_str ()) == INVALID_FILE_ATTRIBUTES)
+				CopyFileW ((wstring (base) + old).c_str (), path.c_str (), TRUE);
 	}
 	CoTaskMemFree (base);
 	return path;
@@ -1086,7 +1086,7 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 			h.erase (h.find_last_not_of (L' ') + 1);
 			if (h.empty () || !ok || port == 0 || port > 65535)
 			{
-				MessageBoxW (dlg, L"Enter the IP address and port shown on the 3DS.", L"Syna 3DS Tools", MB_ICONWARNING);
+				MessageBoxW (dlg, L"Enter the IP address and port shown on the 3DS.", L"Cement", MB_ICONWARNING);
 				return TRUE;
 			}
 			wchar_t dir[MAX_PATH];
@@ -1098,7 +1098,7 @@ static INT_PTR CALLBACK settingsDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM)
 				MessageBoxW (dlg,
 				    L"\"Replace PC folder contents\" can't be used with a drive or with your Desktop, Documents, "
 				    L"Downloads, user, Windows or Program Files folder. Choose a dedicated folder.",
-				    L"Syna 3DS Tools",
+				    L"Cement",
 				    MB_ICONWARNING);
 				return TRUE;
 			}
@@ -1304,7 +1304,7 @@ static void deleteSelected ()
 		return;
 	wstring q = sel.size () == 1 ? L"Delete \"" + sel[0].name + L"\"" + (sel[0].dir ? L" and everything in it" : L"") + L"?"
 	                             : L"Delete " + std::to_wstring (sel.size ()) + L" items?";
-	if (MessageBoxW (g_wnd, q.c_str (), L"Syna 3DS Tools", MB_YESNO | MB_ICONWARNING) != IDYES)
+	if (MessageBoxW (g_wnd, q.c_str (), L"Cement", MB_YESNO | MB_ICONWARNING) != IDYES)
 		return;
 	// on the transfer connection: tracked with the progress bar, cancellable, resumable
 	g_cancel     = false;
@@ -1620,7 +1620,7 @@ static wstring tempRoot ()
 {
 	wchar_t tmp[MAX_PATH];
 	GetTempPathW (MAX_PATH, tmp);
-	return wstring (tmp) + L"Syna3DSTools";
+	return wstring (tmp) + L"Cement";
 }
 
 static void deleteTree (wstring const &path)
@@ -2444,12 +2444,12 @@ int WINAPI wWinMain (HINSTANCE inst, HINSTANCE, PWSTR, int show)
 	wc.hInstance     = inst;
 	wc.hCursor       = LoadCursor (nullptr, IDC_ARROW);
 	wc.hbrBackground = nullptr; // painted in WM_PAINT
-	wc.lpszClassName = L"Syna3DSTools";
+	wc.lpszClassName = L"Cement";
 	wc.hIcon         = LoadIconW (inst, MAKEINTRESOURCEW (IDI_APP));
 	RegisterClassExW (&wc);
 
-	wstring title = L"Syna 3DS Tools v" + wide (APP_VERSION);
-	HWND wnd      = CreateWindowExW (0, L"Syna3DSTools", title.c_str (), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr, nullptr, inst, nullptr);
+	wstring title = L"Cement v" + wide (APP_VERSION);
+	HWND wnd      = CreateWindowExW (0, L"Cement", title.c_str (), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr, nullptr, inst, nullptr);
 	RECT r{0, 0, S (760), S (520)};
 	AdjustWindowRectExForDpi (&r, WS_OVERLAPPEDWINDOW, FALSE, 0, g_dpi);
 	SetWindowPos (wnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);

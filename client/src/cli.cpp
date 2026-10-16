@@ -1,5 +1,5 @@
-// syna3ds - command-line access to the Syna 3DS Tools server, for agents and
-// scripts. Uses the same FTP engine (ftp.h) and saved settings as the GUI.
+// cement-cli - command-line access to the Cement server, for scripts and
+// automation. Uses the same FTP engine (ftp.h) and saved settings as the GUI.
 //
 // Non-interactive: results on stdout (text or --json), progress on stderr.
 // Exit codes: 0 ok, 1 usage, 2 3DS unreachable, 3 operation failed, 4 still busy.
@@ -87,16 +87,18 @@ static bool loadAddress (string &host, int &port)
 {
 	wchar_t path[MAX_PATH];
 	wstring file;
-	if (GetEnvironmentVariableW (L"SYNA3DS_CONFIG", path, MAX_PATH))
+	if (GetEnvironmentVariableW (L"CEMENT_CONFIG", path, MAX_PATH))
 		file = path;
 	else
 	{
 		PWSTR base = nullptr;
 		if (SUCCEEDED (SHGetKnownFolderPath (FOLDERID_RoamingAppData, 0, nullptr, &base)))
 		{
-			file = wstring (base) + L"\\Syna 3DS Tools\\config.ini";
-			if (GetFileAttributesW (file.c_str ()) == INVALID_FILE_ATTRIBUTES)
-				file = wstring (base) + L"\\synaftp\\config.ini"; // before the rename
+			file = wstring (base) + L"\\Cement\\config.ini";
+			// settings saved under the project's earlier names
+			for (wchar_t const *old : {L"\\Syna 3DS Tools\\config.ini", L"\\synaftp\\config.ini"})
+				if (GetFileAttributesW (file.c_str ()) == INVALID_FILE_ATTRIBUTES)
+					file = wstring (base) + old;
 		}
 		CoTaskMemFree (base);
 	}
@@ -918,9 +920,9 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 }
 
 static char const *const USAGE =
-    "syna3ds - talk to the Syna 3DS Tools server on the 3DS (SD card only)\n"
+    "cement-cli - talk to the Cement server on the 3DS (SD card only)\n"
     "\n"
-    "usage: syna3ds [options] <command> [arguments]\n"
+    "usage: cement-cli [options] <command> [arguments]\n"
     "\n"
     "commands:\n"
     "  status                         is the 3DS reachable, busy (transfers, ETA, CIA install) or idle\n"
@@ -985,7 +987,7 @@ int wmain (int argc, wchar_t **argv)
 				opt.noWait = true;
 			else if (a == "--version")
 			{
-				out ("syna3ds " APP_VERSION "\n");
+				out ("cement-cli " APP_VERSION "\n");
 				return EXIT_OK;
 			}
 			else if (a == "-h" || a == "--help" || a == "help")
@@ -1007,7 +1009,7 @@ int wmain (int argc, wchar_t **argv)
 		if (host.empty ())
 		{
 			if (!saved)
-				throw UsageError{"no 3DS address saved yet: open Syna3DSTools.exe once or pass --host"};
+				throw UsageError{"no 3DS address saved yet: open Cement.exe once or pass --host"};
 			host = savedHost;
 		}
 		if (port == 0)
@@ -1029,7 +1031,7 @@ int wmain (int argc, wchar_t **argv)
 		catch (Unreachable &)
 		{
 			return fail (EXIT_UNREACHABLE,
-			    "3DS not reachable at " + link.address () + " (is Syna 3DS Tools open on the 3DS, Wi-Fi on and the lid open?)");
+			    "3DS not reachable at " + link.address () + " (is Cement open on the 3DS, Wi-Fi on and the lid open?)");
 		}
 		catch (Busy &b)
 		{
@@ -1045,7 +1047,7 @@ int wmain (int argc, wchar_t **argv)
 		if (g_json)
 			out ("{\"ok\":false,\"error\":" + jsonStr (e.msg) + "}\n");
 		else
-			fprintf (stderr, "syna3ds: %s\n\n%s", e.msg.c_str (), USAGE);
+			fprintf (stderr, "cement-cli: %s\n\n%s", e.msg.c_str (), USAGE);
 		return EXIT_USAGE;
 	}
 }

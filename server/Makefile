@@ -1,5 +1,5 @@
 #---------------------------------------------------------------------------------
-# Syna 3DS Tools 3DS server. "make" builds Syna3DSTools.cia (and its .elf).
+# Cement 3DS server. "make" builds Cement.cia (and its .elf).
 # Based on devkitPro's 3ds application template.
 #---------------------------------------------------------------------------------
 .SUFFIXES:
@@ -11,7 +11,7 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
-TARGET		:=	Syna3DSTools
+TARGET		:=	Cement
 BUILD		:=	build
 SOURCES		:=	source
 INCLUDES	:=	include
@@ -62,7 +62,7 @@ export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 	@$(BANNERTOOL) makebanner -i meta/banner.png -a meta/audio.wav -o $(BUILD)/banner.bnr
-	@$(BANNERTOOL) makesmdh -s "Syna 3DS Tools" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i meta/icon.png -o $(BUILD)/icon.icn
+	@$(BANNERTOOL) makesmdh -s "Cement" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i meta/icon.png -o $(BUILD)/icon.icn
 	@$(MAKEROM) -f cia -o $(TARGET).cia -target t -exefslogo -rsf meta/$(TARGET).rsf \
 		-elf $(TARGET).elf -icon $(BUILD)/icon.icn -banner $(BUILD)/banner.bnr
 	@echo built ... $(TARGET).cia v$(APP_VERSION)
