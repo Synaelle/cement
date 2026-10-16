@@ -19,6 +19,17 @@
 using std::string;
 using std::wstring;
 
+#ifndef APP_VERSION
+#define APP_VERSION "dev" // set by build.bat: <VERSION file>.<commit count>-<commit>[-dev]
+#endif
+
+// build number of "1.2.47-abc1234[-dev]" (the commit count), -1 if unknown
+static int buildNumber (string const &v)
+{
+	int a = 0, b = 0, c = -1;
+	return sscanf (v.c_str (), "%d.%d.%d", &a, &b, &c) == 3 ? c : -1;
+}
+
 // ---------------------------------------------------------------------------
 // utilities
 
@@ -258,6 +269,20 @@ public:
 		string text;
 		if (cmd (line, &text) / 100 != expect / 100)
 			throw FtpError{text};
+	}
+
+	// version of the Syna 3DS Tools app on the 3DS ("" if it does not say:
+	// a build older than 1.2, or another FTP server)
+	string serverVersion ()
+	{
+		string text;
+		if (cmd ("SITE STATUS", &text) != 211)
+			return {};
+		size_t pos = text.find (" version=");
+		if (pos == string::npos)
+			return {};
+		pos += 9;
+		return text.substr (pos, text.find_first_of (" \r\n", pos) - pos);
 	}
 
 	// tells the 3DS a multi-file job is running (SITE STATUS shows it as busy with an

@@ -118,6 +118,7 @@ static UINT g_dpi = 96;
 
 static std::mutex g_cfgLock;
 static string g_host;
+static string g_serverVersion; // Syna 3DS Tools version on the 3DS ("" = too old to say)
 static int g_port = 5000;
 
 static std::mutex g_cwdLock;
@@ -303,6 +304,20 @@ private:
 				}
 				if (m_ftp.connect (host, port))
 				{
+					if (!m_transfer)
+					{
+						// shown next to "Connected", with a hint when the 3DS app is older
+						string version;
+						try
+						{
+							version = m_ftp.serverVersion ();
+						}
+						catch (NetError &)
+						{
+						}
+						std::lock_guard lk (g_cfgLock);
+						g_serverVersion = version;
+					}
 					setState (Connected);
 					if (!m_transfer)
 					{
@@ -1949,7 +1964,7 @@ static void paint (HDC dc)
 	FillRect (dc, &sr, panel);
 	RECT line{0, sr.top, rc.right, sr.top + 1};
 	FillRect (dc, &line, border);
-	RECT sep{S (260), sr.top + S (4), S (260) + 1, sr.bottom - S (4)};
+	RECT sep{S (470), sr.top + S (4), S (470) + 1, sr.bottom - S (4)};
 	FillRect (dc, &sep, border);
 	DeleteObject (panel);
 	DeleteObject (border);
@@ -1958,10 +1973,10 @@ static void paint (HDC dc)
 	SetBkMode (dc, TRANSPARENT);
 	SetTextColor (dc, t.text);
 	UINT fmt   = DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX;
-	RECT part0 = {S (8), sr.top + 1, S (252), sr.bottom};
+	RECT part0 = {S (8), sr.top + 1, S (462), sr.bottom};
 	DrawTextW (dc, g_statusText[0].c_str (), -1, &part0, fmt);
 	SetTextColor (dc, t.dim);
-	RECT part1 = {S (268), sr.top + 1, rc.right - S (8), sr.bottom};
+	RECT part1 = {S (478), sr.top + 1, rc.right - S (8), sr.bottom};
 	DrawTextW (dc, g_statusText[1].c_str (), -1, &part1, fmt);
 	SelectObject (dc, old);
 }
@@ -2037,8 +2052,26 @@ static void updateConnState ()
 		host = g_host;
 		port = g_port;
 	}
+	string version;
+	{
+		std::lock_guard lk (g_cfgLock);
+		version = g_serverVersion;
+	}
 	wstring addr = wide (host) + L":" + std::to_wstring (port);
-	wstring text = g_browse.state == Worker::Connected ? L"Connected to " + addr : L"Waiting for 3DS at " + addr + L"...";
+	wstring text = L"Waiting for 3DS at " + addr + L"...";
+	if (g_browse.state == Worker::Connected)
+	{
+		text = L"Connected to " + addr;
+		int mine = buildNumber (APP_VERSION), theirs = buildNumber (version);
+		if (version.empty ())
+			text += L"  -  3DS app outdated: install the new CIA";
+		else
+		{
+			text += L"  -  3DS app v" + wide (version);
+			if (mine >= 0 && theirs < mine) // no build number = from before versioned builds
+				text += L" (older than this PC app: install the new CIA)";
+		}
+	}
 	setStatus (0, text.c_str ());
 }
 
@@ -2415,7 +2448,8 @@ int WINAPI wWinMain (HINSTANCE inst, HINSTANCE, PWSTR, int show)
 	wc.hIcon         = LoadIconW (inst, MAKEINTRESOURCEW (IDI_APP));
 	RegisterClassExW (&wc);
 
-	HWND wnd = CreateWindowExW (0, L"Syna3DSTools", L"Syna 3DS Tools", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr, nullptr, inst, nullptr);
+	wstring title = L"Syna 3DS Tools v" + wide (APP_VERSION);
+	HWND wnd      = CreateWindowExW (0, L"Syna3DSTools", title.c_str (), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, nullptr, nullptr, inst, nullptr);
 	RECT r{0, 0, S (760), S (520)};
 	AdjustWindowRectExForDpi (&r, WS_OVERLAPPEDWINDOW, FALSE, 0, g_dpi);
 	SetWindowPos (wnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER);

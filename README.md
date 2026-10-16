@@ -78,6 +78,15 @@ Command line (agents, scripts): `client/syna3ds.exe`
 per file). The server accepts any login (no password), like ftpd: use it on
 your own network.
 
+## Versions
+
+Every build is numbered `<VERSION file>.<commit count>-<commit>` (e.g.
+`1.2.10-ab12cd3`), with `-dev` added when it was built from uncommitted
+changes. Bump `VERSION` by hand for bigger changes. The 3DS app shows its
+version on the top screen and in its HOME menu description; the PC client
+shows the 3DS app's version in the status bar (and says when the 3DS app is
+older than the PC app), and `syna3ds.exe status` / `--version` print both.
+
 ## Building
 
 Server (devkitPro with devkitARM + libctru, plus `makerom` and `bannertool`):

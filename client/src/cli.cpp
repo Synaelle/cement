@@ -389,7 +389,10 @@ static string statusJson (Status const &st, string const &address)
 	if (st.installing)
 		install = "{\"file\":" + jsonStr (st.installFile) + ",\"done\":" + std::to_string (st.installDone) +
 		          ",\"size\":" + std::to_string (st.installSize) + "}";
+	int mine = buildNumber (APP_VERSION), theirs = buildNumber (st.version);
+	bool outdated = st.version.empty () || (mine >= 0 && theirs < mine); // no build number = older scheme
 	return "{\"ok\":true,\"address\":" + jsonStr (address) + ",\"version\":" + jsonStr (st.version) +
+	       ",\"client_version\":" + jsonStr (APP_VERSION) + ",\"app_outdated\":" + (outdated ? "true" : "false") +
 	       ",\"status_supported\":" + (st.known ? "true" : "false") + ",\"busy\":" + (st.busy ? "true" : "false") +
 	       ",\"idle_ms\":" + std::to_string (st.idleMs) + ",\"connections\":" + std::to_string (st.connections) +
 	       ",\"transfers\":[" + transfers + "],\"install\":" + install + "}\n";
@@ -666,7 +669,14 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			out (statusJson (st, link.address ()));
 		else
 		{
-			out ("connected to " + link.address () + (st.version.empty () ? "" : " (Syna 3DS Tools " + st.version + ")") + "\n");
+			out ("connected to " + link.address () + "\n");
+			int mine = buildNumber (APP_VERSION), theirs = buildNumber (st.version);
+			if (st.version.empty ())
+				out ("3DS app: too old to report its version, install the new CIA (this tool: v" APP_VERSION ")\n");
+			else
+				out ("3DS app: v" + st.version +
+				     (mine >= 0 && theirs < mine ? "  (older than this tool v" APP_VERSION ", install the new CIA)" : "") +
+				     "\n");
 			if (!st.known)
 				out ("this server does not report its activity (SITE STATUS)\n");
 			else if (!st.busy)
@@ -931,6 +941,7 @@ static char const *const USAGE =
     "  --no-wait                      start even if another transfer is running\n"
     "  --json                         print one JSON object on stdout\n"
     "  --quiet                        no progress messages on stderr\n"
+    "  --version                      print this tool's version\n"
     "\n"
     "exit codes: 0 ok, 1 usage, 2 3DS unreachable, 3 operation failed, 4 still busy after --busy-wait\n"
     "remote paths are absolute on the SD card, e.g. /3ds/app/app.3dsx\n";
@@ -972,6 +983,11 @@ int wmain (int argc, wchar_t **argv)
 				opt.busyWait = std::max (0, atoi (value ().c_str ()));
 			else if (a == "--no-wait")
 				opt.noWait = true;
+			else if (a == "--version")
+			{
+				out ("syna3ds " APP_VERSION "\n");
+				return EXIT_OK;
+			}
 			else if (a == "-h" || a == "--help" || a == "help")
 			{
 				out (USAGE);

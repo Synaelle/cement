@@ -20,10 +20,22 @@ INCLUDES	:=	include
 MAKEROM		?=	makerom
 BANNERTOOL	?=	bannertool
 
+# version shown on the 3DS and reported to clients:
+# <../VERSION>.<commit count>-<short commit>, plus -dev when there are uncommitted changes
+ifeq ($(strip $(APP_VERSION)),)
+GIT          := $(shell command -v git 2>/dev/null || (test -x "/c/Program Files/Git/cmd/git.exe" && echo "/c/Program Files/Git/cmd/git.exe"))
+BASE_VERSION := $(strip $(shell cat ../VERSION 2>/dev/null))
+COMMITS      := $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null))
+COMMIT       := $(strip $(shell "$(GIT)" rev-parse --short HEAD 2>/dev/null))
+DIRTY        := $(if $(strip $(shell "$(GIT)" status --porcelain 2>/dev/null)),-dev,)
+APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION).$(COMMITS)-$(COMMIT)$(DIRTY),$(BASE_VERSION)-dev)
+export APP_VERSION
+endif
+
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
 CFLAGS	:=	-Wall -O2 -mword-relocations -ffunction-sections $(ARCH)
-CFLAGS	+=	$(INCLUDE) -D__3DS__
+CFLAGS	+=	$(INCLUDE) -D__3DS__ -DAPP_VERSION=\"$(APP_VERSION)\"
 ASFLAGS	:=	$(ARCH)
 LDFLAGS	=	-specs=3dsx.specs $(ARCH) -Wl,-Map,$(notdir $*.map)
 
@@ -50,10 +62,10 @@ export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 all: $(BUILD)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 	@$(BANNERTOOL) makebanner -i meta/banner.png -a meta/audio.wav -o $(BUILD)/banner.bnr
-	@$(BANNERTOOL) makesmdh -s "Syna 3DS Tools" -l "Fast FTP + CIA installer" -p "Synaelle" -i meta/icon.png -o $(BUILD)/icon.icn
+	@$(BANNERTOOL) makesmdh -s "Syna 3DS Tools" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i meta/icon.png -o $(BUILD)/icon.icn
 	@$(MAKEROM) -f cia -o $(TARGET).cia -target t -exefslogo -rsf meta/$(TARGET).rsf \
 		-elf $(TARGET).elf -icon $(BUILD)/icon.icn -banner $(BUILD)/banner.bnr
-	@echo built ... $(TARGET).cia
+	@echo built ... $(TARGET).cia v$(APP_VERSION)
 
 $(BUILD):
 	@mkdir -p $@

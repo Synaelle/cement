@@ -25,7 +25,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define VERSION        "1.1"
+#ifndef APP_VERSION
+#define APP_VERSION    "dev" // set by the Makefile: <VERSION file>.<commit count>-<commit>[-dev]
+#endif
+#define VERSION        APP_VERSION
 #define CTRL_PORT      5000
 #define MAX_SESSIONS   4
 #define SOC_ALIGN      0x1000
