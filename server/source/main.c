@@ -1366,7 +1366,7 @@ static void serve (void)
 
 // ---------------------------------------------------------------------------
 // CIA install, following FBI (source/fbi/action/installcias.c)
-// FBI: Copyright (C) 2015-2019 Steveice10, MIT license (see LICENSE)
+// FBI: Copyright (C) 2015-2019 Steveice10, MIT license (see NOTICE)
 
 #define INSTALL_CHUNK (256 * 1024)
 
