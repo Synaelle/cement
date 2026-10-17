@@ -106,7 +106,7 @@ struct ListResult
 
 static HINSTANCE g_inst;
 static HWND g_wnd, g_list, g_path, g_progress;
-static HWND g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel;
+static HWND g_btnUp, g_btnRefresh, g_btnMkdir, g_btnRename, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel;
 static wstring g_sendDir;                // "Send to PC" destination folder (settings)
 static std::vector<wstring> g_sendItems; // "Send to PC" 3DS paths (settings)
 static bool g_sendReplace;                // "Send to PC" empties the PC folder first
@@ -456,6 +456,8 @@ private:
 		case Job::Rename:
 			m_ftp.simple ("RNFR " + utf8 (job.path), 350);
 			m_ftp.simple ("RNTO " + utf8 (job.path2), 250);
+			postMessageText (L"Renamed " + job.path.substr (job.path.find_last_of (L'/') + 1) + L" to " +
+			                 job.path2.substr (job.path2.find_last_of (L'/') + 1));
 			break;
 		case Job::Delete:
 			deleteItems (job);
@@ -1165,7 +1167,8 @@ static int iconFor (wstring const &name, bool dir)
 	return cache[ext] = fi.iIcon;
 }
 
-static wstring g_shown; // folder whose listing the list view shows (UI thread)
+static wstring g_shown;      // folder whose listing the list view shows (UI thread)
+static wstring g_selectNext; // item to select in the next listing (a renamed file)
 
 static void navigate (wstring const &path)
 {
@@ -1225,6 +1228,11 @@ static void showList (ListResult *r)
 		ListView_GetItem (g_list, &it);
 		if (it.lParam >= 0 && it.lParam < (LPARAM)g_entries.size ())
 			selected.push_back (g_entries[it.lParam].name);
+	}
+	if (!g_selectNext.empty ())
+	{
+		selected = {g_selectNext};
+		g_selectNext.clear ();
 	}
 
 	g_entries = std::move (r->entries);
@@ -1908,7 +1916,7 @@ static void updateFont ()
 	SystemParametersInfoForDpi (SPI_GETNONCLIENTMETRICS, sizeof (ncm), &ncm, 0, g_dpi);
 	HFONT old = g_font;
 	g_font    = CreateFontIndirectW (&ncm.lfMessageFont);
-	for (HWND h : {g_list, g_path, g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel})
+	for (HWND h : {g_list, g_path, g_btnUp, g_btnRefresh, g_btnMkdir, g_btnRename, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel})
 		SendMessageW (h, WM_SETFONT, (WPARAM)g_font, TRUE);
 	if (old)
 		DeleteObject (old);
@@ -1937,7 +1945,7 @@ static void applyTheme ()
 	makeBrushes ();
 	darkTitleBar (g_wnd);
 	setMenuMode ();
-	for (HWND h : {g_btnUp, g_btnRefresh, g_btnMkdir, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel})
+	for (HWND h : {g_btnUp, g_btnRefresh, g_btnMkdir, g_btnRename, g_btnSend, g_btnReconnect, g_btnSettings, g_btnCancel})
 		themeControl (h);
 	SetWindowTheme (g_list, g_dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
 	SetWindowTheme (ListView_GetHeader (g_list), g_dark ? L"DarkMode_ItemsView" : nullptr, nullptr);
@@ -2019,6 +2027,7 @@ static void layout ()
 	place (g_btnUp, S (48));
 	place (g_btnRefresh, S (70));
 	place (g_btnMkdir, S (86));
+	place (g_btnRename, S (70));
 	int right = rc.right - pad - S (96) - S (4) - S (110) - S (4) - S (80);
 	MoveWindow (g_path, x, y + S (2), std::max (S (40), right - x - S (4)), h - S (4), TRUE);
 	x = right;
@@ -2217,11 +2226,13 @@ static void onCommand (int id)
 	case ID_RENAME:
 	{
 		int row = ListView_GetNextItem (g_list, -1, LVNI_SELECTED);
-		if (row >= 0 && !isParentRow (row))
+		if (row < 0 || isParentRow (row) || ListView_GetSelectedCount (g_list) != 1)
 		{
-			SetFocus (g_list);
-			ListView_EditLabel (g_list, row);
+			setStatus (1, L"Select one file or folder to rename");
+			break;
 		}
+		SetFocus (g_list);
+		ListView_EditLabel (g_list, row);
 		break;
 	}
 	case ID_DELETE:
@@ -2286,6 +2297,7 @@ static LRESULT onNotify (NMHDR *nm)
 		job->path  = joinRemote (currentDir (), e->name);
 		job->path2 = joinRemote (currentDir (), name);
 		g_browse.push (job);
+		g_selectNext = name;
 		return TRUE;
 	}
 	}
@@ -2308,6 +2320,7 @@ static LRESULT CALLBACK wndProc (HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 		g_btnUp        = makeButton (L"Up", ID_UP);
 		g_btnRefresh   = makeButton (L"Refresh", ID_REFRESH);
 		g_btnMkdir     = makeButton (L"New folder", ID_MKDIR);
+		g_btnRename    = makeButton (L"Rename", ID_RENAME);
 		g_btnSend      = makeButton (L"Send to PC", ID_SEND);
 		g_btnReconnect = makeButton (L"Force reconnect", ID_RECONNECT);
 		g_btnSettings  = makeButton (L"Settings...", ID_SETTINGS);
@@ -2374,7 +2387,7 @@ static LRESULT CALLBACK wndProc (HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 		return 0;
 	}
 	case WM_GETMINMAXINFO:
-		((MINMAXINFO *)lp)->ptMinTrackSize = {S (660), S (300)};
+		((MINMAXINFO *)lp)->ptMinTrackSize = {S (740), S (300)};
 		return 0;
 	case WM_COMMAND:
 		onCommand (LOWORD (wp));
