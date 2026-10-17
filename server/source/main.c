@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -1222,6 +1223,10 @@ static void acceptClient (void)
 		s->ctrl = fd;
 		s->peer = addr.sin_addr.s_addr;
 		setNonBlocking (fd);
+		// send replies at once: Nagle held "226" until the client's delayed ACK
+		// of "150" arrived, about 200 ms per uploaded file
+		int one = 1;
+		setsockopt (fd, SOL_TCP, TCP_NODELAY, &one, sizeof (one));
 		s->cmdLen  = 0;
 		s->rest    = 0;
 		s->rnfr[0] = 0;
@@ -1903,6 +1908,7 @@ int main (int argc, char **argv)
 
 	aptHook (&s_hook, onApt, NULL);
 	applyBacklight ();
+	s_lastActivity = osGetTime (); // idle_ms counts from startup, not from 1900
 
 	while (aptMainLoop ())
 	{

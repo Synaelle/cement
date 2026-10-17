@@ -4,6 +4,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
 #include <windows.h>
 
 #include <algorithm>
@@ -123,6 +124,11 @@ public:
 			return false;
 		BOOL one = TRUE;
 		setsockopt (s, IPPROTO_TCP, TCP_NODELAY, (char const *)&one, sizeof (one));
+		// acknowledge every reply at once: while a file goes over the data
+		// connection nothing else is sent on this one, and a delayed ACK of
+		// "150" made the server's stack hold "226" back (~200 ms per file)
+		DWORD ackEvery = 1, unused = 0;
+		WSAIoctl (s, SIO_TCP_SET_ACK_FREQUENCY, &ackEvery, sizeof (ackEvery), nullptr, 0, &unused, nullptr, nullptr);
 		setTimeout (s, 10000);
 		{
 			std::lock_guard lk (m_sockLock);

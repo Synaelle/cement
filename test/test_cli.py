@@ -65,6 +65,7 @@ def run(sd, local, back, flag):
     rc, d = cli("status")
     check(rc == 0 and d.get("ok") and d.get("busy") is False and d.get("status_supported"), "status: idle")
     check(d.get("protocol") == 1 and d.get("app_outdated") is False, "same protocol level: no outdated warning")
+    check(0 <= d.get("idle_ms", -1) < 60000 and "warning" not in d, "idle_ms counts from startup, no warning")
     p = subprocess.run([CLI, "--host", HOST, "--port", "5999", "--wait", "1", "--json", "status"], capture_output=True)
     check(p.returncode == 2 and json.loads(p.stdout)["ok"] is False, "unreachable 3DS -> exit code 2")
 
@@ -92,6 +93,23 @@ def run(sd, local, back, flag):
     rc, d = cli("get", "/3ds/new/game", "/3ds/new/readme.txt", back)
     check(rc == 0 and d.get("files") == 3, "get folder + file")
     check(sha(os.path.join(back, "game", "data", "café.bin")) == sha(os.path.join(tree, "data", "café.bin")), "downloaded file intact")
+
+    print("sd: paths, --contents, --progress-json")
+    rc, d = cli("ls", "sd:/3ds/new")
+    check(rc == 0 and {e["name"] for e in d.get("entries", [])} == {"game", "readme.txt"}, "sd:/ prefix accepted")
+    rc, d = cli("stat", "sd:3ds/new/readme.txt")
+    check(rc == 0 and d.get("size") == 5, "sd: without slash accepted")
+    flat = os.path.join(back, "flat")
+    rc, d = cli("--contents", "get", "/3ds/new/game", flat)
+    check(rc == 0 and os.path.isfile(os.path.join(flat, "game.3dsx")) and os.path.isdir(os.path.join(flat, "data"))
+          and not os.path.exists(os.path.join(flat, "game")), "get --contents copies the folder's contents")
+    p = subprocess.run([CLI, "--host", HOST, "--port", str(PORT), "--quiet", "--progress-json", "put", tree, "/3ds/again"],
+                       capture_output=True)
+    lines = [json.loads(l) for l in p.stdout.decode().strip().splitlines()]
+    files = [l for l in lines if l.get("event") == "file"]
+    check(p.returncode == 0 and len(files) == 2 and files[-1]["files_done"] == 2 and files[-1]["files"] == 2,
+          "--progress-json: one line per finished file")
+    check(lines[-1].get("event") == "done" and lines[-1].get("files") == 2, "--progress-json: summary is the last line")
 
     print("mkdir / mv / rm")
     rc, d = cli("mkdir", "/a/b/c")

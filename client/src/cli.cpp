@@ -400,7 +400,10 @@ static string statusJson (Status const &st, string const &address)
 	       ",\"app_outdated\":" + (outdated ? "true" : "false") +
 	       ",\"status_supported\":" + (st.known ? "true" : "false") + ",\"busy\":" + (st.busy ? "true" : "false") +
 	       ",\"idle_ms\":" + std::to_string (st.idleMs) + ",\"connections\":" + std::to_string (st.connections) +
-	       ",\"transfers\":[" + transfers + "],\"install\":" + install + "}\n";
+	       ",\"transfers\":[" + transfers + "],\"install\":" + install +
+	       (st.known ? string ()
+	                 : ",\"warning\":\"this 3DS app does not report its transfers, so busy/idle are unknown: install the new Cement.cia\"") +
+	       "}\n";
 }
 
 // blocks until nothing else is transferring, up to budget seconds
@@ -431,10 +434,13 @@ static void waitIdle (Link &link, int budget)
 // ---------------------------------------------------------------------------
 // helpers
 
-// "/a/b": forward slashes, leading slash, no trailing slash
+// "/a/b": forward slashes, leading slash, no trailing slash. An "sd:" prefix
+// (sd:/3ds/app) is accepted: shells like Git Bash rewrite a leading "/".
 static wstring remotePath (string const &arg)
 {
 	wstring p = wide (arg);
+	if (p.size () >= 3 && _wcsnicmp (p.c_str (), L"sd:", 3) == 0)
+		p.erase (0, 3);
 	for (auto &c : p)
 		if (c == L'\\')
 			c = L'/';
@@ -517,14 +523,60 @@ struct Totals
 	double seconds () const { return std::chrono::duration<double> (Clock::now () - start).count (); }
 };
 
+// --progress-json: one JSON line on stdout per finished item, plus a heartbeat
+// every 5 s during long files, so a caller can follow a command that outlives
+// its own timeout. The final summary stays the last line.
+static bool g_progressJson;
+static struct
+{
+	char const *action = "";
+	uint64_t files = 0, filesDone = 0, bytes = 0, bytesDone = 0;
+	Clock::time_point start;
+} g_job;
+
+static void jobStart (char const *action, uint64_t files, uint64_t bytes)
+{
+	g_job.action    = action;
+	g_job.files     = files;
+	g_job.bytes     = bytes;
+	g_job.filesDone = g_job.bytesDone = 0;
+	g_job.start     = Clock::now ();
+}
+
+static void progressEvent (char const *event, wstring const &path, uint64_t fileDone, uint64_t fileSize, string const &error = {})
+{
+	if (!g_progressJson)
+		return;
+	char buf[320];
+	snprintf (buf,
+	    sizeof (buf),
+	    ",\"file_done\":%llu,\"file_size\":%llu,\"files_done\":%llu,\"files\":%llu,\"bytes_done\":%llu,\"bytes\":%llu,\"elapsed_s\":%.1f",
+	    (unsigned long long)fileDone,
+	    (unsigned long long)fileSize,
+	    (unsigned long long)g_job.filesDone,
+	    (unsigned long long)g_job.files,
+	    (unsigned long long)(g_job.bytesDone + (string (event) == "progress" ? fileDone : 0)),
+	    (unsigned long long)g_job.bytes,
+	    std::chrono::duration<double> (Clock::now () - g_job.start).count ());
+	out (string ("{\"event\":\"") + event + "\",\"action\":\"" + g_job.action + "\",\"path\":" + jsonStr (utf8 (path)) + buf +
+	     (error.empty () ? "" : ",\"error\":" + jsonStr (error)) + "}\n");
+	fflush (stdout);
+}
+
 // progress callback: one redrawn line on a console, nothing when captured
 static std::function<void (uint64_t)> progressLine (wstring const &name, uint64_t size, uint64_t start)
 {
 	auto done = std::make_shared<uint64_t> (start);
 	auto last = std::make_shared<Clock::time_point> ();
+	auto beat = std::make_shared<Clock::time_point> (Clock::now ());
 	return [=] (uint64_t n) {
 		*done += n;
 		auto now = Clock::now ();
+		if (g_progressJson && now - *beat >= std::chrono::seconds (5))
+		{
+			*beat = now;
+			progressEvent ("progress", name, *done, size);
+		}
 		if (!g_tty || g_quiet || now - *last < std::chrono::milliseconds (200))
 			return;
 		*last = now;
@@ -635,7 +687,7 @@ static void printSummary (char const *verb, Totals const &t)
 		    (unsigned long long)t.bytes,
 		    s,
 		    rate);
-		out (buf + errs + "]}\n");
+		out (buf + errs + "]" + (g_progressJson ? ",\"event\":\"done\"" : "") + "}\n");
 		return;
 	}
 	char buf[256];
@@ -651,8 +703,9 @@ static void printSummary (char const *verb, Totals const &t)
 
 struct Options
 {
-	int busyWait = 600;
-	bool noWait  = false;
+	int busyWait  = 600;
+	bool noWait   = false;
+	bool contents = false; // get: copy a folder's contents, not the folder
 };
 
 static int run (Link &link, string const &cmd, std::vector<string> const &args, Options const &opt)
@@ -777,6 +830,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		mkdirs (link, dir);
 		link.batch (files, bytes, "up");
 		link.run ([&] { link.ftp ().announceBatch (files, bytes, "up"); });
+		jobStart ("put", files, bytes);
 		for (auto const &it : items)
 		{
 			if (it.dir)
@@ -791,10 +845,14 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 				note ("put " + utf8 (it.remote) + " (" + sizeText (it.size) + ")");
 				t.files++;
 				t.bytes += it.size;
+				g_job.filesDone++;
+				g_job.bytesDone += it.size;
+				progressEvent ("file", it.remote, it.size, it.size);
 			}
 			catch (FtpError &e)
 			{
 				t.errors.push_back (firstLine (e.msg));
+				progressEvent ("error", it.remote, 0, it.size, firstLine (e.msg));
 			}
 			link.batch (--files, bytes -= it.size, "up");
 		}
@@ -816,6 +874,14 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			Entry e;
 			if (remote == L"/" || !statRemote (link, remote, e))
 				t.errors.push_back ("not found on the 3DS: " + utf8 (remote));
+			else if (e.dir && opt.contents)
+			{
+				// --contents: the folder's contents go straight into local-dir
+				std::vector<Entry> children;
+				link.run ([&] { children = link.ftp ().list (remote); });
+				for (auto const &c : children)
+					collectRemote (link, joinRemote (remote, c.name), c, dir + L"\\" + c.name, items);
+			}
 			else
 				collectRemote (link, remote, e, dir + L"\\" + e.name, items);
 		}
@@ -826,6 +892,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		SHCreateDirectoryExW (nullptr, dir.c_str (), nullptr);
 		link.batch (files, bytes, "down");
 		link.run ([&] { link.ftp ().announceBatch (files, bytes, "down"); });
+		jobStart ("get", files, bytes);
 		for (auto const &it : items)
 		{
 			if (it.dir)
@@ -840,10 +907,14 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 				note ("got " + utf8 (it.remote) + " (" + sizeText (it.size) + ")");
 				t.files++;
 				t.bytes += it.size;
+				g_job.filesDone++;
+				g_job.bytesDone += it.size;
+				progressEvent ("file", it.remote, it.size, it.size);
 			}
 			catch (FtpError &e)
 			{
 				t.errors.push_back (firstLine (e.msg));
+				progressEvent ("error", it.remote, 0, it.size, firstLine (e.msg));
 			}
 			link.batch (--files, bytes -= it.size, "down");
 		}
@@ -873,6 +944,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		uint64_t left = items.size ();
 		link.batch (left, 0, "delete");
 		link.run ([&] { link.ftp ().announceBatch (left, 0, "delete"); });
+		jobStart ("rm", left, 0);
 		for (auto const &it : items)
 		{
 			int code = 0;
@@ -880,10 +952,17 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			link.run ([&] { code = link.ftp ().cmd ((it.dir ? "RMD " : "DELE ") + utf8 (it.remote), &text); });
 			// after a reconnect the item may already be gone: only report what still exists
 			Entry still;
+			g_job.filesDone++;
 			if (code / 100 != 2 && statRemote (link, it.remote, still))
+			{
 				t.errors.push_back (utf8 (it.remote) + ": " + firstLine (text));
+				progressEvent ("error", it.remote, 0, 0, firstLine (text));
+			}
 			else
+			{
 				(it.dir ? t.folders : t.files)++;
+				progressEvent ("file", it.remote, 0, 0);
+			}
 			link.batch (--left, 0, "delete");
 		}
 		link.batch (0, 0, "delete");
@@ -942,10 +1021,14 @@ static char const *const USAGE =
     "  --no-wait                      start even if another transfer is running\n"
     "  --json                         print one JSON object on stdout\n"
     "  --quiet                        no progress messages on stderr\n"
+    "  --progress-json                implies --json; also print one JSON line per finished\n"
+    "                                 file (and every 5 s during long ones) before the summary\n"
+    "  --contents                     get: copy a folder's contents into local-dir, not the folder\n"
     "  --version                      print this tool's version\n"
     "\n"
     "exit codes: 0 ok, 1 usage, 2 3DS unreachable, 3 operation failed, 4 still busy after --busy-wait\n"
-    "remote paths are absolute on the SD card, e.g. /3ds/app/app.3dsx\n";
+    "remote paths are absolute on the SD card, e.g. /3ds/app/app.3dsx or sd:/3ds/app/app.3dsx\n"
+    "(use the sd: form from Git Bash, which rewrites arguments starting with /)\n";
 
 int wmain (int argc, wchar_t **argv)
 {
@@ -982,6 +1065,10 @@ int wmain (int argc, wchar_t **argv)
 				wait = std::max (0, atoi (value ().c_str ()));
 			else if (a == "--busy-wait")
 				opt.busyWait = std::max (0, atoi (value ().c_str ()));
+			else if (a == "--progress-json")
+				g_progressJson = g_json = true;
+			else if (a == "--contents")
+				opt.contents = true;
 			else if (a == "--no-wait")
 				opt.noWait = true;
 			else if (a == "--version")
