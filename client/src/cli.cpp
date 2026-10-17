@@ -206,6 +206,7 @@ struct Status
 	bool busy = false, installing = false;
 	uint64_t idleMs = 0;
 	int connections = 0;
+	int protocol    = 0; // compatibility level (see REQUIRED_PROTOCOL)
 	string version;
 	std::vector<Transfer> transfers;
 	uint64_t installDone = 0, installSize = 0;
@@ -242,8 +243,9 @@ static Status queryStatus (Link &link)
 	link.run ([&] { code = link.ftp ().cmd ("SITE STATUS", &text); });
 	if (code != 211)
 		return st;
-	st.known = true;
-	size_t pos = 0;
+	st.known    = true;
+	st.protocol = protocolLevel (code, text);
+	size_t pos  = 0;
 	while (pos < text.size ())
 	{
 		size_t nl   = text.find ('\n', pos);
@@ -391,10 +393,11 @@ static string statusJson (Status const &st, string const &address)
 	if (st.installing)
 		install = "{\"file\":" + jsonStr (st.installFile) + ",\"done\":" + std::to_string (st.installDone) +
 		          ",\"size\":" + std::to_string (st.installSize) + "}";
-	int mine = buildNumber (APP_VERSION), theirs = buildNumber (st.version);
-	bool outdated = st.version.empty () || (mine >= 0 && theirs < mine); // no build number = older scheme
+	// outdated only when this tool needs a newer 3DS app, not for every new build
+	bool outdated = st.protocol < REQUIRED_PROTOCOL;
 	return "{\"ok\":true,\"address\":" + jsonStr (address) + ",\"version\":" + jsonStr (st.version) +
-	       ",\"client_version\":" + jsonStr (APP_VERSION) + ",\"app_outdated\":" + (outdated ? "true" : "false") +
+	       ",\"client_version\":" + jsonStr (APP_VERSION) + ",\"protocol\":" + std::to_string (st.protocol) +
+	       ",\"app_outdated\":" + (outdated ? "true" : "false") +
 	       ",\"status_supported\":" + (st.known ? "true" : "false") + ",\"busy\":" + (st.busy ? "true" : "false") +
 	       ",\"idle_ms\":" + std::to_string (st.idleMs) + ",\"connections\":" + std::to_string (st.connections) +
 	       ",\"transfers\":[" + transfers + "],\"install\":" + install + "}\n";
@@ -672,13 +675,9 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		else
 		{
 			out ("connected to " + link.address () + "\n");
-			int mine = buildNumber (APP_VERSION), theirs = buildNumber (st.version);
-			if (st.version.empty ())
-				out ("3DS app: too old to report its version, install the new CIA (this tool: v" APP_VERSION ")\n");
-			else
-				out ("3DS app: v" + st.version +
-				     (mine >= 0 && theirs < mine ? "  (older than this tool v" APP_VERSION ", install the new CIA)" : "") +
-				     "\n");
+			out ("3DS app: " + (st.version.empty () ? string ("unknown version") : "v" + st.version) + "\n");
+			if (st.protocol < REQUIRED_PROTOCOL)
+				out ("the 3DS app is too old for this tool (v" APP_VERSION "): install the new CIA\n");
 			if (!st.known)
 				out ("this server does not report its activity (SITE STATUS)\n");
 			else if (!st.busy)

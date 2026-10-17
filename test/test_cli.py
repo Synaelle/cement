@@ -64,6 +64,7 @@ def run(sd, local, back, flag):
     print("status / unreachable")
     rc, d = cli("status")
     check(rc == 0 and d.get("ok") and d.get("busy") is False and d.get("status_supported"), "status: idle")
+    check(d.get("protocol") == 1 and d.get("app_outdated") is False, "same protocol level: no outdated warning")
     p = subprocess.run([CLI, "--host", HOST, "--port", "5999", "--wait", "1", "--json", "status"], capture_output=True)
     check(p.returncode == 2 and json.loads(p.stdout)["ok"] is False, "unreachable 3DS -> exit code 2")
 

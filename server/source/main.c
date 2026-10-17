@@ -29,6 +29,10 @@
 #define APP_VERSION    "dev" // set by the Makefile: <VERSION file>.<commit count>-<commit>[-dev]
 #endif
 #define VERSION        APP_VERSION
+// Compatibility level with the PC apps, reported in SITE STATUS. Bump it (and
+// REQUIRED_PROTOCOL in client/src/ftp.h) only when the PC side needs this
+// new 3DS build; the PC apps warn about an outdated 3DS app only then.
+#define PROTOCOL       1
 #define CTRL_PORT      5000
 #define MAX_SESSIONS   4
 #define SOC_ALIGN      0x1000
@@ -1638,11 +1642,12 @@ static void siteStatus (Session *self)
 	}
 	reply (self, "211-Status\r\n");
 	reply (self,
-	    " busy=%d idle_ms=%llu installing=%d connections=%d version=" VERSION "\r\n",
+	    " busy=%d idle_ms=%llu installing=%d connections=%d protocol=%d version=" VERSION "\r\n",
 	    busy,
 	    busy || now < s_lastActivity ? 0ull : (unsigned long long)(now - s_lastActivity),
 	    s_inst.running,
-	    clients);
+	    clients,
+	    PROTOCOL);
 	for (int i = 0; i < MAX_SESSIONS; ++i)
 	{
 		Session *s = &s_sess[i];

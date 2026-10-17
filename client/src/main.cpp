@@ -118,7 +118,7 @@ static UINT g_dpi = 96;
 
 static std::mutex g_cfgLock;
 static string g_host;
-static string g_serverVersion; // Cement version on the 3DS ("" = too old to say)
+static Ftp::ServerInfo g_serverInfo; // Cement version and protocol level on the 3DS
 static int g_port = 5000;
 
 static std::mutex g_cwdLock;
@@ -306,17 +306,18 @@ private:
 				{
 					if (!m_transfer)
 					{
-						// shown next to "Connected", with a hint when the 3DS app is older
-						string version;
+						// shown next to "Connected", with a hint when the 3DS app is too old
+						Ftp::ServerInfo info;
+						info.protocol = REQUIRED_PROTOCOL; // unknown: do not warn
 						try
 						{
-							version = m_ftp.serverVersion ();
+							info = m_ftp.serverInfo ();
 						}
 						catch (NetError &)
 						{
 						}
 						std::lock_guard lk (g_cfgLock);
-						g_serverVersion = version;
+						g_serverInfo = info;
 					}
 					setState (Connected);
 					if (!m_transfer)
@@ -2061,25 +2062,21 @@ static void updateConnState ()
 		host = g_host;
 		port = g_port;
 	}
-	string version;
+	Ftp::ServerInfo info;
 	{
 		std::lock_guard lk (g_cfgLock);
-		version = g_serverVersion;
+		info = g_serverInfo;
 	}
 	wstring addr = wide (host) + L":" + std::to_wstring (port);
 	wstring text = L"Waiting for 3DS at " + addr + L"...";
 	if (g_browse.state == Worker::Connected)
 	{
 		text = L"Connected to " + addr;
-		int mine = buildNumber (APP_VERSION), theirs = buildNumber (version);
-		if (version.empty ())
-			text += L"  -  3DS app outdated: install the new CIA";
-		else
-		{
-			text += L"  -  3DS app v" + wide (version);
-			if (mine >= 0 && theirs < mine) // no build number = from before versioned builds
-				text += L" (older than this PC app: install the new CIA)";
-		}
+		if (!info.version.empty ())
+			text += L"  -  3DS app v" + wide (info.version);
+		// only when this PC app needs a newer 3DS app, not for every new build
+		if (info.protocol < REQUIRED_PROTOCOL)
+			text += L"  -  update the 3DS app: install the new CIA";
 	}
 	setStatus (0, text.c_str ());
 }

@@ -23,11 +23,20 @@ using std::wstring;
 #define APP_VERSION "dev" // set by build.bat: <VERSION file>.<commit count>-<commit>[-dev]
 #endif
 
-// build number of "1.2.47-abc1234[-dev]" (the commit count), -1 if unknown
-static int buildNumber (string const &v)
+// The 3DS app must report at least this protocol level (SITE STATUS
+// "protocol="). Bump it together with PROTOCOL in server/source/main.c, and
+// only for changes that really need the new 3DS build: the PC apps warn about
+// an outdated 3DS app only when it is below this level.
+static int const REQUIRED_PROTOCOL = 1;
+
+// protocol level from a SITE STATUS reply; builds from before the field
+// existed already had everything of level 1, a server without SITE STATUS is 0
+static int protocolLevel (int code, string const &text)
 {
-	int a = 0, b = 0, c = -1;
-	return sscanf (v.c_str (), "%d.%d.%d", &a, &b, &c) == 3 ? c : -1;
+	if (code != 211)
+		return 0;
+	size_t pos = text.find (" protocol=");
+	return pos == string::npos ? 1 : atoi (text.c_str () + pos + 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -271,18 +280,25 @@ public:
 			throw FtpError{text};
 	}
 
-	// version of the Cement app on the 3DS ("" if it does not say:
-	// a build older than 1.2, or another FTP server)
-	string serverVersion ()
+	// version ("" if it does not say) and protocol level of the 3DS app
+	struct ServerInfo
 	{
+		string version;
+		int protocol = 0;
+	};
+	ServerInfo serverInfo ()
+	{
+		ServerInfo info;
 		string text;
-		if (cmd ("SITE STATUS", &text) != 211)
-			return {};
-		size_t pos = text.find (" version=");
-		if (pos == string::npos)
-			return {};
-		pos += 9;
-		return text.substr (pos, text.find_first_of (" \r\n", pos) - pos);
+		int code      = cmd ("SITE STATUS", &text);
+		info.protocol = protocolLevel (code, text);
+		size_t pos    = code == 211 ? text.find (" version=") : string::npos;
+		if (pos != string::npos)
+		{
+			pos += 9;
+			info.version = text.substr (pos, text.find_first_of (" \r\n", pos) - pos);
+		}
+		return info;
 	}
 
 	// tells the 3DS a multi-file job is running (SITE STATUS shows it as busy with an
