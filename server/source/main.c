@@ -223,10 +223,28 @@ static void setBacklight (u32 screens, bool on)
 	gspLcdExit ();
 }
 
+// ---------------------------------------------------------------------------
+// power: the top screen turns off after an idle minute, and the New 3DS
+// fast mode (804 MHz, L2 cache) only runs while something is being done
+
+#ifndef SCREEN_IDLE_MS
+#define SCREEN_IDLE_MS (60 * 1000) // no button, transfer or install for this long
+#endif
+#ifndef FAST_LINGER_MS
+#define FAST_LINGER_MS 5000 // keeps fast mode between the files of a job
+#endif
+
+static bool s_topIdleOff; // the top screen is off because of the idle timer (not SELECT)
+static u64 s_lastWake;    // last button press, transfer or install
+static bool s_fast;
+static u64 s_fastUntil;
+
 static void applyBacklight (void)
 {
 	// the bottom screen is only lit while it lists CIA files
 	setBacklight (GSPLCD_SCREEN_BOTTOM, s_bottomOn);
+	s_topIdleOff = false;
+	s_lastWake   = osGetTime ();
 	setBacklight (GSPLCD_SCREEN_TOP, s_backlight);
 }
 
@@ -2010,12 +2028,56 @@ static void draw (void)
 
 // ---------------------------------------------------------------------------
 
+static bool working (void)
+{
+	if (s_inst.running)
+		return true;
+	for (int i = 0; i < MAX_SESSIONS; ++i)
+	{
+		Session *s = &s_sess[i];
+		if (s->ctrl >= 0 && (s->mode == X_STOR || s->mode == X_RETR || s->batchFiles))
+			return true;
+	}
+	return false;
+}
+
+// returns true when a button press only woke the top screen up (so it does nothing else)
+static bool managePower (u32 down)
+{
+	u64 now   = osGetTime ();
+	bool busy = working ();
+	if (busy || down)
+		s_lastWake = now;
+	if (busy)
+		s_fastUntil = now + FAST_LINGER_MS;
+
+	bool fast = now < s_fastUntil;
+	if (fast != s_fast)
+	{
+		s_fast = fast;
+		osSetSpeedupEnable (fast); // no effect on an Old 3DS
+	}
+
+	bool idle = now - s_lastWake >= SCREEN_IDLE_MS;
+	if (s_topIdleOff && !idle)
+	{
+		s_topIdleOff = false;
+		setBacklight (GSPLCD_SCREEN_TOP, true);
+		return down != 0;
+	}
+	if (!s_topIdleOff && idle && s_backlight)
+	{
+		s_topIdleOff = true;
+		setBacklight (GSPLCD_SCREEN_TOP, false);
+	}
+	return false;
+}
+
 int main (int argc, char **argv)
 {
 	(void)argc;
 	(void)argv;
 
-	osSetSpeedupEnable (true);
 	acInit ();
 	ndmuInit ();
 	gfxInitDefault ();
@@ -2061,6 +2123,8 @@ int main (int argc, char **argv)
 	{
 		hidScanInput ();
 		u32 down = hidKeysDown ();
+		if (managePower (down))
+			down = 0; // the press only turned the top screen back on
 		pollInstall ();
 		if (down & KEY_START)
 		{

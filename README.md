@@ -25,11 +25,13 @@ Start Cement on the 3DS: the top screen shows the IP address and port (5000) to 
 
 - **SD card only.** The server exposes the SD card and nothing else; paths can't leave it.
 - **Fast.** Received data is written to the SD card by a separate thread while the next data is already
-  arriving. On a New 3DS it runs at 804 MHz with the L2 cache on, and StreetPass/SpotPass are paused
-  while it serves so they don't use the Wi-Fi radio.
+  arriving. On a New 3DS it switches to 804 MHz with the L2 cache on while transferring or installing
+  (back to normal speed a few seconds after), and StreetPass/SpotPass are paused while it serves so they
+  don't use the Wi-Fi radio.
 - **Battery.** Closing the lid really puts the 3DS to sleep (Wi-Fi off); connections are closed cleanly
-  and the server comes back by itself when the lid opens. The bottom screen stays off unless it has
-  something to show, and SELECT turns the top screen off. START quits.
+  and the server comes back by itself when the lid opens. The top screen turns off after a minute without
+  a button press, transfer or install, and comes back with any button or transfer; SELECT turns it off
+  or on by hand. The bottom screen stays off unless it has something to show. START quits.
 - **Top screen.** IP and port, how many PCs are connected, the battery, the file being transferred with
   its speed, and the whole job ("Receiving 3/10 files, 2:13 left").
 - **Low battery.** At 5% or less on battery power, the app refuses new transfers and CIA installs until
