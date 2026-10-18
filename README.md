@@ -15,7 +15,7 @@ Get the latest release on the [Releases](../../releases) page:
 | File | What it is |
 | --- | --- |
 | `Cement.cia` | The 3DS app, to install with FBI or Cement itself (HOME menu icon) |
-| `Cement-3dsx.zip` | The same app for the Homebrew Launcher: extract it to the root of the SD card (`/3ds/Cement/Cement.3dsx`) |
+| `Cement.3dsx` | The same app for the Homebrew Launcher: put it in `/3ds/` on the SD card (for example `/3ds/Cement/Cement.3dsx`) |
 | `Cement-windows.zip` | `Cement.exe` (explorer) and `cement-cli.exe` (command line), Windows 10/11 x64 |
 | `Cement-linux-x86_64.zip` | `cement-cli` for Linux x86_64 |
 
