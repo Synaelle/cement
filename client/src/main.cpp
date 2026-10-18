@@ -134,7 +134,8 @@ static wstring g_sendDir;                // "Send to PC" destination folder (set
 static std::vector<wstring> g_sendItems; // "Send to PC" 3DS paths (settings)
 static bool g_sendReplace;                // "Send to PC" empties the PC folder first
 static bool g_dark = true;     // dark theme (saved in config)
-static wstring g_statusText[3]; // connection state, transfer/messages, SD card space
+static wstring g_statusText[3]; // connection state, transfer/messages, SD card space and battery
+static wstring g_statusShort;   // the last one without the SD card's total, for narrow windows
 static void setStatus (int part, wstring const &text);
 static HFONT g_font;
 static UINT g_dpi = 96;
@@ -387,10 +388,13 @@ private:
 
 			if (!job)
 			{
-				// keep-alive, and notice quickly when the 3DS went away
+				// keep-alive, and notice quickly when the 3DS went away; the browse
+				// connection also refreshes the SD space and battery shown in the status bar
 				try
 				{
-					if (m_ftp.cmd ("NOOP") / 100 != 2)
+					if (!m_transfer)
+						refreshSpace ();
+					else if (m_ftp.cmd ("NOOP") / 100 != 2)
 						throw NetError ();
 				}
 				catch (NetError &)
@@ -468,7 +472,7 @@ private:
 
 	void refreshAfter ();
 
-	// SD card free/total space for the status bar
+	// SD card free/total space and battery for the status bar
 	void refreshSpace ()
 	{
 		Ftp::ServerInfo info = m_ftp.serverInfo ();
@@ -477,6 +481,7 @@ private:
 			g_serverInfo.hasSpace = info.hasSpace;
 			g_serverInfo.sdFree   = info.sdFree;
 			g_serverInfo.sdTotal  = info.sdTotal;
+			g_serverInfo.battery  = info.battery;
 		}
 		PostMessageW (g_wnd, WM_APP_STATE, 0, 0);
 	}
@@ -641,6 +646,10 @@ private:
 		bool up = job.type == Job::Upload;
 		if (!job.expanded)
 		{
+			// the 3DS refuses transfers on a nearly empty battery: say so before starting
+			Battery bat = m_ftp.serverInfo ().battery;
+			if (bat.low)
+				throw FtpError{"3DS battery too low (" + batteryText (bat) + "): plug in the charger"};
 			if (up)
 				for (auto const &l : job.locals)
 					expandLocal (job, l, joinRemote (job.path, l.substr (l.find_last_of (L"\\/") + 1)));
@@ -780,6 +789,11 @@ private:
 			}
 			catch (FtpError &e)
 			{
+				if (batteryRefusal (e.msg))
+				{
+					job.partial = false;
+					throw; // the rest would be refused too
+				}
 				++job.errors;
 				postMessageText (L"Error: " + wide (e.msg.substr (0, e.msg.find_last_not_of ("\r\n") + 1)));
 			}
@@ -2262,16 +2276,24 @@ static void paint (HDC dc)
 	RECT part1 = {S (478), sr.top + 1, rc.right - S (8), sr.bottom};
 	if (!g_statusText[2].empty ())
 	{
-		// SD card space, right-aligned after its own separator
+		// SD card space and battery, right-aligned after their own separator; the
+		// short form when the long one would leave little room for messages
+		wstring const *text = &g_statusText[2];
 		RECT need{0, 0, 0, 0};
-		DrawTextW (dc, g_statusText[2].c_str (), -1, &need, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+		DrawTextW (dc, text->c_str (), -1, &need, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+		if (rc.right - need.right - S (24) < part1.left + S (160) && !g_statusShort.empty ())
+		{
+			text = &g_statusShort;
+			need = {0, 0, 0, 0};
+			DrawTextW (dc, text->c_str (), -1, &need, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+		}
 		LONG left = std::max<LONG> (part1.left + S (40), rc.right - need.right - S (24));
 		RECT sep2{left, sr.top + S (4), left + 1, sr.bottom - S (4)};
 		HBRUSH b = CreateSolidBrush (t.border);
 		FillRect (dc, &sep2, b);
 		DeleteObject (b);
 		RECT part2 = {left + S (8), sr.top + 1, rc.right - S (8), sr.bottom};
-		DrawTextW (dc, g_statusText[2].c_str (), -1, &part2, fmt | DT_RIGHT);
+		DrawTextW (dc, text->c_str (), -1, &part2, fmt | DT_RIGHT);
 		part1.right = left - S (8);
 	}
 	DrawTextW (dc, g_statusText[1].c_str (), -1, &part1, fmt);
@@ -2367,9 +2389,23 @@ static void updateConnState ()
 			text += L"  -  update the 3DS app: install the new CIA";
 	}
 	setStatus (0, text.c_str ());
-	setStatus (2, g_browse.state == Worker::Connected && info.hasSpace
-	                  ? L"SD: " + formatSize (info.sdFree) + L" free of " + formatSize (info.sdTotal)
-	                  : L"");
+	wstring right, shortText;
+	if (g_browse.state == Worker::Connected)
+	{
+		if (info.hasSpace)
+		{
+			shortText = L"SD: " + formatSize (info.sdFree) + L" free";
+			right     = shortText + L" of " + formatSize (info.sdTotal);
+		}
+		if (info.battery.known)
+		{
+			wstring bat = L"Battery: " + wide (batteryText (info.battery)) + (info.battery.low ? L" (low)" : L"");
+			right += (right.empty () ? L"" : L"   ") + bat;
+			shortText += (shortText.empty () ? L"" : L"   ") + bat;
+		}
+	}
+	g_statusShort = shortText;
+	setStatus (2, right);
 }
 
 static void updateProgress ()

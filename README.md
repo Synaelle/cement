@@ -30,8 +30,12 @@ Start Cement on the 3DS: the top screen shows the IP address and port (5000) to 
 - **Battery.** Closing the lid really puts the 3DS to sleep (Wi-Fi off); connections are closed cleanly
   and the server comes back by itself when the lid opens. The bottom screen stays off unless it has
   something to show, and SELECT turns the top screen off. START quits.
-- **Top screen.** IP and port, how many PCs are connected, the file being transferred with its speed,
-  and the whole job ("Receiving 3/10 files, 2:13 left").
+- **Top screen.** IP and port, how many PCs are connected, the battery, the file being transferred with
+  its speed, and the whole job ("Receiving 3/10 files, 2:13 left").
+- **Low battery.** At 5% or less on battery power, the app refuses new transfers and CIA installs until
+  the charger is plugged in (a 3DS dying in the middle of an SD card write can corrupt files); a transfer
+  already running finishes its current file. The battery level comes from the MCU as a percentage, or as
+  0-5 bars when the system doesn't give access to it (then the limit is 1 bar).
 - **Install CIAs.** Every `.cia` that finishes uploading is listed on the bottom screen. Pick one with
   Up/Down and press A: it is installed (same steps as [FBI](https://github.com/Steveice10/FBI): DSiWare
   and system titles to NAND, the rest to the SD card, the old version and ticket removed first) and the
@@ -63,8 +67,10 @@ On first run it asks for the IP and port shown on the 3DS, then always reconnect
   even one that doesn't exist yet) and a PC folder. The Send to PC button (or Ctrl+S) copies them all
   into that folder in one go. With "Replace PC folder contents", the folder is emptied first (old files
   go to the Recycle Bin); drives and personal folders are refused for that.
-- **SD card space.** The status bar shows the free and total space on the SD card ("SD: 12.3 GB free of
-  29.7 GB"), updated whenever a folder is listed and after every transfer or deletion. An upload that
+- **SD card space and battery.** The status bar shows the free and total space on the SD card and the
+  3DS battery ("SD: 12.3 GB free of 29.7 GB   Battery: 87%, charging"), updated every 10 seconds, when a
+  folder is listed and after every transfer or deletion. When the 3DS battery is too low, transfers stop
+  with a message asking to plug in the charger. An upload that
   can't fit is refused before anything is sent (files it would overwrite count as freed space).
 - **Status bar.** The 3DS app's version, with a hint only when the 3DS app is too old for this PC app.
 - **Dark mode** by default; toggle it in Settings. Settings are saved in `%APPDATA%\Cement\config.ini`.
@@ -74,7 +80,7 @@ On first run it asks for the IP and port shown on the 3DS, then always reconnect
 `cement-cli` does the same from a terminal or a script, on Windows and Linux.
 
 ```
-cement-cli status                          is the 3DS reachable, busy (transfers, time left, CIA install) or idle
+cement-cli status                          reachable? busy (transfers, time left, CIA install)? SD space, battery
 cement-cli wait                            wait until nothing else is transferring
 cement-cli ls sd:/3ds                      list a folder
 cement-cli stat sd:/boot.firm              type and size
@@ -90,7 +96,8 @@ cement-cli mv sd:/a.txt sd:/b.txt          rename or move
   commands run in the background. Exit codes: 0 ok, 1 usage, 2 3DS unreachable, 3 failed, 4 still busy.
 - Commands that change files wait until nobody else is transferring (`--busy-wait`, default 600 s), and
   announce their own jobs so the Windows app and other scripts wait for them too.
-- `put` checks the upload fits on the SD card first and fails with exit code 3 if it doesn't.
+- `put` checks the upload fits on the SD card first, and `put`/`get` check the 3DS battery isn't too low;
+  otherwise they fail with exit code 3 and say why.
 - Dropped connections are retried for `--wait` seconds (default 20) and transfers resume.
 - Remote paths can be written `sd:/path` (shells like Git Bash rewrite arguments starting with `/`).
 - The 3DS address comes from the Windows app's settings, from `~/.config/cement/config.ini` on Linux
@@ -102,7 +109,8 @@ cement-cli mv sd:/a.txt sd:/b.txt          rename or move
 Cement is plain FTP (passive mode, UTF-8), so FileZilla, WinSCP and other FTP clients work with the 3DS
 app too. On top of standard FTP it adds a few commands its own clients use: `SITE STATUS` (what every
 connection is doing, progress and time left), `SITE BATCH` (a client announces a whole job), plus
-`ALLO` and `MDTM` for sizes and dates, and `AVBL` for the free space (also in `SITE STATUS` with the total). There is no password: use it on your own network.
+`ALLO` and `MDTM` for sizes and dates, and `AVBL` for the free space (also in `SITE STATUS` with the total and the battery). With a low battery
+the 3DS answers `450` to `STOR`, `APPE` and `RETR`. There is no password: use it on your own network.
 
 ## Build
 

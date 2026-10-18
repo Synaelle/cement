@@ -378,6 +378,55 @@ static bool sdSpace (u64 *freeBytes, u64 *total)
 	return R_SUCCEEDED (FSUSER_GetFreeBytes (freeBytes, s_sd));
 }
 
+// ---------------------------------------------------------------------------
+// battery
+
+// below this, on battery power, new transfers and installs are refused: the
+// console dying in the middle of an SD card write can corrupt the file system
+#define BATTERY_LOW 5 // percent
+
+static bool s_mcu, s_ptmu; // mcu::HWC gives a percentage, ptm:u only 0-5 bars
+
+typedef struct
+{
+	int percent, bars; // -1 when unknown
+	bool charging, plugged;
+} Battery;
+
+static Battery battery (void)
+{
+	static Battery b = {-1, -1, false, false};
+	static u64 last;
+	u64 now = osGetTime ();
+	if (last && now - last < 2000) // cached: asked for on every transfer and status
+		return b;
+	last = now;
+	u8 v      = 0;
+	bool plug = false;
+	b.percent  = s_mcu && R_SUCCEEDED (MCUHWC_GetBatteryLevel (&v)) ? (v > 100 ? 100 : v) : -1;
+	b.bars     = s_ptmu && R_SUCCEEDED (PTMU_GetBatteryLevel (&v)) ? v : -1;
+	b.charging = s_ptmu && R_SUCCEEDED (PTMU_GetBatteryChargeState (&v)) && v;
+	b.plugged  = s_ptmu && R_SUCCEEDED (PTMU_GetAdapterState (&plug)) && plug;
+	return b;
+}
+
+static bool batteryLow (Battery b)
+{
+	if (b.plugged || b.charging)
+		return false;
+	return b.percent >= 0 ? b.percent <= BATTERY_LOW : b.bars >= 0 && b.bars <= 1;
+}
+
+static void batteryText (Battery b, char *out, size_t n)
+{
+	if (b.percent >= 0)
+		snprintf (out, n, "%d%%", b.percent);
+	else if (b.bars >= 0)
+		snprintf (out, n, "%d/5", b.bars);
+	else
+		snprintf (out, n, "?");
+}
+
 static void setName (Session *s, char const *path)
 {
 	snprintf (s->path, sizeof (s->path), "%s", path);
@@ -915,6 +964,13 @@ static void handleCommand (Session *s, char *line)
 			reply (s, "425 Use PASV first\r\n");
 		else if (!resolvePath (s->cwd, arg, path))
 			reply (s, "553 Bad file name\r\n");
+		else if (batteryLow (battery ()))
+		{
+			char level[16];
+			batteryText (battery (), level, sizeof (level));
+			endTransfer (s);
+			reply (s, "450 3DS battery too low (%s): plug in the charger\r\n", level);
+		}
 		else if (prepareFile (s, path, mode, cmd[0] == 'A'))
 		{
 			s->mode = mode;
@@ -1603,6 +1659,13 @@ static void startInstall (void)
 {
 	if (s_inst.running || s_ciaSel >= s_ciaCount)
 		return;
+	if (batteryLow (battery ()))
+	{
+		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "Battery too low: plug in the charger");
+		s_ciaMsgTime  = osGetTime ();
+		s_bottomDirty = true;
+		return;
+	}
 	if (fsBusy ())
 	{
 		snprintf (s_ciaMsg, sizeof (s_ciaMsg), "Busy: wait for the transfer to end");
@@ -1705,17 +1768,23 @@ static void siteStatus (Session *self)
 	}
 	u64 sdFree = 0, sdTotal = 0;
 	sdSpace (&sdFree, &sdTotal);
+	Battery bat = battery ();
 	reply (self, "211-Status\r\n");
 	reply (self,
-	    " busy=%d idle_ms=%llu installing=%d connections=%d protocol=%d sd_free=%llu sd_total=%llu version=" VERSION
-	    "\r\n",
+	    " busy=%d idle_ms=%llu installing=%d connections=%d protocol=%d sd_free=%llu sd_total=%llu battery=%d battery_bars=%d"
+	    " charging=%d plugged=%d battery_low=%d version=" VERSION "\r\n",
 	    busy,
 	    busy || now < s_lastActivity ? 0ull : (unsigned long long)(now - s_lastActivity),
 	    s_inst.running,
 	    clients,
 	    PROTOCOL,
 	    sdFree,
-	    sdTotal);
+	    sdTotal,
+	    bat.percent,
+	    bat.bars,
+	    bat.charging,
+	    bat.plugged,
+	    batteryLow (bat));
 	for (int i = 0; i < MAX_SESSIONS; ++i)
 	{
 		Session *s = &s_sess[i];
@@ -1884,6 +1953,19 @@ static void draw (void)
 		printf ("\x1b[4;1H IP   : -\x1b[K");
 	printf ("\x1b[5;1H Port : \x1b[33m%u\x1b[0m\x1b[K", CTRL_PORT);
 	printf ("\x1b[7;1H Status: %.40s\x1b[K", s_status);
+	Battery bat = battery ();
+	char level[16];
+	batteryText (bat, level, sizeof (level));
+	bool low = batteryLow (bat);
+	printf ("\x1b[8;1H Battery: %s%s\x1b[0m%s\x1b[K",
+	    low ? "\x1b[31m" : "",
+	    level,
+	    bat.charging ? "  charging" : bat.plugged ? "  plugged in" : "");
+	if (low)
+		printf ("\x1b[13;1H\x1b[31m Battery low: new transfers and installs are\x1b[K"
+		        "\x1b[14;1H refused until the charger is plugged in\x1b[0m\x1b[K");
+	else
+		printf ("\x1b[13;1H\x1b[K\x1b[14;1H\x1b[K");
 
 	if (active)
 	{
@@ -1938,6 +2020,8 @@ int main (int argc, char **argv)
 	ndmuInit ();
 	gfxInitDefault ();
 	amInit ();
+	s_ptmu = R_SUCCEEDED (ptmuInit ());
+	s_mcu  = R_SUCCEEDED (mcuHwcInit ()); // may be denied to some .3dsx launchers: ptm:u bars then
 	AM_InitializeExternalTitleDatabase (false); // as FBI does at startup
 	consoleInit (GFX_BOTTOM, &s_bottomConsole);
 	consoleInit (GFX_TOP, &s_topConsole);
@@ -2030,6 +2114,10 @@ int main (int argc, char **argv)
 	FSUSER_CloseArchive (s_sd);
 	free (s_socBuf);
 	ndmuExit ();
+	if (s_mcu)
+		mcuHwcExit ();
+	if (s_ptmu)
+		ptmuExit ();
 	amExit ();
 	acExit ();
 	gfxExit ();

@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -66,6 +67,45 @@ static bool statusNumber (string const &text, char const *name, uint64_t *out)
 	*out = strtoull (text.c_str () + pos + key.size (), nullptr, 10);
 	return true;
 }
+
+// the 3DS battery, from SITE STATUS (3DS apps from before it: known == false)
+struct Battery
+{
+	bool known   = false;
+	int percent  = -1; // -1: only the 0-5 bars are known
+	int bars     = -1;
+	bool charging = false, plugged = false;
+	bool low      = false; // the 3DS refuses new transfers until it is plugged in
+};
+
+static Battery parseBattery (string const &text)
+{
+	Battery b;
+	size_t pos = text.find (" battery=");
+	if (pos == string::npos)
+		return b;
+	auto num = [&] (char const *name) {
+		size_t p = text.find (string (" ") + name + "=");
+		return p == string::npos ? -1 : atoi (text.c_str () + p + strlen (name) + 2);
+	};
+	b.known    = true;
+	b.percent  = num ("battery");
+	b.bars     = num ("battery_bars");
+	b.charging = num ("charging") == 1;
+	b.plugged  = num ("plugged") == 1;
+	b.low      = num ("battery_low") == 1;
+	return b;
+}
+
+// "87%", "3/5 bars", plus ", charging" / ", plugged in"
+static string batteryText (Battery const &b)
+{
+	string t = b.percent >= 0 ? std::to_string (b.percent) + "%" : b.bars >= 0 ? std::to_string (b.bars) + "/5 bars" : "unknown";
+	return t + (b.charging ? ", charging" : b.plugged ? ", plugged in" : "");
+}
+
+// the 3DS refused a transfer because its battery is too low (retrying won't help)
+static bool batteryRefusal (string const &msg) { return msg.find ("battery too low") != string::npos; }
 
 // ---------------------------------------------------------------------------
 // utilities
@@ -494,6 +534,7 @@ public:
 		int protocol = 0;
 		bool hasSpace = false; // the 3DS app reports SD space (sdFree, sdTotal)
 		uint64_t sdFree = 0, sdTotal = 0;
+		Battery battery;
 	};
 	ServerInfo serverInfo ()
 	{
@@ -503,6 +544,8 @@ public:
 		info.protocol = protocolLevel (code, text);
 		info.hasSpace = code == 211 && statusNumber (text, "sd_free", &info.sdFree) &&
 		                statusNumber (text, "sd_total", &info.sdTotal) && info.sdTotal;
+		if (code == 211)
+			info.battery = parseBattery (text);
 		size_t pos    = code == 211 ? text.find (" version=") : string::npos;
 		if (pos != string::npos)
 		{

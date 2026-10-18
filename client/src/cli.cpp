@@ -332,6 +332,7 @@ struct Status
 	string version;
 	bool hasSpace = false; // the 3DS app reports SD card space
 	uint64_t sdFree = 0, sdTotal = 0;
+	Battery battery;
 	std::vector<Transfer> transfers;
 	uint64_t installDone = 0, installSize = 0;
 	string installFile;
@@ -369,6 +370,7 @@ static Status queryStatus (Link &link)
 		return st;
 	st.known    = true;
 	st.protocol = protocolLevel (code, text);
+	st.battery  = parseBattery (text);
 	size_t pos  = 0;
 	while (pos < text.size ())
 	{
@@ -529,7 +531,12 @@ static string statusJson (Status const &st, string const &address)
 	       ",\"status_supported\":" + (st.known ? "true" : "false") + ",\"busy\":" + (st.busy ? "true" : "false") +
 	       ",\"idle_ms\":" + std::to_string (st.idleMs) + ",\"connections\":" + std::to_string (st.connections) +
 	       ",\"sd_free\":" + (st.hasSpace ? std::to_string (st.sdFree) : "null") +
-	       ",\"sd_total\":" + (st.hasSpace ? std::to_string (st.sdTotal) : "null") +
+	       ",\"sd_total\":" + (st.hasSpace ? std::to_string (st.sdTotal) : "null") + ",\"battery\":" +
+	       (st.battery.known ? "{\"percent\":" + (st.battery.percent >= 0 ? std::to_string (st.battery.percent) : "null") +
+	                               ",\"bars\":" + std::to_string (st.battery.bars) + ",\"charging\":" +
+	                               (st.battery.charging ? "true" : "false") + ",\"plugged\":" +
+	                               (st.battery.plugged ? "true" : "false") + ",\"low\":" + (st.battery.low ? "true" : "false") + "}"
+	                         : string ("null")) +
 	       ",\"transfers\":[" + transfers + "],\"install\":" + install +
 	       (st.known ? string ()
 	                 : ",\"warning\":\"this 3DS app does not report its transfers, so busy/idle are unknown: install the new Cement.cia\"") +
@@ -844,6 +851,12 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		if (!opt.noWait)
 			waitIdle (link, opt.busyWait);
 	};
+	// the 3DS refuses transfers on a nearly empty battery: fail before starting
+	auto batteryCheck = [&] {
+		Battery b = queryStatus (link).battery;
+		if (b.low)
+			throw FtpError{"3DS battery too low (" + batteryText (b) + "): plug in the charger"};
+	};
 
 	if (cmd == "status")
 	{
@@ -858,6 +871,9 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 				out ("the 3DS app is too old for this tool (v" APP_VERSION "): install the new CIA\n");
 			if (st.hasSpace)
 				out ("SD card: " + sizeText (st.sdFree) + " free of " + sizeText (st.sdTotal) + "\n");
+			if (st.battery.known)
+				out ("battery: " + batteryText (st.battery) +
+				     (st.battery.low ? " (too low: transfers are refused until the 3DS is plugged in)" : "") + "\n");
 			if (!st.known)
 				out ("this server does not report its activity (SITE STATUS)\n");
 			else if (!st.busy)
@@ -974,6 +990,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		for (auto const &it : items)
 			files += !it.dir, bytes += it.size;
 		idle ();
+		batteryCheck ();
 		// refuse up front what can't fit, instead of failing halfway with a full card
 		std::vector<std::pair<wstring, uint64_t>> sizes;
 		for (auto const &it : items)
@@ -1010,6 +1027,8 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			{
 				t.errors.push_back (firstLine (e.msg));
 				progressEvent ("error", it.remote, 0, it.size, firstLine (e.msg));
+				if (batteryRefusal (e.msg))
+					break; // the rest would be refused too
 			}
 			link.batch (--files, bytes -= it.size, "up");
 		}
@@ -1046,6 +1065,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		for (auto const &it : items)
 			files += !it.dir, bytes += it.size;
 		idle ();
+		batteryCheck ();
 		localMkdirs (dir);
 		link.batch (files, bytes, "down");
 		link.run ([&] { link.ftp ().announceBatch (files, bytes, "down"); });
@@ -1072,6 +1092,8 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			{
 				t.errors.push_back (firstLine (e.msg));
 				progressEvent ("error", it.remote, 0, it.size, firstLine (e.msg));
+				if (batteryRefusal (e.msg))
+					break; // the rest would be refused too
 			}
 			link.batch (--files, bytes -= it.size, "down");
 		}
@@ -1160,7 +1182,7 @@ static char const *const USAGE =
     "usage: cement-cli [options] <command> [arguments]\n"
     "\n"
     "commands:\n"
-    "  status                         is the 3DS reachable, busy (transfers, ETA, CIA install) or idle\n"
+    "  status                         reachable? busy (transfers, ETA, CIA install)? SD space, battery\n"
     "  wait                           block until no transfer/deletion is running\n"
     "  ls [remote-dir]                list a folder (default /)\n"
     "  stat <remote>                  type and size of a file/folder\n"
