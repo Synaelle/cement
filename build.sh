@@ -2,13 +2,14 @@
 # Builds Cement on Linux:
 #   server/Cement.cia                          the 3DS app (devkitARM + libctru)
 #   client/Cement.exe, client/cement-cli.exe   the Windows apps (mingw-w64 cross compiler)
+#   client/cement-cli                          the command-line tool for Linux (native g++)
 #
 # Needs: makerom and bannertool (on PATH, or MAKEROM=/path BANNERTOOL=/path),
 #        x86_64-w64-mingw32-g++ and -windres (Debian/Ubuntu: g++-mingw-w64-x86-64),
 #        and either devkitPro installed (DEVKITARM set) or Docker, which then uses
 #        the official devkitpro/devkitarm image.
 #
-# usage: ./build.sh [all|3ds|windows]
+# usage: ./build.sh [all|3ds|windows|linux]
 set -eu
 cd "$(dirname "$0")"
 target=${1:-all}
@@ -65,9 +66,16 @@ build_windows () {
 	echo "built cement-cli.exe v$APP_VERSION"
 }
 
+build_linux () {
+	${CXX:-g++} -std=c++17 -O2 -s -static-libstdc++ -static-libgcc -DAPP_VERSION="\"$APP_VERSION\"" \
+		client/src/cli.cpp -o client/cement-cli
+	echo "built cement-cli (Linux) v$APP_VERSION"
+}
+
 case $target in
-all) build_3ds; build_windows ;;
+all) build_3ds; build_windows; build_linux ;;
 3ds) build_3ds ;;
 windows) build_windows ;;
-*) echo "usage: $0 [all|3ds|windows]" >&2; exit 1 ;;
+linux) build_linux ;;
+*) echo "usage: $0 [all|3ds|windows|linux]" >&2; exit 1 ;;
 esac

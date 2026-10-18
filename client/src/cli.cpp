@@ -8,9 +8,15 @@
 
 #include "ftp.h"
 
+#ifdef _WIN32
 #include <shlobj.h>
+#else
+#include <dirent.h>
+#endif
 
 #include <chrono>
+#include <cstring>
+#include <cwctype>
 #include <thread>
 
 static int const EXIT_OK = 0, EXIT_USAGE = 1, EXIT_UNREACHABLE = 2, EXIT_FAILED = 3, EXIT_BUSY = 4;
@@ -81,15 +87,102 @@ static string timeText (long long s)
 static string firstLine (string const &s) { return s.substr (0, s.find_first_of ("\r\n")); }
 
 // ---------------------------------------------------------------------------
-// settings (same file as the GUI)
+// local system (Windows and Linux)
+
+static wstring envVar (wchar_t const *name)
+{
+#ifdef _WIN32
+	wchar_t buf[1024];
+	DWORD n = GetEnvironmentVariableW (name, buf, 1024);
+	return n && n < 1024 ? wstring (buf, n) : wstring ();
+#else
+	char const *v = getenv (utf8 (name).c_str ());
+	return v ? wide (v) : wstring ();
+#endif
+}
+
+static int icompare (wstring const &a, wstring const &b)
+{
+	for (size_t i = 0; i < a.size () && i < b.size (); ++i)
+	{
+		wint_t x = towlower ((wint_t)a[i]), y = towlower ((wint_t)b[i]);
+		if (x != y)
+			return x < y ? -1 : 1;
+	}
+	return a.size () < b.size () ? -1 : a.size () > b.size () ? 1 : 0;
+}
+
+static bool localStat (wstring const &path, bool &dir, uint64_t &size)
+{
+#ifdef _WIN32
+	WIN32_FILE_ATTRIBUTE_DATA fa;
+	if (!GetFileAttributesExW (path.c_str (), GetFileExInfoStandard, &fa))
+		return false;
+	dir  = (fa.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+	size = ((uint64_t)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
+#else
+	struct stat st;
+	if (stat (utf8 (path).c_str (), &st) != 0)
+		return false;
+	dir  = S_ISDIR (st.st_mode);
+	size = (uint64_t)st.st_size;
+#endif
+	return true;
+}
+
+static std::vector<wstring> localList (wstring const &dir)
+{
+	std::vector<wstring> names;
+#ifdef _WIN32
+	WIN32_FIND_DATAW fd;
+	HANDLE h = FindFirstFileW ((dir + L"\\*").c_str (), &fd);
+	if (h == INVALID_HANDLE_VALUE)
+		return names;
+	do
+		if (wcscmp (fd.cFileName, L".") && wcscmp (fd.cFileName, L".."))
+			names.push_back (fd.cFileName);
+	while (FindNextFileW (h, &fd));
+	FindClose (h);
+#else
+	DIR *d = opendir (utf8 (dir).c_str ());
+	if (!d)
+		return names;
+	while (dirent *e = readdir (d))
+		if (strcmp (e->d_name, ".") && strcmp (e->d_name, ".."))
+			names.push_back (wide (e->d_name));
+	closedir (d);
+#endif
+	return names;
+}
+
+static void localMkdir (wstring const &path)
+{
+#ifdef _WIN32
+	CreateDirectoryW (path.c_str (), nullptr);
+#else
+	mkdir (utf8 (path).c_str (), 0755);
+#endif
+}
+
+static void localMkdirs (wstring const &path)
+{
+#ifdef _WIN32
+	SHCreateDirectoryExW (nullptr, path.c_str (), nullptr);
+#else
+	for (size_t pos = 1; pos <= path.size (); ++pos)
+		if (pos == path.size () || path[pos] == L'/')
+			localMkdir (path.substr (0, pos));
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// settings (same file as the GUI on Windows)
 
 static bool loadAddress (string &host, int &port)
 {
-	wchar_t path[MAX_PATH];
-	wstring file;
-	if (GetEnvironmentVariableW (L"CEMENT_CONFIG", path, MAX_PATH))
-		file = path;
-	else
+	wstring file = envVar (L"CEMENT_CONFIG");
+#ifdef _WIN32
+	if (file.empty ())
 	{
 		PWSTR base = nullptr;
 		if (SUCCEEDED (SHGetKnownFolderPath (FOLDERID_RoamingAppData, 0, nullptr, &base)))
@@ -109,6 +202,35 @@ static bool loadAddress (string &host, int &port)
 	host = utf8 (h);
 	port = GetPrivateProfileIntW (L"server", L"port", 5000, file.c_str ());
 	return true;
+#else
+	// Linux: $XDG_CONFIG_HOME/cement/config.ini, else ~/.config/cement/config.ini,
+	// same format as the Windows app: [server] host=... port=...
+	if (file.empty ())
+	{
+		wstring base = envVar (L"XDG_CONFIG_HOME");
+		file         = (base.empty () ? envVar (L"HOME") + L"/.config" : base) + L"/cement/config.ini";
+	}
+	FILE *f = fopen (utf8 (file).c_str (), "r");
+	if (!f)
+		return false;
+	char line[512];
+	bool inServer = false;
+	port          = 5000;
+	while (fgets (line, sizeof (line), f))
+	{
+		string l = line;
+		l.erase (l.find_last_not_of (" \t\r\n") + 1);
+		l.erase (0, l.find_first_not_of (" \t"));
+		if (!l.empty () && l[0] == '[')
+			inServer = l == "[server]";
+		else if (inServer && l.rfind ("host=", 0) == 0)
+			host = l.substr (5);
+		else if (inServer && l.rfind ("port=", 0) == 0)
+			port = atoi (l.c_str () + 5);
+	}
+	fclose (f);
+	return !host.empty ();
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +377,7 @@ static Status queryStatus (Link &link)
 			continue;
 		line.erase (0, 1);
 		string kind = line.substr (0, line.find (' '));
-		auto num    = [] (string const &v) { return _strtoui64 (v.c_str (), nullptr, 10); };
+		auto num    = [] (string const &v) { return (uint64_t)strtoull (v.c_str (), nullptr, 10); };
 		if (kind.rfind ("busy=", 0) == 0)
 		{
 			for (auto const &[k, v] : fields (line))
@@ -439,7 +561,7 @@ static void waitIdle (Link &link, int budget)
 static wstring remotePath (string const &arg)
 {
 	wstring p = wide (arg);
-	if (p.size () >= 3 && _wcsnicmp (p.c_str (), L"sd:", 3) == 0)
+	if (p.size () >= 3 && icompare (p.substr (0, 3), L"sd:") == 0)
 		p.erase (0, 3);
 	for (auto &c : p)
 		if (c == L'\\')
@@ -587,28 +709,22 @@ static std::function<void (uint64_t)> progressLine (wstring const &name, uint64_
 
 static void collectLocal (wstring const &local, wstring const &remoteDir, std::vector<Item> &items, Totals &t)
 {
-	WIN32_FILE_ATTRIBUTE_DATA fa;
-	if (!GetFileAttributesExW (local.c_str (), GetFileExInfoStandard, &fa))
+	bool isDir    = false;
+	uint64_t size = 0;
+	if (!localStat (local, isDir, size))
 	{
 		t.errors.push_back ("local path not found: " + utf8 (local));
 		return;
 	}
 	wstring remote = joinRemote (remoteDir, baseName (local));
-	if (!(fa.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+	if (!isDir)
 	{
-		items.push_back ({local, remote, false, ((uint64_t)fa.nFileSizeHigh << 32) | fa.nFileSizeLow});
+		items.push_back ({local, remote, false, size});
 		return;
 	}
 	items.push_back ({local, remote, true, 0});
-	WIN32_FIND_DATAW fd;
-	HANDLE h = FindFirstFileW ((local + L"\\*").c_str (), &fd);
-	if (h == INVALID_HANDLE_VALUE)
-		return;
-	do
-		if (wcscmp (fd.cFileName, L".") && wcscmp (fd.cFileName, L".."))
-			collectLocal (local + L"\\" + fd.cFileName, remote, items, t);
-	while (FindNextFileW (h, &fd));
-	FindClose (h);
+	for (auto const &name : localList (local))
+		collectLocal (local + PATH_SEP + name, remote, items, t);
 }
 
 static void collectRemote (Link &link, wstring const &remote, Entry const &e, wstring const &local, std::vector<Item> &items)
@@ -619,7 +735,7 @@ static void collectRemote (Link &link, wstring const &remote, Entry const &e, ws
 	std::vector<Entry> children;
 	link.run ([&] { children = link.ftp ().list (remote); });
 	for (auto const &c : children)
-		collectRemote (link, joinRemote (remote, c.name), c, local + L"\\" + c.name, items);
+		collectRemote (link, joinRemote (remote, c.name), c, local + PATH_SEP + c.name, items);
 }
 
 static void collectDelete (Link &link, wstring const &path, bool dir, std::vector<Item> &items)
@@ -660,9 +776,10 @@ static void downloadFile (Link &link, Item const &it)
 	bool retry = false;
 	link.run ([&] {
 		uint64_t offset = 0;
-		WIN32_FILE_ATTRIBUTE_DATA fa;
-		if (retry && GetFileAttributesExW (it.local.c_str (), GetFileExInfoStandard, &fa))
-			offset = std::min (it.size, ((uint64_t)fa.nFileSizeHigh << 32) | fa.nFileSizeLow);
+		bool isDir    = false;
+		uint64_t have = 0;
+		if (retry && localStat (it.local, isDir, have))
+			offset = std::min (it.size, have);
 		retry = true;
 		link.ftp ().download (it.remote, it.local, offset, progressLine (baseName (it.remote), it.size, offset));
 	});
@@ -768,7 +885,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			}
 		});
 		std::sort (entries.begin (), entries.end (), [] (Entry const &a, Entry const &b) {
-			return a.dir != b.dir ? a.dir : _wcsicmp (a.name.c_str (), b.name.c_str ()) < 0;
+			return a.dir != b.dir ? a.dir : icompare (a.name, b.name) < 0;
 		});
 		if (g_json)
 		{
@@ -819,7 +936,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		for (size_t i = 0; i + 1 < args.size (); ++i)
 		{
 			wstring local = wide (args[i]);
-			while (local.size () > 3 && (local.back () == L'\\' || local.back () == L'/'))
+			while (local.size () > 1 && (local.back () == L'\\' || local.back () == L'/') && local[local.size () - 2] != L':')
 				local.pop_back ();
 			collectLocal (local, dir, items, t);
 		}
@@ -880,16 +997,16 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 				std::vector<Entry> children;
 				link.run ([&] { children = link.ftp ().list (remote); });
 				for (auto const &c : children)
-					collectRemote (link, joinRemote (remote, c.name), c, dir + L"\\" + c.name, items);
+					collectRemote (link, joinRemote (remote, c.name), c, dir + PATH_SEP + c.name, items);
 			}
 			else
-				collectRemote (link, remote, e, dir + L"\\" + e.name, items);
+				collectRemote (link, remote, e, dir + PATH_SEP + e.name, items);
 		}
 		uint64_t files = 0, bytes = 0;
 		for (auto const &it : items)
 			files += !it.dir, bytes += it.size;
 		idle ();
-		SHCreateDirectoryExW (nullptr, dir.c_str (), nullptr);
+		localMkdirs (dir);
 		link.batch (files, bytes, "down");
 		link.run ([&] { link.ftp ().announceBatch (files, bytes, "down"); });
 		jobStart ("get", files, bytes);
@@ -897,7 +1014,7 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		{
 			if (it.dir)
 			{
-				CreateDirectoryW (it.local.c_str (), nullptr);
+				localMkdir (it.local);
 				t.folders++;
 				continue;
 			}
@@ -1030,6 +1147,7 @@ static char const *const USAGE =
     "remote paths are absolute on the SD card, e.g. /3ds/app/app.3dsx or sd:/3ds/app/app.3dsx\n"
     "(use the sd: form from Git Bash, which rewrites arguments starting with /)\n";
 
+#ifdef _WIN32
 int wmain (int argc, wchar_t **argv)
 {
 	SetConsoleOutputCP (CP_UTF8);
@@ -1037,6 +1155,18 @@ int wmain (int argc, wchar_t **argv)
 	g_tty = GetConsoleMode (GetStdHandle (STD_ERROR_HANDLE), &mode) != 0;
 	if (g_tty)
 		SetConsoleMode (GetStdHandle (STD_ERROR_HANDLE), mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#else
+int main (int argc, char **argvUtf8)
+{
+	std::vector<wstring> args8;
+	for (int i = 0; i < argc; ++i)
+		args8.push_back (wide (argvUtf8[i]));
+	std::vector<wchar_t *> argvW;
+	for (auto &a : args8)
+		argvW.push_back (a.data ());
+	wchar_t **argv = argvW.data ();
+	g_tty          = isatty (2);
+#endif
 
 	string host;
 	int port = 0, wait = 20;
@@ -1095,14 +1225,16 @@ int wmain (int argc, wchar_t **argv)
 		if (host.empty ())
 		{
 			if (!saved)
-				throw UsageError{"no 3DS address saved yet: open Cement.exe once or pass --host"};
+				throw UsageError{"no 3DS address saved yet: open Cement.exe once, write ~/.config/cement/config.ini ([server] host=... port=...) or pass --host"};
 			host = savedHost;
 		}
 		if (port == 0)
 			port = saved ? savedPort : 5000;
 
+#ifdef _WIN32
 		WSADATA wsa;
 		WSAStartup (MAKEWORD (2, 2), &wsa);
+#endif
 		Link link (host, port, wait);
 		auto fail = [&] (int code, string const &msg, char const *extra = "") {
 			out (g_json ? "{\"ok\":false,\"error\":" + jsonStr (msg) + extra + "}\n" : "error: " + msg + "\n");

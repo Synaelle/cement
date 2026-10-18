@@ -4,6 +4,8 @@ server/*.elf
 server/*.cia
 server/*.3dsx
 client/*.exe
+client/cement-cli
+release/
 client/*.o
 
 # local tests

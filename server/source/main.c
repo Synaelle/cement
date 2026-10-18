@@ -1201,6 +1201,11 @@ static void netUp (void)
 	addr.sin_port           = htons (CTRL_PORT);
 	addr.sin_addr.s_addr    = s_ip;
 	s_listen                = socket (AF_INET, SOCK_STREAM, 0);
+	// after waking up, the old connections may still hold the port (TIME_WAIT):
+	// without this the server could not listen again for a while (ftpd does the same)
+	int one = 1;
+	if (s_listen >= 0)
+		setsockopt (s_listen, SOL_SOCKET, SO_REUSEADDR, &one, sizeof (one));
 	if (s_ip == 0 || s_ip == INADDR_BROADCAST || s_listen < 0 ||
 	    bind (s_listen, (struct sockaddr *)&addr, sizeof (addr)) != 0 || listen (s_listen, MAX_SESSIONS) != 0)
 	{
