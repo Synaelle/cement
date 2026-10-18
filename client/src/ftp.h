@@ -279,6 +279,17 @@ public:
 		return true;
 	}
 
+	// last modification time "YYYYMMDDhhmmss"; false if missing or unsupported.
+	// The 3DS reports its own clock, which is local time.
+	bool mdtm (wstring const &path, string &out)
+	{
+		string text;
+		if (cmd ("MDTM " + utf8 (path), &text) != 213 || text.size () < 18)
+			return false;
+		out = text.substr (4, 14);
+		return true;
+	}
+
 	void simple (string const &line, int expect)
 	{
 		string text;

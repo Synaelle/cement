@@ -95,6 +95,29 @@ enum
 	WM_APP_STATE = WM_APP + 1, // a worker's connection state changed
 	WM_APP_LIST,               // lParam: ListResult*
 	WM_APP_MSG,                // lParam: wstring* (status message)
+	WM_APP_OPEN,               // lParam: OpenedFile* (downloaded, to open and watch)
+	WM_APP_INFO,               // lParam: RemoteInfo* (3DS side of an edited file)
+	WM_APP_SENT,               // lParam: OpenedFile* (edited file sent back: new 3DS time)
+};
+
+// a file opened from the 3DS: watched so that saved edits can be sent back
+struct OpenedFile
+{
+	wstring local, remote;
+	string remoteStamp;       // 3DS modification time when downloaded/sent ("YYYYMMDDhhmmss")
+	FILETIME baseline{};      // local last-write time already handled
+	FILETIME seen{};          // last-write time seen while waiting for the save to settle
+	ULONGLONG changedAt = 0;  // when a new save was first seen
+	bool asking         = false;
+};
+
+// the 3DS side of an edited file, fetched before asking to send it back
+struct RemoteInfo
+{
+	wstring local, remote;
+	bool exists   = false;
+	uint64_t size = 0;
+	string stamp;
 };
 
 struct ListResult
@@ -164,7 +187,8 @@ struct Job
 		Delete,
 		Upload,
 		Download,
-		SendToPc
+		SendToPc,
+		Info // size and time of path (remote) for the edited copy path2
 	} type;
 
 	wstring path;  // List/Mkdir: target. Rename: from. Upload: remote dir. Download/Delete: remote dir
@@ -193,6 +217,8 @@ struct Job
 	int errors     = 0;
 
 	HANDLE doneEvent = nullptr; // set when finished (Download for drag-out)
+	bool openAfter   = false;   // Download: open the file on the PC when done
+	wstring trackLocal;         // Upload of an edited opened file: report the new 3DS time
 	bool ok          = false;
 };
 
@@ -413,13 +439,28 @@ private:
 			if (done)
 			{
 				finish (job, ok);
+				if (ok && (job->openAfter || !job->trackLocal.empty ()) && !job->items.empty ())
+				{
+					// remember the 3DS file's time, to tell later whether it changed there
+					auto *o   = new OpenedFile;
+					o->local  = job->openAfter ? job->items[0].local : job->trackLocal;
+					o->remote = job->items[0].remote;
+					try
+					{
+						m_ftp.mdtm (o->remote, o->remoteStamp);
+					}
+					catch (NetError &)
+					{
+					}
+					PostMessageW (g_wnd, job->openAfter ? WM_APP_OPEN : WM_APP_SENT, 0, (LPARAM)o);
+				}
 				if (m_transfer)
 				{
 					std::lock_guard lk (g_prog.lock);
 					if (!busy ())
 						g_prog.active = false;
 				}
-				if (job->type != Job::List)
+				if (job->type != Job::List && job->type != Job::Info)
 					refreshAfter ();
 			}
 		}
@@ -449,6 +490,17 @@ private:
 			}
 			if (!PostMessageW (job.notify ? job.notify : g_wnd, WM_APP_LIST, 0, (LPARAM)r))
 				delete r; // the picker closed meanwhile
+			break;
+		}
+		case Job::Info:
+		{
+			auto r    = std::make_unique<RemoteInfo> ();
+			r->remote = job.path;
+			r->local  = job.path2;
+			r->exists = m_ftp.size (job.path, r->size);
+			if (r->exists)
+				m_ftp.mdtm (job.path, r->stamp);
+			PostMessageW (g_wnd, WM_APP_INFO, 0, (LPARAM)r.release ());
 			break;
 		}
 		case Job::Mkdir:
@@ -1298,12 +1350,17 @@ static std::vector<Entry> selectedEntries ()
 	return out;
 }
 
+static void openFile (Entry const &e);
+
+// folders: browse into them; files: download to a temp folder and open on the PC
 static void openRow (int row)
 {
 	if (isParentRow (row))
 		navigate (parentRemote (currentDir ()));
 	else if (auto e = entryAt (row); e && e->dir)
 		navigate (joinRemote (currentDir (), e->name));
+	else if (e)
+		openFile (*e);
 }
 
 static void deleteSelected ()
@@ -1630,6 +1687,196 @@ static wstring tempRoot ()
 	wchar_t tmp[MAX_PATH];
 	GetTempPathW (MAX_PATH, tmp);
 	return wstring (tmp) + L"Cement";
+}
+
+// a copy for viewing: changes to it are not sent back to the 3DS. The temp
+// folder is emptied at the next start.
+static void openFile (Entry const &e)
+{
+	wstring dir = tempRoot () + L"\\open\\" + std::to_wstring (GetTickCount64 ());
+	SHCreateDirectoryExW (nullptr, dir.c_str (), nullptr);
+	g_cancel       = false;
+	auto job       = std::make_shared<Job> ();
+	job->type      = Job::Download;
+	job->path      = currentDir ();
+	job->path2     = dir;
+	job->remotes   = {e};
+	job->openAfter = true;
+	{
+		std::lock_guard lk (g_prog.lock);
+		g_prog.active = true;
+	}
+	g_xfer.push (job);
+}
+
+static std::vector<OpenedFile> g_opened; // UI thread
+
+static bool lastWrite (wstring const &path, FILETIME &ft, uint64_t *size = nullptr)
+{
+	WIN32_FILE_ATTRIBUTE_DATA fa;
+	if (!GetFileAttributesExW (path.c_str (), GetFileExInfoStandard, &fa))
+		return false;
+	ft = fa.ftLastWriteTime;
+	if (size)
+		*size = ((uint64_t)fa.nFileSizeHigh << 32) | fa.nFileSizeLow;
+	return true;
+}
+
+static bool sameTime (FILETIME const &a, FILETIME const &b)
+{
+	return a.dwLowDateTime == b.dwLowDateTime && a.dwHighDateTime == b.dwHighDateTime;
+}
+
+// "YYYYMMDDhhmmss" -> "YYYY-MM-DD hh:mm:ss"
+static wstring stampText (string const &s)
+{
+	if (s.size () < 14)
+		return L"unknown time";
+	return wide (s.substr (0, 4) + "-" + s.substr (4, 2) + "-" + s.substr (6, 2) + " " + s.substr (8, 2) + ":" +
+	             s.substr (10, 2) + ":" + s.substr (12, 2));
+}
+
+static wstring localTimeText (FILETIME ft)
+{
+	FILETIME local;
+	SYSTEMTIME st;
+	FileTimeToLocalFileTime (&ft, &local);
+	FileTimeToSystemTime (&local, &st);
+	wchar_t buf[32];
+	swprintf (buf, 32, L"%04u-%02u-%02u %02u:%02u:%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+	return buf;
+}
+
+// called by the timer: a save is handled once it has not changed for 1.5 s
+// (editors often write a file in several steps)
+static void checkOpenedFiles ()
+{
+	ULONGLONG now = GetTickCount64 ();
+	for (auto &o : g_opened)
+	{
+		FILETIME ft;
+		if (o.asking || !lastWrite (o.local, ft) || sameTime (ft, o.baseline))
+			continue;
+		if (!o.changedAt || !sameTime (ft, o.seen))
+		{
+			o.seen      = ft;
+			o.changedAt = now;
+			continue;
+		}
+		if (now - o.changedAt < 1500)
+			continue;
+		o.asking  = true;
+		auto job  = std::make_shared<Job> ();
+		job->type = Job::Info;
+		job->path  = o.remote;
+		job->path2 = o.local;
+		g_browse.push (job);
+	}
+}
+
+struct SendBackData
+{
+	OpenedFile *opened;
+	RemoteInfo *info;
+	FILETIME localWrite;
+	uint64_t localSize;
+	bool warn;
+};
+
+static INT_PTR CALLBACK sendBackDlgProc (HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
+{
+	static SendBackData *d;
+	switch (msg)
+	{
+	case WM_CTLCOLORSTATIC:
+		if ((HWND)lp == GetDlgItem (dlg, IDC_SB_WARN))
+		{
+			ctlColor (msg, (HDC)wp);
+			SetTextColor ((HDC)wp, g_dark ? RGB (255, 176, 64) : RGB (176, 96, 0));
+			return (INT_PTR)g_bgBrush;
+		}
+		return (INT_PTR)ctlColor (msg, (HDC)wp);
+	case WM_CTLCOLORDLG:
+	case WM_CTLCOLORBTN:
+		return (INT_PTR)ctlColor (msg, (HDC)wp);
+	case WM_INITDIALOG:
+	{
+		d = (SendBackData *)lp;
+		darkTitleBar (dlg);
+		for (int id : {IDOK, IDCANCEL})
+			themeControl (GetDlgItem (dlg, id));
+		SetDlgItemTextW (dlg, IDC_SB_PATH, d->opened->remote.c_str ());
+		wstring remote = d->info->exists ? stampText (d->info->stamp) + L"   " + formatSize (d->info->size) : L"not there anymore";
+		SetDlgItemTextW (dlg, IDC_SB_REMOTE, remote.c_str ());
+		wstring local = localTimeText (d->localWrite) + L"   " + formatSize (d->localSize);
+		SetDlgItemTextW (dlg, IDC_SB_LOCAL, local.c_str ());
+		wstring warn;
+		if (!d->info->exists)
+			warn = L"The file was deleted or moved on the 3DS. Sending creates it again.";
+		else if (d->warn)
+			warn = L"The file on the 3DS changed since you opened it. Sending replaces that version.";
+		SetDlgItemTextW (dlg, IDC_SB_WARN, warn.c_str ());
+		return TRUE;
+	}
+	case WM_COMMAND:
+		if (LOWORD (wp) == IDOK || LOWORD (wp) == IDCANCEL)
+		{
+			EndDialog (dlg, LOWORD (wp));
+			return TRUE;
+		}
+		break;
+	}
+	return FALSE;
+}
+
+// the 3DS side is known: ask, then send the edited copy back (or not)
+static void askSendBack (RemoteInfo *info)
+{
+	auto it = std::find_if (g_opened.begin (), g_opened.end (), [&] (OpenedFile const &o) { return o.local == info->local; });
+	if (it == g_opened.end ())
+		return;
+	SendBackData d{&*it, info, {}, 0, false};
+	if (!lastWrite (it->local, d.localWrite, &d.localSize))
+	{
+		it->asking = false;
+		return;
+	}
+	d.warn = info->exists && !it->remoteStamp.empty () && !info->stamp.empty () && info->stamp != it->remoteStamp;
+	INT_PTR choice = DialogBoxParamW (g_inst, MAKEINTRESOURCEW (IDD_SENDBACK), g_wnd, sendBackDlgProc, (LPARAM)&d);
+
+	// either way this save is handled; the next one asks again
+	it               = std::find_if (g_opened.begin (), g_opened.end (), [&] (OpenedFile const &o) { return o.local == info->local; });
+	it->baseline     = d.localWrite;
+	it->changedAt    = 0;
+	it->asking       = false;
+	if (choice != IDOK)
+		return;
+	g_cancel          = false;
+	auto job          = std::make_shared<Job> ();
+	job->type         = Job::Upload;
+	job->path         = parentRemote (it->remote);
+	job->locals       = {it->local};
+	job->trackLocal   = it->local;
+	{
+		std::lock_guard lk (g_prog.lock);
+		g_prog.active = true;
+	}
+	g_xfer.push (job);
+}
+
+static void launchFile (wstring const &path)
+{
+	if (GetEnvironmentVariableW (L"CEMENT_NO_LAUNCH", nullptr, 0)) // tests: download and watch only
+		return;
+	auto rc = (INT_PTR)ShellExecuteW (g_wnd, L"open", path.c_str (), nullptr, nullptr, SW_SHOWNORMAL);
+	if (rc == SE_ERR_NOASSOC || rc == SE_ERR_ASSOCINCOMPLETE)
+	{
+		// no app registered for this type: let the user pick one
+		OPENASINFO info{path.c_str (), nullptr, OAIF_EXEC | OAIF_ALLOW_REGISTRATION};
+		SHOpenWithDialog (g_wnd, &info);
+	}
+	else if (rc <= 32)
+		setStatus (1, L"Windows could not open " + path);
 }
 
 static void deleteTree (wstring const &path)
@@ -2154,7 +2401,7 @@ static void showContextMenu (int x, int y)
 {
 	auto sel   = selectedEntries ();
 	HMENU menu = CreatePopupMenu ();
-	if (sel.size () == 1 && sel[0].dir)
+	if (sel.size () == 1)
 		AppendMenuW (menu, MF_STRING, ID_OPEN, L"Open");
 	if (!sel.empty ())
 	{
@@ -2400,6 +2647,7 @@ static LRESULT CALLBACK wndProc (HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 		break;
 	case WM_TIMER:
 		updateProgress ();
+		checkOpenedFiles ();
 		return 0;
 	case WM_APP_STATE:
 		updateConnState ();
@@ -2410,6 +2658,29 @@ static LRESULT CALLBACK wndProc (HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
 	{
 		std::unique_ptr<ListResult> r ((ListResult *)lp);
 		showList (r.get ());
+		return 0;
+	}
+	case WM_APP_OPEN:
+	{
+		std::unique_ptr<OpenedFile> o ((OpenedFile *)lp);
+		lastWrite (o->local, o->baseline);
+		g_opened.push_back (*o);
+		launchFile (o->local);
+		return 0;
+	}
+	case WM_APP_INFO:
+	{
+		std::unique_ptr<RemoteInfo> info ((RemoteInfo *)lp);
+		askSendBack (info.get ());
+		return 0;
+	}
+	case WM_APP_SENT:
+	{
+		std::unique_ptr<OpenedFile> o ((OpenedFile *)lp);
+		for (auto &f : g_opened)
+			if (f.local == o->local)
+				f.remoteStamp = o->remoteStamp; // the 3DS now has this version
+		setStatus (1, L"Sent your changes to " + o->remote);
 		return 0;
 	}
 	case WM_APP_MSG:

@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -343,6 +344,24 @@ static bool fileSize (char const *path, u64 *size)
 	Result r = FSFILE_GetSize (h, size);
 	FSFILE_Close (h);
 	return R_SUCCEEDED (r);
+}
+
+// last modification time as "YYYYMMDDhhmmss" (MDTM). Same call as libctru's
+// archive_getmtime: milliseconds since 2000-01-01 on the console's clock, which
+// keeps local time (no time zone), so the result is the 3DS's local time.
+static bool fileTime (char const *path, char *out, size_t n)
+{
+	u16 buf[PATH_SIZE];
+	FS_Path p;
+	u64 ms = 0;
+	if (!toFsPath (path, buf, &p) ||
+	    R_FAILED (FSUSER_ControlArchive (s_sd, ARCHIVE_ACTION_GET_TIMESTAMP, (void *)p.data, p.size, &ms, sizeof (ms))))
+		return false;
+	time_t t = (time_t)(ms / 1000 + 946684800ull); // seconds since 1970
+	struct tm tm;
+	gmtime_r (&t, &tm);
+	snprintf (out, n, "%04d%02d%02d%02d%02d%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	return true;
 }
 
 static void setName (Session *s, char const *path)
@@ -751,7 +770,7 @@ static void handleCommand (Session *s, char *line)
 		reply (s, "215 UNIX Type: L8\r\n");
 	else if (strcmp (cmd, "FEAT") == 0)
 		reply (s,
-		    "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n"
+		    "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n MDTM\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n"
 		    "211 End\r\n");
 	else if (strcmp (cmd, "OPTS") == 0 || strcmp (cmd, "TYPE") == 0 || strcmp (cmd, "MODE") == 0 ||
 	         strcmp (cmd, "STRU") == 0 || strcmp (cmd, "NOOP") == 0)
@@ -852,6 +871,15 @@ static void handleCommand (Session *s, char *line)
 		u64 size = 0;
 		if (resolvePath (s->cwd, arg, path) && fileSize (path, &size))
 			reply (s, "213 %llu\r\n", size);
+		else
+			reply (s, "550 Not found\r\n");
+	}
+	else if (strcmp (cmd, "MDTM") == 0)
+	{
+		char stamp[32];
+		u64 size = 0;
+		if (resolvePath (s->cwd, arg, path) && fileSize (path, &size) && fileTime (path, stamp, sizeof (stamp)))
+			reply (s, "213 %s\r\n", stamp);
 		else
 			reply (s, "550 Not found\r\n");
 	}

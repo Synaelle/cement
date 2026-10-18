@@ -18,3 +18,8 @@
 #define IDC_PICKPATH 201
 #define IDC_PICKUP   202
 #define IDC_PICKLIST 203
+#define IDD_SENDBACK 300
+#define IDC_SB_PATH   301
+#define IDC_SB_REMOTE 302
+#define IDC_SB_LOCAL  303
+#define IDC_SB_WARN   304
