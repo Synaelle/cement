@@ -28,18 +28,26 @@ echo "version $APP_VERSION"
 
 build_3ds () {
 	[ -n "$MAKEROM" ] && [ -n "$BANNERTOOL" ] || { echo "makerom and bannertool are needed for the CIA" >&2; exit 1; }
-	if [ -n "${DEVKITARM:-}" ]; then
-		make -C server APP_VERSION="$APP_VERSION" MAKEROM="$MAKEROM" BANNERTOOL="$BANNERTOOL"
-	elif command -v docker >/dev/null; then
-		# CIA tools are mounted next to the sources; files are written as the current user
-		docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-			-v "$PWD:/src" -v "$MAKEROM:/cement-tools/makerom:ro" -v "$BANNERTOOL:/cement-tools/bannertool:ro" \
-			-w /src/server devkitpro/devkitarm \
-			sh -c 'git config --global --add safe.directory "*" && make APP_VERSION="$0" MAKEROM=/cement-tools/makerom BANNERTOOL=/cement-tools/bannertool' "$APP_VERSION"
-	else
-		echo "set DEVKITARM (devkitPro) or install Docker for the 3DS build" >&2
-		exit 1
+	if [ -z "${DEVKITARM:-}" ]; then
+		# no devkitPro installed: copy it once out of the official Docker image
+		# (running the build inside the image fails: its libc is older than
+		# what the Linux makerom release needs)
+		cache=${XDG_CACHE_HOME:-$HOME/.cache}/cement/devkitpro
+		if [ ! -x "$cache/tools/bin/3dsxtool" ] || [ ! -d "$cache/devkitARM" ]; then
+			command -v docker >/dev/null || { echo "install devkitPro (set DEVKITARM) or Docker for the 3DS build" >&2; exit 1; }
+			echo "copying devkitARM out of the devkitpro/devkitarm image to $cache"
+			mkdir -p "$(dirname "$cache")"
+			rm -rf "$cache" "$cache.part"
+			id=$(docker create devkitpro/devkitarm)
+			mkdir -p "$cache.part" # complete copies only; streamed as tar because
+			docker cp "$id:/opt/devkitpro/." - | tar -x -C "$cache.part" # one symlink points outside
+			docker rm "$id" >/dev/null
+			mv "$cache.part" "$cache"
+		fi
+		export DEVKITPRO="$cache" DEVKITARM="$cache/devkitARM"
+		export PATH="$DEVKITPRO/tools/bin:$PATH"
 	fi
+	make -C server APP_VERSION="$APP_VERSION" MAKEROM="$MAKEROM" BANNERTOOL="$BANNERTOOL"
 }
 
 build_windows () {

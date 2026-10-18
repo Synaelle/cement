@@ -70,13 +70,15 @@ all: $(BUILD)
 	@$(MAKEROM) -f cia -o $(TARGET).cia -target t -exefslogo -rsf meta/$(TARGET).rsf -ver $(TITLE_VERSION) \
 		-elf $(TARGET).elf -icon $(BUILD)/icon.icn -banner $(BUILD)/banner.bnr
 	@echo built ... $(TARGET).cia v$(APP_VERSION)
+	@$(DEVKITPRO)/tools/bin/3dsxtool $(TARGET).elf $(TARGET).3dsx --smdh=$(BUILD)/icon.icn
+	@echo built ... $(TARGET).3dsx v$(APP_VERSION)
 
 $(BUILD):
 	@mkdir -p $@
 
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).elf $(TARGET).cia
+	@rm -fr $(BUILD) $(TARGET).elf $(TARGET).cia $(TARGET).3dsx
 
 else
 
