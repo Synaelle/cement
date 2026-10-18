@@ -56,6 +56,17 @@ static int protocolLevel (int code, string const &text)
 	return pos == string::npos ? 1 : atoi (text.c_str () + pos + 10);
 }
 
+// a number field (" name=123") from a SITE STATUS reply's summary line
+static bool statusNumber (string const &text, char const *name, uint64_t *out)
+{
+	string key = string (" ") + name + "=";
+	size_t pos = text.find (key);
+	if (pos == string::npos)
+		return false;
+	*out = strtoull (text.c_str () + pos + key.size (), nullptr, 10);
+	return true;
+}
+
 // ---------------------------------------------------------------------------
 // utilities
 
@@ -481,6 +492,8 @@ public:
 	{
 		string version;
 		int protocol = 0;
+		bool hasSpace = false; // the 3DS app reports SD space (sdFree, sdTotal)
+		uint64_t sdFree = 0, sdTotal = 0;
 	};
 	ServerInfo serverInfo ()
 	{
@@ -488,6 +501,8 @@ public:
 		string text;
 		int code      = cmd ("SITE STATUS", &text);
 		info.protocol = protocolLevel (code, text);
+		info.hasSpace = code == 211 && statusNumber (text, "sd_free", &info.sdFree) &&
+		                statusNumber (text, "sd_total", &info.sdTotal) && info.sdTotal;
 		size_t pos    = code == 211 ? text.find (" version=") : string::npos;
 		if (pos != string::npos)
 		{
@@ -495,6 +510,38 @@ public:
 			info.version = text.substr (pos, text.find_first_of (" \r\n", pos) - pos);
 		}
 		return info;
+	}
+
+	// free bytes on the SD card (AVBL); false if the server doesn't say
+	bool freeBytes (uint64_t *out)
+	{
+		string text;
+		if (cmd ("AVBL", &text) != 213)
+			return false;
+		*out = strtoull (text.c_str () + 4, nullptr, 10);
+		return true;
+	}
+
+	// Do these files (remote path, size) fit on the SD card? False only when they
+	// surely don't: the bytes to write, minus the files they would overwrite, are
+	// more than the free space. True when the server doesn't report free space.
+	// The sizes of existing files are only asked for when the total doesn't fit.
+	bool fits (std::vector<std::pair<wstring, uint64_t>> const &files, uint64_t *need, uint64_t *avail)
+	{
+		*need = 0;
+		for (auto const &f : files)
+			*need += f.second;
+		if (!freeBytes (avail) || *need <= *avail)
+			return true;
+		for (auto const &f : files)
+		{
+			uint64_t old = 0;
+			if (size (f.first, old))
+				*need -= std::min (old, *need);
+			if (*need <= *avail)
+				return true;
+		}
+		return false;
 	}
 
 	// tells the 3DS a multi-file job is running (SITE STATUS shows it as busy with an

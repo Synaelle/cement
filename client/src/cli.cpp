@@ -330,6 +330,8 @@ struct Status
 	int connections = 0;
 	int protocol    = 0; // compatibility level (see REQUIRED_PROTOCOL)
 	string version;
+	bool hasSpace = false; // the 3DS app reports SD card space
+	uint64_t sdFree = 0, sdTotal = 0;
 	std::vector<Transfer> transfers;
 	uint64_t installDone = 0, installSize = 0;
 	string installFile;
@@ -392,6 +394,10 @@ static Status queryStatus (Link &link)
 					st.connections = (int)num (v);
 				else if (k == "version")
 					st.version = v;
+				else if (k == "sd_free")
+					st.sdFree = num (v);
+				else if (k == "sd_total")
+					st.sdTotal = num (v), st.hasSpace = st.sdTotal > 0;
 			}
 		}
 		else if (kind == "transfer")
@@ -522,6 +528,8 @@ static string statusJson (Status const &st, string const &address)
 	       ",\"app_outdated\":" + (outdated ? "true" : "false") +
 	       ",\"status_supported\":" + (st.known ? "true" : "false") + ",\"busy\":" + (st.busy ? "true" : "false") +
 	       ",\"idle_ms\":" + std::to_string (st.idleMs) + ",\"connections\":" + std::to_string (st.connections) +
+	       ",\"sd_free\":" + (st.hasSpace ? std::to_string (st.sdFree) : "null") +
+	       ",\"sd_total\":" + (st.hasSpace ? std::to_string (st.sdTotal) : "null") +
 	       ",\"transfers\":[" + transfers + "],\"install\":" + install +
 	       (st.known ? string ()
 	                 : ",\"warning\":\"this 3DS app does not report its transfers, so busy/idle are unknown: install the new Cement.cia\"") +
@@ -848,6 +856,8 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 			out ("3DS app: " + (st.version.empty () ? string ("unknown version") : "v" + st.version) + "\n");
 			if (st.protocol < REQUIRED_PROTOCOL)
 				out ("the 3DS app is too old for this tool (v" APP_VERSION "): install the new CIA\n");
+			if (st.hasSpace)
+				out ("SD card: " + sizeText (st.sdFree) + " free of " + sizeText (st.sdTotal) + "\n");
 			if (!st.known)
 				out ("this server does not report its activity (SITE STATUS)\n");
 			else if (!st.busy)
@@ -859,6 +869,26 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 					out ("  " + l + "\n");
 			}
 		}
+		return EXIT_OK;
+	}
+
+	if (cmd == "df")
+	{
+		Status st = queryStatus (link);
+		if (!st.hasSpace) // older 3DS app or another FTP server: AVBL gives the free space alone
+			link.run ([&] { st.hasSpace = link.ftp ().freeBytes (&st.sdFree); });
+		if (!st.hasSpace)
+			throw FtpError{"this server does not report free space (install the new Cement.cia)"};
+		uint64_t used = st.sdTotal > st.sdFree ? st.sdTotal - st.sdFree : 0;
+		if (g_json)
+			out ("{\"ok\":true,\"free\":" + std::to_string (st.sdFree) + ",\"total\":" +
+			     (st.sdTotal ? std::to_string (st.sdTotal) : "null") + ",\"used\":" +
+			     (st.sdTotal ? std::to_string (used) : "null") + "}\n");
+		else if (st.sdTotal)
+			out ("SD card: " + sizeText (st.sdFree) + " free of " + sizeText (st.sdTotal) + " (" +
+			     std::to_string ((int)(used * 100 / st.sdTotal)) + "% used)\n");
+		else
+			out ("SD card: " + sizeText (st.sdFree) + " free\n");
 		return EXIT_OK;
 	}
 
@@ -944,6 +974,16 @@ static int run (Link &link, string const &cmd, std::vector<string> const &args, 
 		for (auto const &it : items)
 			files += !it.dir, bytes += it.size;
 		idle ();
+		// refuse up front what can't fit, instead of failing halfway with a full card
+		std::vector<std::pair<wstring, uint64_t>> sizes;
+		for (auto const &it : items)
+			if (!it.dir)
+				sizes.emplace_back (it.remote, it.size);
+		bool fit      = true;
+		uint64_t need = 0, avail = 0;
+		link.run ([&] { fit = link.ftp ().fits (sizes, &need, &avail); });
+		if (!fit)
+			throw FtpError{"not enough space on the SD card: needs " + sizeText (need) + ", " + sizeText (avail) + " free"};
 		mkdirs (link, dir);
 		link.batch (files, bytes, "up");
 		link.run ([&] { link.ftp ().announceBatch (files, bytes, "up"); });
@@ -1124,6 +1164,7 @@ static char const *const USAGE =
     "  wait                           block until no transfer/deletion is running\n"
     "  ls [remote-dir]                list a folder (default /)\n"
     "  stat <remote>                  type and size of a file/folder\n"
+    "  df                             free and total space on the SD card\n"
     "  put <local>... <remote-dir>    upload files/folders into remote-dir (created if needed)\n"
     "  get <remote>... <local-dir>    download files/folders into local-dir\n"
     "  rm <remote>...                 delete files/folders (folders recursively)\n"

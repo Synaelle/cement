@@ -63,6 +63,9 @@ On first run it asks for the IP and port shown on the 3DS, then always reconnect
   even one that doesn't exist yet) and a PC folder. The Send to PC button (or Ctrl+S) copies them all
   into that folder in one go. With "Replace PC folder contents", the folder is emptied first (old files
   go to the Recycle Bin); drives and personal folders are refused for that.
+- **SD card space.** The status bar shows the free and total space on the SD card ("SD: 12.3 GB free of
+  29.7 GB"), updated whenever a folder is listed and after every transfer or deletion. An upload that
+  can't fit is refused before anything is sent (files it would overwrite count as freed space).
 - **Status bar.** The 3DS app's version, with a hint only when the 3DS app is too old for this PC app.
 - **Dark mode** by default; toggle it in Settings. Settings are saved in `%APPDATA%\Cement\config.ini`.
 
@@ -75,6 +78,7 @@ cement-cli status                          is the 3DS reachable, busy (transfers
 cement-cli wait                            wait until nothing else is transferring
 cement-cli ls sd:/3ds                      list a folder
 cement-cli stat sd:/boot.firm              type and size
+cement-cli df                              free and total space on the SD card
 cement-cli put game/ notes.txt sd:/3ds/app upload files and folders
 cement-cli get sd:/luma/screenshots ./shots download files and folders (--contents: only what's inside)
 cement-cli rm sd:/3ds/app/old.bin          delete (folders with everything in them)
@@ -86,6 +90,7 @@ cement-cli mv sd:/a.txt sd:/b.txt          rename or move
   commands run in the background. Exit codes: 0 ok, 1 usage, 2 3DS unreachable, 3 failed, 4 still busy.
 - Commands that change files wait until nobody else is transferring (`--busy-wait`, default 600 s), and
   announce their own jobs so the Windows app and other scripts wait for them too.
+- `put` checks the upload fits on the SD card first and fails with exit code 3 if it doesn't.
 - Dropped connections are retried for `--wait` seconds (default 20) and transfers resume.
 - Remote paths can be written `sd:/path` (shells like Git Bash rewrite arguments starting with `/`).
 - The 3DS address comes from the Windows app's settings, from `~/.config/cement/config.ini` on Linux
@@ -97,7 +102,7 @@ cement-cli mv sd:/a.txt sd:/b.txt          rename or move
 Cement is plain FTP (passive mode, UTF-8), so FileZilla, WinSCP and other FTP clients work with the 3DS
 app too. On top of standard FTP it adds a few commands its own clients use: `SITE STATUS` (what every
 connection is doing, progress and time left), `SITE BATCH` (a client announces a whole job), plus
-`ALLO` and `MDTM` for sizes and dates. There is no password: use it on your own network.
+`ALLO` and `MDTM` for sizes and dates, and `AVBL` for the free space (also in `SITE STATUS` with the total). There is no password: use it on your own network.
 
 ## Build
 

@@ -364,6 +364,20 @@ static bool fileTime (char const *path, char *out, size_t n)
 	return true;
 }
 
+// free and total bytes on the SD card
+static bool sdSpace (u64 *freeBytes, u64 *total)
+{
+	FS_ArchiveResource r;
+	if (R_SUCCEEDED (FSUSER_GetArchiveResource (&r, SYSTEM_MEDIATYPE_SD)) && r.clusterSize)
+	{
+		*freeBytes = (u64)r.freeClusters * r.clusterSize;
+		*total     = (u64)r.totalClusters * r.clusterSize;
+		return true;
+	}
+	*total = 0;
+	return R_SUCCEEDED (FSUSER_GetFreeBytes (freeBytes, s_sd));
+}
+
 static void setName (Session *s, char const *path)
 {
 	snprintf (s->path, sizeof (s->path), "%s", path);
@@ -588,6 +602,8 @@ static void openPasv (Session *s, bool extended)
 		return;
 	}
 	setBuffers (s->pasv);
+	int one = 1; // ports of earlier transfers may still be in TIME_WAIT
+	setsockopt (s->pasv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof (one));
 
 	// binding to port 0 is unreliable on 3DS (ftpd works around it the same way)
 	struct sockaddr_in addr = {0};
@@ -770,7 +786,7 @@ static void handleCommand (Session *s, char *line)
 		reply (s, "215 UNIX Type: L8\r\n");
 	else if (strcmp (cmd, "FEAT") == 0)
 		reply (s,
-		    "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n MDTM\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n"
+		    "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n MDTM\r\n AVBL\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n"
 		    "211 End\r\n");
 	else if (strcmp (cmd, "OPTS") == 0 || strcmp (cmd, "TYPE") == 0 || strcmp (cmd, "MODE") == 0 ||
 	         strcmp (cmd, "STRU") == 0 || strcmp (cmd, "NOOP") == 0)
@@ -882,6 +898,15 @@ static void handleCommand (Session *s, char *line)
 			reply (s, "213 %s\r\n", stamp);
 		else
 			reply (s, "550 Not found\r\n");
+	}
+	else if (strcmp (cmd, "AVBL") == 0)
+	{
+		// free space; the whole card is one volume, so the path doesn't matter
+		u64 freeBytes = 0, total = 0;
+		if (sdSpace (&freeBytes, &total))
+			reply (s, "213 %llu\r\n", freeBytes);
+		else
+			reply (s, "550 Can't read free space\r\n");
 	}
 	else if (strcmp (cmd, "RETR") == 0 || strcmp (cmd, "STOR") == 0 || strcmp (cmd, "APPE") == 0)
 	{
@@ -1678,14 +1703,19 @@ static void siteStatus (Session *self)
 		if (s != self && (s->mode == X_STOR || s->mode == X_RETR || s->batchFiles))
 			busy = true;
 	}
+	u64 sdFree = 0, sdTotal = 0;
+	sdSpace (&sdFree, &sdTotal);
 	reply (self, "211-Status\r\n");
 	reply (self,
-	    " busy=%d idle_ms=%llu installing=%d connections=%d protocol=%d version=" VERSION "\r\n",
+	    " busy=%d idle_ms=%llu installing=%d connections=%d protocol=%d sd_free=%llu sd_total=%llu version=" VERSION
+	    "\r\n",
 	    busy,
 	    busy || now < s_lastActivity ? 0ull : (unsigned long long)(now - s_lastActivity),
 	    s_inst.running,
 	    clients,
-	    PROTOCOL);
+	    PROTOCOL,
+	    sdFree,
+	    sdTotal);
 	for (int i = 0; i < MAX_SESSIONS; ++i)
 	{
 		Session *s = &s_sess[i];

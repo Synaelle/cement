@@ -134,7 +134,7 @@ static wstring g_sendDir;                // "Send to PC" destination folder (set
 static std::vector<wstring> g_sendItems; // "Send to PC" 3DS paths (settings)
 static bool g_sendReplace;                // "Send to PC" empties the PC folder first
 static bool g_dark = true;     // dark theme (saved in config)
-static wstring g_statusText[2]; // connection state, transfer/messages
+static wstring g_statusText[3]; // connection state, transfer/messages, SD card space
 static void setStatus (int part, wstring const &text);
 static HFONT g_font;
 static UINT g_dpi = 96;
@@ -468,6 +468,19 @@ private:
 
 	void refreshAfter ();
 
+	// SD card free/total space for the status bar
+	void refreshSpace ()
+	{
+		Ftp::ServerInfo info = m_ftp.serverInfo ();
+		{
+			std::lock_guard lk (g_cfgLock);
+			g_serverInfo.hasSpace = info.hasSpace;
+			g_serverInfo.sdFree   = info.sdFree;
+			g_serverInfo.sdTotal  = info.sdTotal;
+		}
+		PostMessageW (g_wnd, WM_APP_STATE, 0, 0);
+	}
+
 	void execute (Job &job)
 	{
 		switch (job.type)
@@ -479,6 +492,8 @@ private:
 			{
 				r->entries = m_ftp.list (job.path);
 				r->ok      = true;
+				if (!job.notify)
+					refreshSpace ();
 			}
 			catch (FtpError &)
 			{
@@ -671,6 +686,18 @@ private:
 				for (auto const &e : job.remotes)
 					expandRemote (job, joinRemote (job.path, e.name), job.path2 + L"\\" + e.name, e);
 			job.expanded = true;
+			if (up)
+			{
+				// refuse up front what can't fit, instead of failing halfway with a full card
+				std::vector<std::pair<wstring, uint64_t>> sizes;
+				for (auto const &it : job.items)
+					if (!it.dir)
+						sizes.emplace_back (it.remote, it.size);
+				uint64_t need = 0, avail = 0;
+				if (!m_ftp.fits (sizes, &need, &avail))
+					throw FtpError{"not enough space on the SD card: needs " + utf8 (formatSize (need)) + ", " +
+					               utf8 (formatSize (avail)) + " free"};
+			}
 		}
 
 		int fileCount = 0, filesLeft = 0;
@@ -2233,6 +2260,20 @@ static void paint (HDC dc)
 	DrawTextW (dc, g_statusText[0].c_str (), -1, &part0, fmt);
 	SetTextColor (dc, t.dim);
 	RECT part1 = {S (478), sr.top + 1, rc.right - S (8), sr.bottom};
+	if (!g_statusText[2].empty ())
+	{
+		// SD card space, right-aligned after its own separator
+		RECT need{0, 0, 0, 0};
+		DrawTextW (dc, g_statusText[2].c_str (), -1, &need, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+		LONG left = std::max<LONG> (part1.left + S (40), rc.right - need.right - S (24));
+		RECT sep2{left, sr.top + S (4), left + 1, sr.bottom - S (4)};
+		HBRUSH b = CreateSolidBrush (t.border);
+		FillRect (dc, &sep2, b);
+		DeleteObject (b);
+		RECT part2 = {left + S (8), sr.top + 1, rc.right - S (8), sr.bottom};
+		DrawTextW (dc, g_statusText[2].c_str (), -1, &part2, fmt | DT_RIGHT);
+		part1.right = left - S (8);
+	}
 	DrawTextW (dc, g_statusText[1].c_str (), -1, &part1, fmt);
 	SelectObject (dc, old);
 }
@@ -2326,6 +2367,9 @@ static void updateConnState ()
 			text += L"  -  update the 3DS app: install the new CIA";
 	}
 	setStatus (0, text.c_str ());
+	setStatus (2, g_browse.state == Worker::Connected && info.hasSpace
+	                  ? L"SD: " + formatSize (info.sdFree) + L" free of " + formatSize (info.sdTotal)
+	                  : L"");
 }
 
 static void updateProgress ()
