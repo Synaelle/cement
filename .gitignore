@@ -4,7 +4,9 @@ server/*.elf
 server/*.cia
 client/*.exe
 client/*.o
-test/*.exe
+
+# local tests
+test/
 
 # AI agent files
 AGENT_GUIDE.md
