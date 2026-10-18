@@ -29,9 +29,9 @@ Start Cement on the 3DS: the top screen shows the IP address and port (5000) to 
   (back to normal speed a few seconds after), and StreetPass/SpotPass are paused while it serves so they
   don't use the Wi-Fi radio.
 - **Battery.** Closing the lid really puts the 3DS to sleep (Wi-Fi off); connections are closed cleanly
-  and the server comes back by itself when the lid opens. The top screen turns off after a minute without
-  a button press, transfer or install, and comes back with any button or transfer; SELECT turns it off
-  or on by hand. The bottom screen stays off unless it has something to show. START quits.
+  and the server comes back by itself when the lid opens. Both screens turn off after a minute without
+  a button press, transfer or install, and come back with any button or transfer; SELECT turns the top
+  screen off or on by hand. The bottom screen stays off unless it has something to show. START quits.
 - **Top screen.** IP and port, how many PCs are connected, the battery, the file being transferred with
   its speed, and the whole job ("Receiving 3/10 files, 2:13 left").
 - **Low battery.** At 5% or less on battery power, the app refuses new transfers and CIA installs until

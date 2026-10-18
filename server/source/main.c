@@ -224,7 +224,7 @@ static void setBacklight (u32 screens, bool on)
 }
 
 // ---------------------------------------------------------------------------
-// power: the top screen turns off after an idle minute, and the New 3DS
+// power: the screens turn off after an idle minute, and the New 3DS
 // fast mode (804 MHz, L2 cache) only runs while something is being done
 
 #ifndef SCREEN_IDLE_MS
@@ -234,7 +234,7 @@ static void setBacklight (u32 screens, bool on)
 #define FAST_LINGER_MS 5000 // keeps fast mode between the files of a job
 #endif
 
-static bool s_topIdleOff; // the top screen is off because of the idle timer (not SELECT)
+static bool s_idleOff;    // the screens are off because of the idle timer (not SELECT)
 static u64 s_lastWake;    // last button press, transfer or install
 static bool s_fast;
 static u64 s_fastUntil;
@@ -243,8 +243,8 @@ static void applyBacklight (void)
 {
 	// the bottom screen is only lit while it lists CIA files
 	setBacklight (GSPLCD_SCREEN_BOTTOM, s_bottomOn);
-	s_topIdleOff = false;
-	s_lastWake   = osGetTime ();
+	s_idleOff  = false;
+	s_lastWake = osGetTime ();
 	setBacklight (GSPLCD_SCREEN_TOP, s_backlight);
 }
 
@@ -1873,7 +1873,7 @@ static void drawBottom (void)
 {
 	u64 now      = osGetTime ();
 	bool showMsg = s_ciaMsg[0] && now - s_ciaMsgTime < 8000;
-	bool on      = s_ciaCount > 0 || s_inst.running || showMsg;
+	bool on      = (s_ciaCount > 0 || s_inst.running || showMsg) && !s_idleOff;
 	if (on != s_bottomOn)
 	{
 		s_bottomOn = on;
@@ -2058,17 +2058,22 @@ static bool managePower (u32 down)
 		osSetSpeedupEnable (fast); // no effect on an Old 3DS
 	}
 
+	// the bottom screen follows s_idleOff in drawBottom
 	bool idle = now - s_lastWake >= SCREEN_IDLE_MS;
-	if (s_topIdleOff && !idle)
+	if (s_idleOff && !idle)
 	{
-		s_topIdleOff = false;
-		setBacklight (GSPLCD_SCREEN_TOP, true);
-		return down != 0;
+		s_idleOff     = false;
+		s_bottomDirty = true;
+		if (s_backlight)
+			setBacklight (GSPLCD_SCREEN_TOP, true);
+		// a press that lit a screen does nothing else; with both staying dark it acts as usual
+		return down && (s_backlight || s_ciaCount > 0);
 	}
-	if (!s_topIdleOff && idle && s_backlight)
+	if (!s_idleOff && idle)
 	{
-		s_topIdleOff = true;
-		setBacklight (GSPLCD_SCREEN_TOP, false);
+		s_idleOff = true;
+		if (s_backlight)
+			setBacklight (GSPLCD_SCREEN_TOP, false);
 	}
 	return false;
 }
