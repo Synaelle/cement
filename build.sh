@@ -1,10 +1,11 @@
 #!/bin/sh
 # Builds Cement on Linux:
-#   server/Cement.cia                          the 3DS app (devkitARM + libctru)
+#   server/Cement.cia, server/Cement.3dsx      the 3DS app (Rust, devkitARM + libctru)
 #   client/Cement.exe, client/cement-cli.exe   the Windows apps (mingw-w64 cross compiler)
 #   client/cement-cli                          the command-line tool for Linux (native g++)
 #
-# Needs: makerom and bannertool (on PATH, or MAKEROM=/path BANNERTOOL=/path),
+# Needs: for the 3DS app nightly Rust with rust-src, cargo-3ds and libclang,
+#        makerom and bannertool (on PATH, or MAKEROM=/path BANNERTOOL=/path),
 #        x86_64-w64-mingw32-g++ and -windres (Debian/Ubuntu: g++-mingw-w64-x86-64),
 #        and either devkitPro installed (DEVKITARM set) or Docker, which then uses
 #        the official devkitpro/devkitarm image.
@@ -18,7 +19,7 @@ MAKEROM=$(command -v "${MAKEROM:-makerom}" || true)
 BANNERTOOL=$(command -v "${BANNERTOOL:-bannertool}" || true)
 
 # version: <VERSION>.<commit count>-<commit>, plus -dev with uncommitted changes
-base=$(cat VERSION)
+base=$(tr -d '\r\n' < VERSION) # no CR from a Windows checkout
 if count=$(git rev-list --count HEAD 2>/dev/null); then
 	dirty=$([ -n "$(git status --porcelain)" ] && echo -dev || true)
 	APP_VERSION="$base.$count-$(git rev-parse --short HEAD)$dirty"
@@ -47,6 +48,12 @@ build_3ds () {
 		fi
 		export DEVKITPRO="$cache" DEVKITARM="$cache/devkitARM"
 		export PATH="$DEVKITPRO/tools/bin:$PATH"
+	fi
+	command -v cargo-3ds >/dev/null || { echo "the 3DS app is Rust: install nightly Rust with rust-src and cargo-3ds (see the README)" >&2; exit 1; }
+	if [ -z "${LIBCLANG_PATH:-}" ]; then
+		# ctru-sys generates its libctru bindings with libclang; take the newest LLVM
+		for d in /usr/lib/llvm-*/lib; do [ -d "$d" ] && LIBCLANG_PATH=$d; done
+		[ -n "${LIBCLANG_PATH:-}" ] && export LIBCLANG_PATH
 	fi
 	make -C server APP_VERSION="$APP_VERSION" MAKEROM="$MAKEROM" BANNERTOOL="$BANNERTOOL"
 }

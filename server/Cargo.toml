@@ -1,0 +1,29 @@
+[package]
+name = "cement-server"
+version = "0.0.0" # the real version comes from the build (CEMENT_VERSION)
+edition = "2024"
+publish = false
+license = "MIT"
+
+# Built for the 3DS with `cargo 3ds build --release` (see the Makefile); built
+# for a PC (`cargo build --release`) it is the test server used by test/.
+
+[target.'cfg(target_os = "horizon")'.dependencies]
+ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" } # pinned by Cargo.lock
+ctru-sys = { git = "https://github.com/rust3ds/ctru-rs" }
+
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_Storage_FileSystem",
+] }
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -116,23 +116,37 @@ the 3DS answers `450` to `STOR`, `APPE` and `RETR`. There is no password: use it
 
 ## Build
 
-### On Windows
+The 3DS app is written in Rust (`server/`, using [ctru-rs](https://github.com/rust3ds/ctru-rs) over
+libctru); the Windows app and the command line are C++ (`client/`). The 3DS app needs:
 
-- 3DS app: [devkitPro](https://devkitpro.org) (devkitARM, libctru), plus `makerom` and `bannertool`.
-  In `server/`, run `make MAKEROM=path\to\makerom BANNERTOOL=path\to\bannertool`. Gives `Cement.cia` and
-  `Cement.3dsx`.
-- Windows apps: MinGW-w64 (`g++`, `windres`). Run `client\build.bat`.
+- nightly Rust with the standard library sources: `rustup toolchain install nightly -c rust-src`
+- [cargo-3ds](https://github.com/rust3ds/cargo-3ds): `cargo install --locked cargo-3ds`
+- devkitARM and libctru from [devkitPro](https://devkitpro.org) (the linker and libctru)
+- libclang, which ctru-sys uses to generate its libctru bindings (Debian/Ubuntu: `libclang-dev`;
+  set `LIBCLANG_PATH` if it isn't found)
+- `makerom` and `bannertool` for the CIA
+
+Built for a PC instead (`cargo build --release` in `server/`), the same code is a test server that
+plays the 3DS: the SD card is a folder, and closing the lid, key presses, installs and the battery are
+simulated (see `server/src/sys/host.rs`).
 
 ### On Linux
 
 `./build.sh` builds everything: `./build.sh [all|3ds|windows|linux]`.
 
-- 3DS app: devkitPro (with `DEVKITARM` set), or Docker: without devkitPro the script copies devkitARM
-  out of the official `devkitpro/devkitarm` image once. `makerom` and `bannertool` must be on `PATH`
-  (Linux builds: [makerom](https://github.com/3DSGuy/Project_CTR/releases),
+- 3DS app: the Rust tools above, and devkitPro (with `DEVKITARM` set) or Docker: without devkitPro the
+  script copies devkitARM out of the official `devkitpro/devkitarm` image once. `makerom` and `bannertool`
+  must be on `PATH` (Linux builds: [makerom](https://github.com/3DSGuy/Project_CTR/releases),
   [bannertool](https://github.com/diasurgical/bannertool/releases)).
 - Windows apps: the MinGW-w64 cross compiler (Debian/Ubuntu: `g++-mingw-w64-x86-64`).
 - Linux command line: `g++` (C++17).
+
+### On Windows
+
+- Windows apps: MinGW-w64 (`g++`, `windres`). Run `client\build.bat`.
+- 3DS app: the Rust tools above, devkitPro (devkitARM, libctru) and LLVM for libclang, then `make` in
+  `server/` (`make MAKEROM=path\to\makerom BANNERTOOL=path\to\bannertool`). Building it from WSL with
+  `./build.sh 3ds` is the tested way.
 
 ## License
 

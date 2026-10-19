@@ -1,5 +1,6 @@
 # build output
 server/build/
+server/target/
 server/*.elf
 server/*.cia
 server/*.3dsx
