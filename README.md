@@ -63,9 +63,6 @@ version that plays the 3DS (the SD card is a folder), handy for tests.
 
 ## Credits
 
-The red and black look of Chomp and Cement was inspired by the [vedal.ai](https://vedal.ai/)
-website. Nothing is taken from it, and this project isn't affiliated with Vedal.
-
 The fonts are [Fredoka](https://github.com/hafontia/Fredoka-One) and
 [Nunito](https://github.com/googlefonts/nunito) (SIL Open Font License), and the button glyphs
 come from [Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0). Thanks!
