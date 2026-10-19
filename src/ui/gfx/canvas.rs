@@ -85,7 +85,10 @@ impl Canvas {
         }
     }
 
+    /// snapped to whole pixels, so straight edges and borders stay one pixel sharp
     pub fn round(&mut self, x: f32, y: f32, w: f32, h: f32, r: f32, c: Color) {
+        let (x, y) = (x.round(), y.round());
+        let (w, h) = ((x + w).round() - x, (y + h).round() - y);
         let r = r.min(w / 2.0).min(h / 2.0);
         self.rrect(x, y, w, h, [(r, r); 4], c);
     }
@@ -113,21 +116,14 @@ impl Canvas {
             let (k, adv) = f.step(prev, ch, spacing);
             pen += k;
             let g = f.glyph(ch);
-            // placed at a fraction of a pixel: each column shares its coverage
-            // with the next one, so spacing stays even at small sizes
-            let start = pen.floor();
-            let frac = ((pen - start) * 256.0) as u32;
-            let gx = start as i32 + g.left as i32;
+            // whole pixels only: the atlas advances are whole already
+            let gx = pen.round() as i32 + g.left as i32;
             let gy = base + g.top as i32;
             let w = g.w as usize;
             let bits = &f.bitmap[g.at as usize..][..w * g.h as usize];
             for (row, line) in bits.chunks(w.max(1)).enumerate() {
-                let mut prev = 0;
-                for col in 0..=w {
-                    let a = line.get(col).copied().unwrap_or(0) as u32;
-                    let cover = (a * (256 - frac) + prev * frac) >> 8;
-                    self.blend(gx + col as i32, gy + row as i32, c, cover);
-                    prev = a;
+                for (col, &a) in line.iter().enumerate() {
+                    self.blend(gx + col as i32, gy + row as i32, c, a as u32);
                 }
             }
             pen += adv;

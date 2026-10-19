@@ -31,6 +31,9 @@ const WHITE: Color = 0xffffff;
 const GOOD: Color = 0x8ccf9a;
 const BAD: Color = 0xe5484d;
 
+/// the bottom screen stays lit (until the idle timer), with an empty state
+pub const BOTTOM_ALWAYS_ON: bool = true;
+
 /// a pixel value never drawn: everything differs from it
 const UNKNOWN: u32 = 0xFF00_0000;
 
@@ -147,13 +150,13 @@ const CARD_PAD_Y: f32 = 9.0;
 const CARD_PAD_X: f32 = 11.0;
 
 fn card_height() -> f32 {
-    2.0 + 2.0 * CARD_PAD_Y + NUNITO_XBOLD_12.height + 6.0 + 8.0 + 6.0 + NUNITO_BOLD_10.height
+    2.0 + 2.0 * CARD_PAD_Y + NUNITO_XBOLD_13.height + 6.0 + 8.0 + 6.0 + NUNITO_BOLD_11.height
 }
 
 fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText) {
     c.card(x, y, w, card_height(), 11.0, CARD, BORDER);
     let (l, r) = (x + 1.0 + CARD_PAD_X, x + w - 1.0 - CARD_PAD_X);
-    let f = &NUNITO_XBOLD_12;
+    let f = &NUNITO_XBOLD_13;
     let mut ty = y + 1.0 + CARD_PAD_Y;
     let vw = f.width(&t.value, 0.0);
     let title = f.fit(&t.title, r - l - vw - 10.0);
@@ -162,7 +165,7 @@ fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText) {
     ty += f.height + 6.0;
     bar(c, l, ty, r - l, t.frac);
     ty += 8.0 + 6.0;
-    let f = &NUNITO_BOLD_10;
+    let f = &NUNITO_BOLD_11;
     let rw = f.width(&t.right, 0.0);
     let detail = f.fit(&t.detail, r - l - rw - 10.0);
     c.text(f, l, ty + f.ascent, &detail, DIM, 0.0);
@@ -177,7 +180,7 @@ fn bite_dot(c: &mut Canvas, x: f32, y: f32) {
 
 /// a hint pill; returns its right edge
 fn hint(c: &mut Canvas, x: f32, y: f32, label: &str, bg: Color, fg: Color, arrows: bool) -> f32 {
-    let f = &NUNITO_XBOLD_10;
+    let f = &NUNITO_XBOLD_11;
     let aw = if arrows { 17.0 } else { 0.0 };
     let w = aw + f.width(label, 0.0) + 14.0;
     c.pill(x, y, w, f.height + 6.0, bg);
@@ -224,7 +227,7 @@ impl Server {
         let mut y = 14.0;
         let f = &FREDOKA_BOLD_22;
         let end = c.text(f, left, y + f.ascent, "cement", TEXT, 0.0);
-        c.text(&NUNITO_BOLD_10, end + 6.0, y + f.ascent, &format!("v{VERSION}"), DIM, 0.0);
+        c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &format!("v{VERSION}"), DIM, 0.0);
         let bat = t.bat;
         let label = format!(
             "{}{}",
@@ -237,7 +240,7 @@ impl Server {
                 ""
             }
         );
-        let p = &NUNITO_XBOLD_11;
+        let p = &NUNITO_XBOLD_12;
         let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
         let py = y + (f.height - ph) / 2.0;
         c.pill(right - pw, py, pw, ph, if t.low { ACCENT } else { TRACK });
@@ -245,25 +248,23 @@ impl Server {
         y += f.height + 9.0;
 
         // address
-        let f = &NUNITO_BOLD_11;
+        let f = &NUNITO_BOLD_12;
         c.text(f, left, y + f.ascent, "Connect Chomp to", DIM, 0.0);
         y += f.height + 2.0;
         let f = &FREDOKA_SEMI_26;
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
-        let mut x = c.text(f, left, y + f.ascent, &ip, TEXT, 0.5);
-        x = c.text(f, x, y + f.ascent, " : ", ACCENT, 0.5);
-        c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), TEXT, 0.5);
+        let mut x = c.text(f, left, y + f.ascent, &ip, TEXT, 1.0);
+        x = c.text(f, x, y + f.ascent, " : ", ACCENT, 1.0);
+        c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), TEXT, 1.0);
         y += f.height + 2.0;
-        let f = &NUNITO_BOLD_10;
+        let f = &NUNITO_BOLD_11;
         c.text(f, left, y + f.ascent, "START exit · SELECT top screen on/off · close the lid to sleep", DIM, 0.0);
         y += f.height;
 
         if t.low {
-            let f = &NUNITO_XBOLD_11;
+            let f = &NUNITO_XBOLD_12;
             y += 6.0;
-            c.text(f, left, y + f.ascent, "Battery low: new transfers and installs are", HIGHLIGHT, 0.0);
-            y += f.height;
-            c.text(f, left, y + f.ascent, "refused until the charger is plugged in", HIGHLIGHT, 0.0);
+            c.text(f, left, y + f.ascent, "Battery low: no new transfers or installs until you charge", HIGHLIGHT, 0.0);
         }
 
         // transfer card
@@ -338,13 +339,13 @@ impl Server {
         bite_dot(c, left, base + 0.5 - 12.0);
         c.text(f, left + 15.0, base, "CIAs", TEXT, 0.0);
         if let Some(free) = self.ui.sd_free {
-            let s = &NUNITO_BOLD_10;
+            let s = &NUNITO_BOLD_11;
             c.text_right(s, right, top + (f.height - s.height) / 2.0 + s.ascent, &format!("SD {} free", format_big(free)), DIM);
         }
         let list_top = top + f.height + 6.0;
 
         // from the bottom up: buttons, message, install card
-        let f = &NUNITO_XBOLD_10;
+        let f = &NUNITO_XBOLD_11;
         let hy = 228.0 - (f.height + 6.0);
         let first = if b.busy && !self.installing() { "A waits for transfers" } else { "A install" };
         let mut x = hint(c, left, hy, first, ACCENT, WHITE, false) + 5.0;
@@ -353,7 +354,7 @@ impl Server {
         let mut bottom = hy - 6.0;
 
         if b.show_msg {
-            let f = &NUNITO_XBOLD_11;
+            let f = &NUNITO_XBOLD_12;
             bottom -= f.height;
             let color = if self.cia_msg.starts_with("Installed") { GOOD } else { BAD };
             c.text(f, left, bottom + f.ascent, &f.fit(&self.cia_msg, right - left), color, 0.0);
@@ -375,8 +376,22 @@ impl Server {
             bottom -= 6.0;
         }
 
+        if self.cias.is_empty() && self.inst.is_none() {
+            // empty state
+            let h = (bottom - list_top).min(64.0);
+            c.round(left, list_top, right - left, h, 9.0, CARD);
+            let (a, b) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_12);
+            let y = list_top + (h - a.height - 2.0 - b.height) / 2.0;
+            let mid = (left + right) / 2.0;
+            let line1 = "No CIAs yet";
+            let line2 = "Send one from Chomp to install it here";
+            c.text(a, mid - a.width(line1, 0.0) / 2.0, y + a.ascent, line1, TEXT, 0.0);
+            c.text(b, mid - b.width(line2, 0.0) / 2.0, y + a.height + 2.0 + b.ascent, line2, DIM, 0.0);
+            return;
+        }
+
         // the list: as many rows as fit, scrolled to keep the selection in view
-        let row_h = NUNITO_XBOLD_12.height + 14.0;
+        let row_h = NUNITO_XBOLD_13.height + 14.0;
         let room = bottom - list_top + 6.0 - 2.0; // the selected row has a border
         let rows = ((room / (row_h + 6.0)).floor() as usize).max(1);
         let first = if self.cia_sel >= rows { self.cia_sel - rows + 1 } else { 0 };
@@ -389,7 +404,7 @@ impl Server {
             } else {
                 c.round(left, y, right - left, h, 9.0, CARD);
             }
-            let f = if sel { &NUNITO_XBOLD_12 } else { &NUNITO_BOLD_12 };
+            let f = if sel { &NUNITO_XBOLD_13 } else { &NUNITO_BOLD_13 };
             let base = y + inset + 7.0 + f.ascent;
             let (l, r) = (left + inset + 9.0, right - inset - 9.0);
             let size = format_size(cia.size);

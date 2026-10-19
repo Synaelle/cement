@@ -12,6 +12,9 @@ use crate::{Server, VERSION, battery_text};
 const TITLE: &str = "\x1b[31m";
 const HIGHLIGHT: &str = "\x1b[1;31m";
 
+/// the bottom screen is only lit while it lists CIA files (or an install message)
+pub const BOTTOM_ALWAYS_ON: bool = false;
+
 /// the console keeps no state of its own
 pub struct Ui;
 

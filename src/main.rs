@@ -176,7 +176,7 @@ impl Server {
     }
 
     fn apply_backlight(&mut self) {
-        // the bottom screen is only lit while it lists CIA files
+        // the bottom screen is lit while it has something to show (ui::Server::bottom)
         sys::backlight(sys::SCREEN_BOTTOM, self.bottom_on);
         self.idle_off = false;
         self.last_wake = sys::now_ms();
@@ -204,7 +204,7 @@ impl Server {
             sys::set_fast(fast); // no effect on an Old 3DS
         }
 
-        // the bottom screen follows idle_off in draw_bottom
+        // the bottom screen follows idle_off in ui::Server::bottom
         let idle = now.saturating_sub(self.last_wake) >= SCREEN_IDLE_MS;
         if self.idle_off && !idle {
             self.idle_off = false;
@@ -212,8 +212,10 @@ impl Server {
             if self.backlight {
                 sys::backlight(sys::SCREEN_TOP, true);
             }
-            // a press that lit a screen does nothing else; with both staying dark it acts as usual
-            return down != 0 && (self.backlight || !self.cias.is_empty());
+            // a press that lit a screen does nothing else; with both staying dark it acts as
+            // usual, and SELECT still works when only the bottom screen came back
+            let bottom = !self.cias.is_empty() || ui::BOTTOM_ALWAYS_ON;
+            return down != 0 && (self.backlight || (bottom && down & sys::KEY_SELECT == 0));
         }
         if !self.idle_off && idle {
             self.idle_off = true;

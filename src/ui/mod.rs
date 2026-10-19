@@ -10,12 +10,12 @@ use crate::{Battery, Server, battery_low, sys};
 #[cfg(feature = "text-ui")]
 mod text;
 #[cfg(feature = "text-ui")]
-pub use text::Ui;
+pub use text::{BOTTOM_ALWAYS_ON, Ui};
 
 #[cfg(not(feature = "text-ui"))]
 mod gfx;
 #[cfg(not(feature = "text-ui"))]
-pub use gfx::Ui;
+pub use gfx::{BOTTOM_ALWAYS_ON, Ui};
 
 /// how long an install message stays on the bottom screen
 const MSG_MS: u64 = 8000;
@@ -42,7 +42,7 @@ impl Server {
     fn bottom(&mut self) -> Option<Bottom> {
         let now = sys::now_ms();
         let show_msg = !self.cia_msg.is_empty() && now.saturating_sub(self.cia_msg_time) < MSG_MS;
-        let on = (!self.cias.is_empty() || self.installing() || show_msg) && !self.idle_off;
+        let on = (BOTTOM_ALWAYS_ON || !self.cias.is_empty() || self.installing() || show_msg) && !self.idle_off;
         if on != self.bottom_on {
             self.bottom_on = on;
             sys::backlight(sys::SCREEN_BOTTOM, on);
