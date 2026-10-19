@@ -43,7 +43,9 @@ many small files at once, it packs them into one uncompressed bundle that Cement
 arrives, which is much faster than one file at a time. Cement works fine without it, with any
 FTP client.
 
-Cement 2.0-RC3 speaks version 3 of these extras (logins and bundles). Chomp tells you when the
+Chomp and Cement have their own version numbers, so what tells which Chomp goes with which
+Cement is the protocol level of these extras, shown next to the version on the 3DS top screen
+and in Chomp. Cement 2.0 speaks protocol 3 (logins and bundles), and Chomp tells you when the
 Cement on your 3DS is too old for it.
 
 ## Build
