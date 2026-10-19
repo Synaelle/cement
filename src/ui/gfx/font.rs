@@ -21,6 +21,13 @@ pub struct Font {
     pub bitmap: &'static [u8],
 }
 
+/// a button glyph (Kenney's Input Prompts, CC0): one `size` x `size` coverage
+/// mask per colour of the drawing, tinted when drawn
+pub struct Icon {
+    pub size: usize,
+    pub layers: &'static [(u32, &'static [u8])],
+}
+
 include!(concat!(env!("OUT_DIR"), "/fonts.rs"));
 
 impl Font {

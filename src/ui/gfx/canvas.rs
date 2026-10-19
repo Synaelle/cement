@@ -4,7 +4,7 @@
 // rounded rectangles (one elliptic radius per corner), pills, circles and
 // alpha-blended text. Coordinates are in pixels, fractions allowed.
 
-use super::font::Font;
+use super::font::{Font, Icon};
 
 pub type Color = u32;
 
@@ -132,39 +132,20 @@ impl Canvas {
         pen
     }
 
-    /// right-aligned at `right`
-    pub fn text_right(&mut self, f: &Font, right: f32, y: f32, s: &str, c: Color) {
-        let w = f.width(s, 0.0);
-        self.text(f, right - w, y, s, c, 0.0);
-    }
-
-    /// a line `width` px thick with round ends
-    pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: Color) {
-        let r = width / 2.0;
-        let (dx, dy) = (x1 - x0, y1 - y0);
-        let len2 = (dx * dx + dy * dy).max(1e-6);
-        let xa = ((x0.min(x1) - r).floor() as i32).max(0);
-        let xb = ((x0.max(x1) + r).ceil() as i32).min(self.w as i32);
-        let ya = ((y0.min(y1) - r).floor() as i32).max(0);
-        let yb = ((y0.max(y1) + r).ceil() as i32).min(self.h as i32);
-        for py in ya..yb {
-            for px in xa..xb {
-                let (fx, fy) = (px as f32 + 0.5 - x0, py as f32 + 0.5 - y0);
-                let t = ((fx * dx + fy * dy) / len2).clamp(0.0, 1.0);
-                let (ex, ey) = (fx - t * dx, fy - t * dy);
-                let cover = (r + 0.5 - (ex * ex + ey * ey).sqrt()).clamp(0.0, 1.0);
-                self.blend(px, py, c, (cover * 255.0 + 0.5) as u32);
+    /// a button glyph at whole pixels; `tint` maps each colour of the drawing
+    pub fn icon(&mut self, ic: &Icon, x: f32, y: f32, tint: impl Fn(u32) -> Color) {
+        let (x, y) = (x.round() as i32, y.round() as i32);
+        for &(color, mask) in ic.layers {
+            let c = tint(color);
+            for (i, &a) in mask.iter().enumerate() {
+                self.blend(x + (i % ic.size) as i32, y + (i / ic.size) as i32, c, a as u32);
             }
         }
     }
 
-    /// a thin arrow `h` px tall pointing up (or down), its foot on the baseline `y`
-    pub fn arrow(&mut self, x: f32, y: f32, h: f32, up: bool, c: Color) {
-        let (tip, foot) = if up { (y - h, y) } else { (y, y - h) };
-        let head = if up { 3.0 } else { -3.0 };
-        let cx = x + 3.0;
-        self.line(cx, tip, cx, foot, 1.1, c);
-        self.line(cx, tip, cx - 2.6, tip + head, 1.1, c);
-        self.line(cx, tip, cx + 2.6, tip + head, 1.1, c);
+    /// right-aligned at `right`
+    pub fn text_right(&mut self, f: &Font, right: f32, y: f32, s: &str, c: Color) {
+        let w = f.width(s, 0.0);
+        self.text(f, right - w, y, s, c, 0.0);
     }
 }

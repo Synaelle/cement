@@ -27,6 +27,15 @@ pub struct Shared {
     err: Mutex<&'static str>,
 }
 
+/// the last finished install, for SITE STATUS (until the next one starts)
+pub struct InstallResult {
+    pub n: u32, // counts finished installs from 1
+    pub ok: bool,
+    pub code: u32, // the failing result code, 0 on success
+    pub path: String,
+    pub msg: String, // what the bottom screen said
+}
+
 pub struct Install {
     pub path: String,
     pub total: u64,
@@ -60,6 +69,59 @@ impl Server {
         }
         self.cias.push(Cia { path: path.to_string(), size });
         self.bottom_dirty = true;
+    }
+
+    /// the SD card root and /cias, so the list survives a restart (two listings: cheap)
+    pub fn scan_cias(&mut self) {
+        for dir in ["/", "/cias"] {
+            let mut found = Vec::new();
+            sys::list_dir(dir, &mut |name, is_dir, size| {
+                if !is_dir && is_cia(name) {
+                    found.push((format!("{}/{name}", dir.trim_end_matches('/')), size));
+                }
+            });
+            found.sort();
+            for (path, size) in found {
+                self.cia_add(&path, size);
+            }
+        }
+    }
+
+    /// SITE INSTALL: what pressing A on that file does; the FTP reply
+    pub fn site_install(&mut self, path: &str) -> &'static str {
+        if self.inst.is_some() || self.inst_queue.is_some() {
+            return "450 Busy: another install is running\r\n";
+        }
+        let size = if is_cia(path) { sys::file_size(path) } else { None };
+        let Some(size) = size else { return "550 No such CIA\r\n" };
+        if battery_low(self.battery()) {
+            return "451 Battery too low: plug in the charger\r\n";
+        }
+        if !self.cias.iter().any(|c| c.path == path) {
+            self.cia_add(path, size);
+        }
+        self.cia_sel = self.cias.iter().position(|c| c.path == path).unwrap_or(0);
+        self.last_wake = sys::now_ms(); // wakes the screens
+        self.bottom_dirty = true;
+        if self.fs_busy() {
+            self.inst_queue = Some(path.to_string()); // starts when the transfers end
+            return "200 Install queued\r\n";
+        }
+        self.start_install();
+        if self.inst.is_some() { "200 Install started\r\n" } else { "451 Install could not start\r\n" }
+    }
+
+    /// starts a queued SITE INSTALL once the SD card is free
+    fn poll_queue(&mut self) {
+        if self.inst.is_some() || self.fs_busy() {
+            return;
+        }
+        let Some(path) = self.inst_queue.take() else { return };
+        if let Some(i) = self.cias.iter().position(|c| c.path == path) {
+            self.cia_sel = i;
+            self.last_wake = sys::now_ms();
+            self.start_install();
+        }
     }
 
     pub fn installing(&self) -> bool {
@@ -97,7 +159,10 @@ impl Server {
         sys::set_sleep_allowed(false); // never sleep in the middle of an install
         let (p, s) = (path.clone(), shared.clone());
         match sys::spawn(-2, 0x30, Box::new(move || install(&p, total, &s))) {
-            Some(t) => self.inst = Some(Install { path, total, shared, thread: Some(t) }),
+            Some(t) => {
+                self.inst = Some(Install { path, total, shared, thread: Some(t) });
+                self.install_result = None;
+            }
             None => {
                 sys::set_sleep_allowed(true);
                 self.cia_message("Could not start the install".into());
@@ -107,6 +172,7 @@ impl Server {
     }
 
     pub fn poll_install(&mut self) {
+        self.poll_queue();
         let Some(inst) = &mut self.inst else { return };
         if !inst.shared.finished.load(Ordering::Acquire) {
             return;
@@ -124,6 +190,14 @@ impl Server {
             let err = *inst.shared.err.lock().unwrap();
             self.cia_message(format!("{} ({:08X})", util::clip(err, 30), rc as u32));
         }
+        self.install_count += 1;
+        self.install_result = Some(InstallResult {
+            n: self.install_count,
+            ok: rc >= 0,
+            code: if rc >= 0 { 0 } else { rc as u32 },
+            path: inst.path,
+            msg: self.cia_msg.clone(),
+        });
     }
 
     pub fn cia_input(&mut self, down: u32) {

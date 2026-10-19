@@ -12,7 +12,7 @@ use crate::disk::{self, Buf, CHUNK, Disk, NBUF};
 use crate::sys::net::{self, Io, POLL_IN, POLL_OUT, PollFd, Sock};
 use crate::sys::{self, File};
 use crate::util::{self, resolve_path};
-use crate::{PROTOCOL, Server, VERSION};
+use crate::{PROTOCOL, Server, VERSION, settings};
 
 pub const CTRL_PORT: u16 = 5000;
 pub const MAX_SESSIONS: usize = 4;
@@ -1182,7 +1182,34 @@ impl Server {
                 self.last_activity = now;
                 self.sess[i].reply("200 OK\r\n");
             }
-            _ => self.sess[i].reply("502 SITE STATUS or SITE BATCH\r\n"),
+            "COLOR" => {
+                // SITE COLOR [#rrggbb]: the drawn screens' accent, kept on the SD card
+                let arg = text.get(5..).unwrap_or("").trim();
+                if arg.is_empty() {
+                    let text = format!("200 #{:06x}\r\n", self.accent);
+                    self.sess[i].reply(&text);
+                } else if let Some(c) = settings::parse_color(arg) {
+                    if c != self.accent {
+                        self.accent = c;
+                        settings::save_accent(c);
+                        self.bottom_dirty = true; // both screens redraw in the new colour
+                        self.last_time = 0;
+                    }
+                    self.sess[i].reply("200 Accent set\r\n");
+                } else {
+                    self.sess[i].reply("501 SITE COLOR #rrggbb\r\n");
+                }
+            }
+            "INSTALL" => {
+                // SITE INSTALL <path>: as pressing A on that CIA
+                let arg = text.get(7..).unwrap_or("").trim_start();
+                let reply = match util::resolve_path(&self.sess[i].cwd, arg.as_bytes()) {
+                    Some(path) if !arg.is_empty() => self.site_install(&path),
+                    _ => "550 No such CIA\r\n",
+                };
+                self.sess[i].reply(reply);
+            }
+            _ => self.sess[i].reply("502 SITE STATUS, BATCH, COLOR or INSTALL\r\n"),
         }
     }
 
@@ -1205,7 +1232,7 @@ impl Server {
         let idle = if busy || now < self.last_activity { 0 } else { now - self.last_activity };
         let mut out = String::from("211-Status\r\n");
         out += &format!(
-            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} version={}\r\n",
+            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} version={}\r\n",
             busy as i32,
             idle,
             self.installing() as i32,
@@ -1218,6 +1245,7 @@ impl Server {
             bat.charging as i32,
             bat.plugged as i32,
             crate::battery_low(bat) as i32,
+            self.accent,
             VERSION
         );
         for (j, s) in self.sess.iter().enumerate() {
@@ -1258,6 +1286,16 @@ impl Server {
                 inst.total,
                 inst.path
             );
+        }
+        for c in &self.cias {
+            out += &format!(" cia size={} file={}\r\n", c.size, c.path);
+        }
+        if let Some(r) = &self.install_result {
+            let code = if r.ok { "0".to_string() } else { format!("{:08x}", r.code) };
+            out += &format!(" install_result n={} ok={} code={} file={}\r\n", r.n, r.ok as i32, code, r.path);
+            if !r.ok {
+                out += &format!(" install_error {}\r\n", r.msg);
+            }
         }
         out += "211 End\r\n";
         out

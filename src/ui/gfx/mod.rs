@@ -24,7 +24,6 @@ const TRACK: Color = 0x2a1516;
 const SELECTED: Color = 0x3d1418;
 const TEXT: Color = 0xf2e7e4;
 const DIM: Color = 0xa8928e;
-const ACCENT: Color = 0xb8283c;
 const HIGHLIGHT: Color = 0xd8676a;
 const SOFT: Color = 0xe9a9a3;
 const WHITE: Color = 0xffffff;
@@ -126,12 +125,12 @@ fn time_left(secs: i64) -> String {
 }
 
 /// a progress bar, `frac` of it filled
-fn bar(c: &mut Canvas, x: f32, y: f32, w: f32, frac: Option<f32>) {
+fn bar(c: &mut Canvas, x: f32, y: f32, w: f32, frac: Option<f32>, accent: Color) {
     c.pill(x, y, w, 8.0, TRACK);
     if let Some(f) = frac {
         let fw = (w * f.clamp(0.0, 1.0)).round();
         if fw > 0.0 {
-            c.round(x, y, fw, 8.0, 4.0, ACCENT);
+            c.round(x, y, fw, 8.0, 4.0, accent);
         }
     }
 }
@@ -153,7 +152,7 @@ fn card_height() -> f32 {
     2.0 + 2.0 * CARD_PAD_Y + NUNITO_XBOLD_13.height + 6.0 + 8.0 + 6.0 + NUNITO_BOLD_11.height
 }
 
-fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText) {
+fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText, accent: Color) {
     c.card(x, y, w, card_height(), 11.0, CARD, BORDER);
     let (l, r) = (x + 1.0 + CARD_PAD_X, x + w - 1.0 - CARD_PAD_X);
     let f = &NUNITO_XBOLD_13;
@@ -163,7 +162,7 @@ fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText) {
     c.text(f, l, ty + f.ascent, &title, TEXT, 0.0);
     c.text_right(f, r, ty + f.ascent, &t.value, HIGHLIGHT);
     ty += f.height + 6.0;
-    bar(c, l, ty, r - l, t.frac);
+    bar(c, l, ty, r - l, t.frac, accent);
     ty += 8.0 + 6.0;
     let f = &NUNITO_BOLD_11;
     let rw = f.width(&t.right, 0.0);
@@ -173,24 +172,73 @@ fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText) {
 }
 
 /// the section marker: a dot with a bite taken out of its top right
-fn bite_dot(c: &mut Canvas, x: f32, y: f32) {
-    c.circle(x + 6.0, y + 6.0, 5.5, ACCENT);
+fn bite_dot(c: &mut Canvas, x: f32, y: f32, accent: Color) {
+    c.circle(x + 6.0, y + 6.0, 5.5, accent);
     c.circle(x + 11.0, y + 2.0, 2.6, BG);
 }
 
-/// a hint pill; returns its right edge
-fn hint(c: &mut Canvas, x: f32, y: f32, label: &str, bg: Color, fg: Color, arrows: bool) -> f32 {
+/// the button a hint is about
+#[derive(Clone, Copy)]
+enum Button {
+    A,
+    Dpad,
+    Select,
+    Start,
+}
+
+/// height of the drawn keycaps
+const GLYPH: f32 = 15.0;
+
+/// width and height of a button glyph
+fn glyph_size(b: Button) -> (f32, f32) {
     let f = &NUNITO_XBOLD_11;
-    let aw = if arrows { 17.0 } else { 0.0 };
-    let w = aw + f.width(label, 0.0) + 14.0;
-    c.pill(x, y, w, f.height + 6.0, bg);
-    let base = y + 3.0 + f.ascent;
-    if arrows {
-        c.arrow(x + 7.0, base + 0.5, 8.0, true, fg);
-        c.arrow(x + 13.0, base + 0.5, 8.0, false, fg);
+    match b {
+        Button::A => (BTN_A.size as f32, BTN_A.size as f32),
+        Button::Dpad => (BTN_DPAD.size as f32, BTN_DPAD.size as f32),
+        Button::Select => ((f.width("SELECT", 0.0) + 8.0).round(), GLYPH),
+        Button::Start => ((f.width("START", 0.0) + 8.0).round(), GLYPH),
     }
-    c.text(f, x + 7.0 + aw, base, label, fg, 0.0);
-    x + w
+}
+
+/// SELECT and START have no glyph in Kenney's set: a small keycap like the
+/// real buttons, with the name in it
+fn keycap(c: &mut Canvas, x: f32, y: f32, name: &str, fill: Color, ink: Color) -> f32 {
+    let f = &NUNITO_XBOLD_11;
+    let w = (f.width(name, 0.0) + 8.0).round();
+    c.pill(x, y, w, GLYPH, fill);
+    c.text(f, x + 4.0, y + ((GLYPH - f.height) / 2.0).round() + f.ascent, name, ink, 0.0);
+    w
+}
+
+/// a button glyph; `fg` is its light colour, `on` what is under it. Returns its width.
+fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, accent: Color) -> f32 {
+    // Kenney draws in white with red marks (the pressed D-pad arms)
+    let tint = |color: u32| if color == 0xffffff { fg } else { accent };
+    match b {
+        Button::A => {
+            c.icon(&BTN_A, x, y, tint);
+            BTN_A.size as f32
+        }
+        Button::Dpad => {
+            // red arms on the accent hint would vanish: they take the background there
+            c.icon(&BTN_DPAD, x, y, |color| if color == 0xffffff { fg } else if on == accent { on } else { accent });
+            BTN_DPAD.size as f32
+        }
+        Button::Select => keycap(c, x, y, "SELECT", fg, on),
+        Button::Start => keycap(c, x, y, "START", fg, on),
+    }
+}
+
+/// a hint pill: a button glyph and what it does; returns its right edge
+fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: Color, accent: Color) -> f32 {
+    let f = &NUNITO_XBOLD_11;
+    let h = (f.height + 6.0).round();
+    let (gw, gh) = glyph_size(b);
+    let w = 3.0 + gw + 5.0 + f.width(label, 0.0) + 8.0;
+    c.pill(x, y, w, h, bg);
+    glyph(c, x + 3.0, y + ((h - gh) / 2.0).round(), b, fg, bg, accent);
+    c.text(f, x + 3.0 + gw + 5.0, y + 3.0 + f.ascent, label, fg, 0.0);
+    x + w.round()
 }
 
 impl Server {
@@ -243,7 +291,7 @@ impl Server {
         let p = &NUNITO_XBOLD_12;
         let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
         let py = y + (f.height - ph) / 2.0;
-        c.pill(right - pw, py, pw, ph, if t.low { ACCENT } else { TRACK });
+        c.pill(right - pw, py, pw, ph, if t.low { self.accent } else { TRACK });
         c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { WHITE } else { HIGHLIGHT }, 0.0);
         y += f.height + 9.0;
 
@@ -254,11 +302,18 @@ impl Server {
         let f = &FREDOKA_SEMI_26;
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
         let mut x = c.text(f, left, y + f.ascent, &ip, TEXT, 1.0);
-        x = c.text(f, x, y + f.ascent, " : ", ACCENT, 1.0);
+        x = c.text(f, x, y + f.ascent, " : ", self.accent, 1.0);
         c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), TEXT, 1.0);
         y += f.height + 2.0;
         let f = &NUNITO_BOLD_11;
-        c.text(f, left, y + f.ascent, "START exit · SELECT top screen on/off · close the lid to sleep", DIM, 0.0);
+        // the buttons as small keycaps, then what they do
+        let gy = (y + (f.height - GLYPH) / 2.0).round();
+        let mut x = left;
+        x += glyph(c, x, gy, Button::Start, DIM, BG, self.accent) + 4.0;
+        x = c.text(f, x, y + f.ascent, "exit", DIM, 0.0) + 10.0;
+        x += glyph(c, x, gy, Button::Select, DIM, BG, self.accent) + 4.0;
+        x = c.text(f, x, y + f.ascent, "top screen on/off", DIM, 0.0) + 10.0;
+        c.text(f, x, y + f.ascent, "close the lid to sleep", DIM, 0.0);
         y += f.height;
 
         if t.low {
@@ -324,7 +379,7 @@ impl Server {
             }
             card.detail = parts.join(" · ");
         }
-        draw_card(c, left, 226.0 - card_height(), right - left, &card);
+        draw_card(c, left, 226.0 - card_height(), right - left, &card, self.accent);
     }
 
     /// 320 x 240: the CIA list, the install card, the last message, the buttons
@@ -336,7 +391,7 @@ impl Server {
         let top = 12.0;
         let f = &FREDOKA_BOLD_16;
         let base = top + f.ascent;
-        bite_dot(c, left, base + 0.5 - 12.0);
+        bite_dot(c, left, base + 0.5 - 12.0, self.accent);
         c.text(f, left + 15.0, base, "CIAs", TEXT, 0.0);
         if let Some(free) = self.ui.sd_free {
             let s = &NUNITO_BOLD_11;
@@ -347,10 +402,11 @@ impl Server {
         // from the bottom up: buttons, message, install card
         let f = &NUNITO_XBOLD_11;
         let hy = 228.0 - (f.height + 6.0);
-        let first = if b.busy && !self.installing() { "A waits for transfers" } else { "A install" };
-        let mut x = hint(c, left, hy, first, ACCENT, WHITE, false) + 5.0;
-        x = hint(c, x, hy, "pick", TRACK, SOFT, true) + 5.0;
-        hint(c, x, hy, "SELECT screen off", TRACK, SOFT, false);
+        let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
+        let a = self.accent;
+        let mut x = hint(c, left, hy, Button::A, first, a, WHITE, a) + 5.0;
+        x = hint(c, x, hy, Button::Dpad, "pick", TRACK, SOFT, a) + 5.0;
+        hint(c, x, hy, Button::Select, "screen off", TRACK, SOFT, a);
         let mut bottom = hy - 6.0;
 
         if b.show_msg {
@@ -372,7 +428,7 @@ impl Server {
                 right: String::new(),
             };
             bottom -= card_height();
-            draw_card(c, left, bottom, right - left, &card);
+            draw_card(c, left, bottom, right - left, &card, self.accent);
             bottom -= 6.0;
         }
 
@@ -400,7 +456,7 @@ impl Server {
             let sel = i == self.cia_sel;
             let (h, inset) = if sel { (row_h + 2.0, 1.0) } else { (row_h, 0.0) };
             if sel {
-                c.card(left, y, right - left, h, 9.0, SELECTED, ACCENT);
+                c.card(left, y, right - left, h, 9.0, SELECTED, self.accent);
             } else {
                 c.round(left, y, right - left, h, 9.0, CARD);
             }

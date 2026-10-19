@@ -17,6 +17,7 @@
 mod disk;
 mod install;
 mod server;
+mod settings;
 mod sys;
 mod ui;
 mod util;
@@ -24,7 +25,7 @@ mod util;
 use std::ffi::c_void;
 
 use disk::Disk;
-use install::{Cia, Install};
+use install::{Cia, Install, InstallResult};
 use server::{MAX_SESSIONS, Net, Session};
 use sys::AptEvent;
 
@@ -40,7 +41,7 @@ pub const VERSION: &str = match option_env!("CEMENT_VERSION") {
 /// Compatibility level with the PC apps, reported in SITE STATUS. Bump it (and
 /// REQUIRED_PROTOCOL in Chomp's src/ftp.h) only when the PC side needs this new
 /// 3DS build; Chomp warns about an outdated 3DS app only then.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 const fn env_ms(v: Option<&str>, default: u64) -> u64 {
     let Some(v) = v else { return default };
@@ -121,7 +122,11 @@ pub struct Server {
     pub inst: Option<Install>,
     pub cia_msg: String,
     pub cia_msg_time: u64,
+    pub inst_queue: Option<String>, // SITE INSTALL waiting for the transfers to end
+    pub install_count: u32,
+    pub install_result: Option<InstallResult>,
 
+    pub accent: u32, // drawn UI accent, set by Chomp (SITE COLOR)
     pub ui: ui::Ui,
 }
 
@@ -153,6 +158,10 @@ impl Server {
             inst: None,
             cia_msg: String::new(),
             cia_msg_time: 0,
+            inst_queue: None,
+            install_count: 0,
+            install_result: None,
+            accent: settings::load_accent(),
             ui: ui::Ui::new(),
         }
     }
@@ -294,7 +303,9 @@ fn main() {
     }
 
     // only ever used through this pointer: the APT hook needs it too
-    let server: *mut Server = Box::into_raw(Box::new(Server::new()));
+    let mut s = Box::new(Server::new());
+    s.scan_cias();
+    let server: *mut Server = Box::into_raw(s);
     sys::apt_hook(on_apt, server.cast());
     unsafe { (*server).apply_backlight() };
 
