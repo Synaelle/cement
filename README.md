@@ -42,6 +42,18 @@ You also need `makerom`, `bannertool` and libclang, plus devkitPro or Docker (th
 copies devkitARM out of the official image). `cargo build --release` instead makes a PC
 version that plays the 3DS (the SD card is a folder), handy for tests.
 
+## Planned
+
+Next release:
+
+- A user name and password of your choice
+- Unpacking the uncompressed bundles Chomp sends when there are many small files
+
+Later:
+
+- Updating from within the app
+- Versions for other consoles
+
 ## Credits
 
 The red and black look of Chomp and Cement was inspired by the [vedal.ai](https://vedal.ai/)
