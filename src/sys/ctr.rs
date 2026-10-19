@@ -16,7 +16,6 @@ use super::{AptEvent, Screen};
 
 pub const KEY_A: u32 = c::KEY_A;
 pub const KEY_START: u32 = c::KEY_START;
-pub const KEY_SELECT: u32 = c::KEY_SELECT;
 pub const KEY_UP: u32 = c::KEY_UP; // D-pad or circle pad
 pub const KEY_DOWN: u32 = c::KEY_DOWN;
 pub const KEY_Y: u32 = c::KEY_Y;
