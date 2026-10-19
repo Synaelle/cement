@@ -13,6 +13,9 @@
 3. Connect with any FTP client (FileZilla, WinSCP...), or with
    [**Chomp**](https://github.com/Synaelle/chomp) 🍪
 
+Prefer plain console text? **Cement Text** (`Cement-Text.cia`) is the same app with the old
+text screens, in red. Both can be installed side by side.
+
 ## Chomp + Cement
 
 [Chomp](https://github.com/Synaelle/chomp) is the Windows app made for Cement: an explorer
