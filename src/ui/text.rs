@@ -187,8 +187,8 @@ impl Server {
             t += "\x1b[11;1H\x1b[K";
         }
 
-        t += "\x1b[26;1H START: exit   SELECT: top screen on/off\x1b[K";
-        t += "\x1b[27;1H Close the lid to sleep (Wi-Fi turns off)\x1b[K";
+        t += "\x1b[26;1H START: exit\x1b[K";
+        t += "\x1b[27;1H\x1b[K";
         t += "\x1b[28;1H Y: FTP login (user and password)\x1b[K";
         sys::select(Screen::Top);
         sys::print(&t);

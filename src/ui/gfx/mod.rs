@@ -187,7 +187,6 @@ enum Button {
     A,
     Y,
     Dpad,
-    Select,
     Start,
 }
 
@@ -201,12 +200,11 @@ fn glyph_size(b: Button) -> (f32, f32) {
         Button::A => (BTN_A.size as f32, BTN_A.size as f32),
         Button::Y => (BTN_Y.size as f32, BTN_Y.size as f32),
         Button::Dpad => (BTN_DPAD.size as f32, BTN_DPAD.size as f32),
-        Button::Select => ((f.width("SELECT", 0.0) + 8.0).round(), GLYPH),
         Button::Start => ((f.width("START", 0.0) + 8.0).round(), GLYPH),
     }
 }
 
-/// SELECT and START have no glyph in Kenney's set: a small keycap like the
+/// START has no glyph in Kenney's set: a small keycap like the
 /// real buttons, with the name in it
 fn keycap(c: &mut Canvas, x: f32, y: f32, name: &str, fill: Color, ink: Color) -> f32 {
     let f = &NUNITO_XBOLD_11;
@@ -234,7 +232,6 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &
             c.icon(&BTN_DPAD, x, y, |color| if color == 0xffffff { fg } else if on == pal.accent { on } else { pal.accent });
             BTN_DPAD.size as f32
         }
-        Button::Select => keycap(c, x, y, "SELECT", fg, on),
         Button::Start => keycap(c, x, y, "START", fg, on),
     }
 }
@@ -327,10 +324,12 @@ impl Server {
         // the buttons as small keycaps, then what they do, one per line; a low
         // battery warning on the right of them, one line each too
         let warning = ["Battery low: no new transfers", "or installs until you charge"];
-        for (i, (button, what)) in [(Button::Start, "exit"), (Button::Select, "top screen on/off")].into_iter().enumerate() {
-            let gy = (y + (f.height - GLYPH) / 2.0).round();
-            let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
-            c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
+        for (i, hint) in [Some((Button::Start, "exit")), None].into_iter().enumerate() {
+            if let Some((button, what)) = hint {
+                let gy = (y + (f.height - GLYPH) / 2.0).round();
+                let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
+                c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
+            }
             if t.low {
                 let w = &NUNITO_XBOLD_12;
                 c.text_right(w, right, y + (f.height - w.height) / 2.0 + w.ascent, warning[i], pal.highlight);
@@ -425,7 +424,6 @@ impl Server {
         let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
         let mut x = hint(c, left, hy, Button::A, first, pal.accent, WHITE, pal) + 5.0;
         x = hint(c, x, hy, Button::Dpad, "", pal.track, pal.soft, pal) + 5.0;
-        x = hint(c, x, hy, Button::Select, "screen off", pal.track, pal.soft, pal) + 5.0;
         hint(c, x, hy, Button::Y, "login", pal.track, pal.soft, pal);
         let mut bottom = hy - 6.0;
 

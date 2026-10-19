@@ -101,7 +101,6 @@ pub struct Server {
     pub last_activity: u64, // last transfer end or file system change (SITE STATUS idle_ms)
 
     // screens
-    backlight: bool, // top screen wanted on (SELECT)
     pub bottom_on: bool,
     pub bottom_dirty: bool,
     pub last_msg: bool, // the install message was shown at the last draw
@@ -111,7 +110,7 @@ pub struct Server {
     pub rate: u64,
 
     // power
-    pub idle_off: bool, // the screens are off because of the idle timer (not SELECT)
+    pub idle_off: bool, // the screens are off because of the idle timer
     last_wake: u64,     // last button press, transfer or install
     fast: bool,
     fast_until: u64,
@@ -142,7 +141,6 @@ impl Server {
             next_net_check: 0,
             fs_busy_until: 0,
             last_activity: sys::now_ms(), // idle_ms counts from startup
-            backlight: true,
             bottom_on: false,
             bottom_dirty: true,
             last_msg: false,
@@ -192,7 +190,7 @@ impl Server {
         sys::backlight(sys::SCREEN_BOTTOM, self.bottom_on);
         self.idle_off = false;
         self.last_wake = sys::now_ms();
-        sys::backlight(sys::SCREEN_TOP, self.backlight);
+        sys::backlight(sys::SCREEN_TOP, true);
     }
 
     fn working(&self) -> bool {
@@ -221,19 +219,13 @@ impl Server {
         if self.idle_off && !idle {
             self.idle_off = false;
             self.bottom_dirty = true;
-            if self.backlight {
-                sys::backlight(sys::SCREEN_TOP, true);
-            }
-            // a press that lit a screen does nothing else; with both staying dark it acts as
-            // usual, and SELECT still works when only the bottom screen came back
-            let bottom = !self.cias.is_empty() || ui::BOTTOM_ALWAYS_ON;
-            return down != 0 && (self.backlight || (bottom && down & sys::KEY_SELECT == 0));
+            sys::backlight(sys::SCREEN_TOP, true);
+            // a press that lit the screens does nothing else
+            return down != 0;
         }
         if !self.idle_off && idle {
             self.idle_off = true;
-            if self.backlight {
-                sys::backlight(sys::SCREEN_TOP, false);
-            }
+            sys::backlight(sys::SCREEN_TOP, false);
         }
         false
     }
@@ -256,10 +248,6 @@ impl Server {
         self.cia_input(down);
         if down & sys::KEY_Y != 0 {
             self.login_keyboard();
-        }
-        if down & sys::KEY_SELECT != 0 {
-            self.backlight = !self.backlight;
-            sys::backlight(sys::SCREEN_TOP, self.backlight);
         }
 
         let now = sys::now_ms();
