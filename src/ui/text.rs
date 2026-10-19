@@ -9,7 +9,7 @@ use super::{Bottom, Top};
 use crate::server::{CTRL_PORT, Mode, progress_of};
 use crate::sys::{self, Screen};
 use crate::util::{base_name, clip, format_size, ip_text};
-use crate::{Server, VERSION, battery_text};
+use crate::{PROTOCOL, Server, VERSION, battery_text};
 
 const GOOD: u32 = 0x8ccf9a;
 const BAD: u32 = 0xe5484d;
@@ -116,7 +116,7 @@ impl Server {
         if std::mem::take(&mut self.ui.clear_top) {
             t += "\x1b[2J";
         }
-        t += &format!("\x1b[1;1H{hi} Cement Text\x1b[0m v{VERSION}\x1b[K");
+        t += &format!("\x1b[1;1H{hi} Cement Text\x1b[0m v{VERSION}  protocol {PROTOCOL}\x1b[K");
         t += "\x1b[2;1H ------------------------------------------------\x1b[K";
         if self.net.ip != 0 {
             t += &format!("\x1b[4;1H IP   : {soft}{}\x1b[0m\x1b[K", ip_text(self.net.ip));

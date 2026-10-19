@@ -15,7 +15,7 @@ use super::{Bottom, Top};
 use crate::server::{CTRL_PORT, Mode, progress_of};
 use crate::sys;
 use crate::util::{base_name, format_size, ip_text};
-use crate::{Server, VERSION, battery_text};
+use crate::{PROTOCOL, Server, VERSION, battery_text};
 
 // fixed whatever the accent: white on accent, install success and error
 const WHITE: Color = 0xffffff;
@@ -285,7 +285,9 @@ impl Server {
         let mut y = 14.0;
         let f = &FREDOKA_BOLD_22;
         let end = c.text(f, left, y + f.ascent, "cement", pal.text, 0.0);
-        c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &format!("v{VERSION}"), pal.dim, 0.0);
+        // the protocol level says which Chomp goes with this Cement (they version apart)
+        let version = format!("v{VERSION} · protocol {PROTOCOL}");
+        c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
         let bat = t.bat;
         let label = format!(
             "{}{}",
