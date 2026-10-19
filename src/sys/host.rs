@@ -13,6 +13,9 @@
 //   hides the percentage, CEMENT_SDFREE fakes the free space
 // - CEMENT_SCREEN_DUMP=<dir> writes both drawn screens there as top.bmp and
 //   bottom.bmp each time they change
+// - CEMENT_PORT=<n> moves the control port (default 5000) and the PASV data
+//   ports to n+1..n+999, so test runs don't clash with each other or with a
+//   real 3DS session
 // - events the tests check are logged to stderr as "[shim] ..."
 
 use std::ffi::c_void;
@@ -193,6 +196,13 @@ pub fn soc_init() -> bool {
 
 pub fn soc_exit() {
     eprintln!("[shim] socExit");
+}
+
+/// the FTP control port, and the range the PASV data ports come from
+pub fn ports() -> (u16, u16, u16) {
+    let port = env("CEMENT_PORT").and_then(|p| p.trim().parse::<u16>().ok()).filter(|&p| p > 0 && p <= 65535 - 999);
+    let port = port.unwrap_or(crate::server::CTRL_PORT);
+    (port, port + 1, port + 999)
 }
 
 pub fn host_ip() -> u32 {

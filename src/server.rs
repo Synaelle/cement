@@ -15,7 +15,7 @@ use crate::untar::Untar;
 use crate::util::{self, resolve_path};
 use crate::{PROTOCOL, Server, VERSION, settings};
 
-pub const CTRL_PORT: u16 = 5000;
+pub const CTRL_PORT: u16 = 5000; // on the 3DS; the PC test server can move it (sys::ports)
 pub const MAX_SESSIONS: usize = 4;
 const MAX_PENDING: usize = 16;
 const SOCK_BUFSIZE: i32 = 32768; // same value ftpd uses on 3DS
@@ -374,7 +374,7 @@ pub struct Net {
 
 impl Net {
     pub fn new() -> Net {
-        Net { listen: None, pending: [None; MAX_PENDING], up: false, ndm_locked: false, ip: 0, pasv_port: 5001 }
+        Net { listen: None, pending: [None; MAX_PENDING], up: false, ndm_locked: false, ip: 0, pasv_port: sys::ports().1 }
     }
 
     /// half-close and let the peer close, so no queued data gets lost
@@ -438,7 +438,7 @@ impl Server {
         let ip = self.net.ip;
         let ok = ip != 0
             && ip != u32::MAX
-            && listen.is_some_and(|s| net::bind(s, ip, CTRL_PORT) && net::listen(s, MAX_SESSIONS as i32));
+            && listen.is_some_and(|s| net::bind(s, ip, sys::ports().0) && net::listen(s, MAX_SESSIONS as i32));
         if !ok {
             self.net_down();
             self.status = "Network not ready, retrying...".into();
@@ -673,8 +673,9 @@ impl Server {
         // binding to port 0 is unreliable on 3DS (ftpd works around it the same way)
         let mut port = 0;
         for _ in 0..20 {
-            if self.net.pasv_port > 10000 {
-                self.net.pasv_port = 5001;
+            let (_, first, last) = sys::ports();
+            if self.net.pasv_port > last || self.net.pasv_port < first {
+                self.net.pasv_port = first;
             }
             let p = self.net.pasv_port;
             self.net.pasv_port += 1;

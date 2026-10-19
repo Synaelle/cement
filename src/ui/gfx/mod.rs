@@ -12,7 +12,7 @@ use font::*;
 use super::palette::Palette;
 
 use super::{Bottom, Top};
-use crate::server::{CTRL_PORT, Mode, progress_of};
+use crate::server::{Mode, progress_of};
 use crate::sys;
 use crate::util::{base_name, format_size, ip_text};
 use crate::{PROTOCOL, Server, VERSION, battery_text};
@@ -320,7 +320,7 @@ impl Server {
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
         let mut x = c.text(f, left, y + f.ascent, &ip, pal.text, 1.0);
         x = c.text(f, x, y + f.ascent, " : ", pal.accent, 1.0);
-        c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), pal.text, 1.0);
+        c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
         let f = &NUNITO_BOLD_11;
         // the buttons as small keycaps, then what they do, one per line; a low

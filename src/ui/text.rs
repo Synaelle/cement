@@ -6,7 +6,7 @@
 
 use super::palette::Palette;
 use super::{Bottom, Top};
-use crate::server::{CTRL_PORT, Mode, progress_of};
+use crate::server::{Mode, progress_of};
 use crate::sys::{self, Screen};
 use crate::util::{base_name, clip, format_size, ip_text};
 use crate::{PROTOCOL, Server, VERSION, battery_text};
@@ -123,7 +123,7 @@ impl Server {
         } else {
             t += "\x1b[4;1H IP   : -\x1b[K";
         }
-        t += &format!("\x1b[5;1H Port : {soft}{CTRL_PORT}\x1b[0m\x1b[K");
+        t += &format!("\x1b[5;1H Port : {soft}{}\x1b[0m\x1b[K", sys::ports().0);
         match &self.login {
             Some((user, _)) => t += &format!("\x1b[6;1H Login: {soft}{}\x1b[0m\x1b[K", clip(user, 40)),
             None => t += "\x1b[6;1H Login: none, anyone can connect\x1b[K",

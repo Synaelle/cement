@@ -276,6 +276,11 @@ pub fn soc_exit() {
 }
 
 /// the console's IP as s_addr (network byte order in memory)
+/// the FTP control port, and the range the PASV data ports come from
+pub fn ports() -> (u16, u16, u16) {
+    (crate::server::CTRL_PORT, 5001, 10000)
+}
+
 pub fn host_ip() -> u32 {
     unsafe { libc::gethostid() as u32 }
 }
