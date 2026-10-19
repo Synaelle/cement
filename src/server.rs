@@ -5,12 +5,13 @@
 // One non-blocking poll() loop on the main thread handles every socket; the
 // disk thread does the SD card reads and writes of the transfers (disk.rs).
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use crate::disk::{self, Buf, CHUNK, Disk, NBUF};
 use crate::sys::net::{self, Io, POLL_IN, POLL_OUT, PollFd, Sock};
 use crate::sys::{self, File};
+use crate::untar::Untar;
 use crate::util::{self, resolve_path};
 use crate::{PROTOCOL, Server, VERSION, settings};
 
@@ -43,6 +44,7 @@ enum Slot {
 
 pub struct Xfer {
     file: Option<Arc<File>>,
+    untar: Option<Arc<Mutex<Untar>>>, // SITE BUNDLE: the stream is unpacked instead of written
     up: bool, // network -> SD
     slots: [Slot; NBUF],
     cur: usize,      // STOR: buffer being filled, RETR: buffer being sent
@@ -60,6 +62,7 @@ impl Xfer {
         let (tx, rx) = channel();
         Xfer {
             file: None,
+            untar: None,
             up: false,
             slots: [const { Slot::Empty }; NBUF],
             cur: 0,
@@ -102,7 +105,9 @@ impl Xfer {
 
     /// hands buffer i to the disk thread: write its `len` bytes, or read a chunk, at `off`
     fn submit(&mut self, disk: &Disk, i: usize, len: usize, off: u64) {
-        let Some(file) = self.file.clone() else { return };
+        if self.file.is_none() && self.untar.is_none() {
+            return;
+        }
         let buf = match std::mem::replace(&mut self.slots[i], Slot::Busy) {
             Slot::Free(b) | Slot::Fill { buf: b, .. } | Slot::Done { buf: b, .. } => b,
             other => {
@@ -110,7 +115,8 @@ impl Xfer {
                 return;
             }
         };
-        disk.submit(disk::Job { file, write: self.up, slot: i, buf, len, off, reply: self.tx.clone() });
+        let (file, untar) = (self.file.clone(), self.untar.clone());
+        disk.submit(disk::Job { file, untar, write: self.up, slot: i, buf, len, off, reply: self.tx.clone() });
     }
 
     /// waits until the disk thread is done with every buffer of this transfer
@@ -163,6 +169,11 @@ pub struct Session {
 
     pub x: Xfer,
 
+    logged_in: bool, // USER/PASS matched the login (always true without one)
+    user: String,    // the USER given, waiting for PASS
+    bundle: Option<String>, // SITE BUNDLE: the next STOR is a tar unpacked into this folder
+    bundle_base: u32,       // batch_files_done when the bundle started
+
     // progress reporting (SITE STATUS)
     allo: u64,       // size announced with ALLO for the next STOR (0 = unknown)
     xfer_base: u64,  // REST offset of the current transfer
@@ -198,6 +209,10 @@ impl Session {
             list: Vec::new(),
             list_pos: 0,
             x: Xfer::new(),
+            logged_in: false,
+            user: String::new(),
+            bundle: None,
+            bundle_base: 0,
             allo: 0,
             xfer_base: 0,
             xfer_total: 0,
@@ -240,7 +255,7 @@ impl Session {
     }
 
     fn xfer_close(&mut self) {
-        if self.x.file.is_none() {
+        if self.x.file.is_none() && self.x.untar.is_none() {
             return;
         }
         self.x.drain();
@@ -253,6 +268,9 @@ impl Session {
 
     fn end_transfer(&mut self) {
         self.xfer_close();
+        if let Some(u) = self.x.untar.take() {
+            u.lock().unwrap().abort(); // cut short (ABOR, lost client): no half file left
+        }
         self.list = Vec::new();
         self.list_pos = 0;
         self.mode = Mode::None;
@@ -263,6 +281,9 @@ impl Session {
 
     pub fn close(&mut self) {
         self.end_transfer();
+        self.logged_in = false;
+        self.user.clear();
+        self.bundle = None;
         self.allo = 0;
         self.batch_files = 0;
         self.batch_files_done = 0;
@@ -763,26 +784,50 @@ impl Server {
         }
     }
 
-    fn finish_data(&mut self, i: usize, mut ok: bool, mut msg: &str) {
+    fn finish_data(&mut self, i: usize, mut ok: bool, msg: &str) {
+        let mut msg = msg.to_string();
         let s = &mut self.sess[i];
         let upload = s.mode == Mode::Stor;
         let size = s.x.pos;
-        if s.x.file.is_some() {
+        if s.x.file.is_some() || s.x.untar.is_some() {
             s.xfer_close();
             if s.x.err {
                 ok = false;
-                msg = "451 SD card error";
+                msg = "451 SD card error".into();
+            }
+        }
+        let mut unpacked = Vec::new();
+        let bundle = s.x.untar.take();
+        if let Some(u) = &bundle {
+            let mut u = u.lock().unwrap();
+            if ok && u.clean_end() {
+                msg = if u.errors == 0 {
+                    format!("226 Unpacked {} files", u.files)
+                } else {
+                    format!("451 Unpacked with {} error(s), first: {}", u.errors, u.first_error)
+                };
+            } else {
+                u.abort(); // cut short: the half written file goes, the client sends again
+                ok = false;
+                msg = "426 Connection lost".into();
+            }
+            unpacked = std::mem::take(&mut u.cias);
+            if s.batch_files != 0 {
+                s.batch_files_done = s.bundle_base + u.files;
             }
         }
         if (s.mode == Mode::Stor || s.mode == Mode::Retr) && s.batch_files != 0 {
             s.batch_bytes_done += s.x.done;
-            if ok {
+            if ok && bundle.is_none() {
                 s.batch_files_done += 1;
             }
         }
         let path = s.path.clone();
-        if upload && ok {
+        if upload && ok && bundle.is_none() {
             self.cia_add(&path, size);
+        }
+        for (cia, size) in unpacked {
+            self.cia_add(&cia, size);
         }
         self.last_activity = sys::now_ms();
         let s = &mut self.sess[i];
@@ -802,6 +847,17 @@ impl Server {
         loop {
             let s = &mut self.sess[i];
             let Some(data) = s.data else { return };
+            if let Some(u) = &s.x.untar {
+                // a bundle: the entry being unpacked and the files done, if the disk thread lets go
+                if let Ok(u) = u.try_lock() {
+                    if !u.current.is_empty() {
+                        s.name = util::clip(util::base_name(&u.current), 63).to_string();
+                    }
+                    if s.batch_files != 0 {
+                        s.batch_files_done = s.bundle_base + u.files;
+                    }
+                }
+            }
             let x = &mut s.x;
             x.collect();
             let c = x.cur;
@@ -945,6 +1001,14 @@ impl Server {
             }
         }
 
+        if !self.logged_in(i) && !matches!(cmd, "USER" | "PASS" | "QUIT" | "FEAT" | "SYST" | "NOOP" | "OPTS") {
+            self.sess[i].reply("530 Please log in with USER and PASS\r\n");
+            return;
+        }
+        if matches!(cmd, "RETR" | "APPE" | "LIST" | "NLST" | "MLSD") {
+            self.sess[i].bundle = None; // only the very next STOR is a bundle
+        }
+
         let busy = self.sess[i].mode != Mode::None;
         if busy && matches!(cmd, "PASV" | "EPSV" | "LIST" | "NLST" | "MLSD" | "RETR" | "STOR" | "APPE") {
             self.sess[i].reply("450 Transfer in progress\r\n");
@@ -954,7 +1018,37 @@ impl Server {
         let cwd = self.sess[i].cwd.clone();
         let resolve = |a: &[u8]| resolve_path(&cwd, a);
         match cmd {
-            "USER" | "PASS" => self.sess[i].reply("230 Logged in\r\n"),
+            "USER" => {
+                let user = String::from_utf8_lossy(arg).into_owned();
+                let s = &mut self.sess[i];
+                if self.login.is_none() {
+                    s.logged_in = true; // no login set: anyone, any name
+                    s.reply("230 Logged in\r\n");
+                } else {
+                    s.logged_in = false;
+                    s.user = user;
+                    s.reply("331 Password required\r\n");
+                }
+            }
+            "PASS" => {
+                let pass = String::from_utf8_lossy(arg).into_owned();
+                let s = &mut self.sess[i];
+                match &self.login {
+                    None => {
+                        s.logged_in = true;
+                        s.reply("230 Logged in\r\n");
+                    }
+                    Some((user, password)) if s.user == *user && pass == *password => {
+                        s.logged_in = true;
+                        s.reply("230 Logged in\r\n");
+                    }
+                    Some(_) => {
+                        s.logged_in = false;
+                        s.user.clear();
+                        s.reply("530 Login incorrect\r\n");
+                    }
+                }
+            }
             "SYST" => self.sess[i].reply("215 UNIX Type: L8\r\n"),
             "FEAT" => self.sess[i].reply(
                 "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n MDTM\r\n AVBL\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n211 End\r\n",
@@ -1068,6 +1162,17 @@ impl Server {
                 let s = &mut self.sess[i];
                 if s.pasv.is_none() && s.data.is_none() {
                     s.reply("425 Use PASV first\r\n");
+                } else if let (Some(dir), "STOR") = (s.bundle.take(), cmd) {
+                    // SITE BUNDLE: the name is ignored, the stream is unpacked into dir
+                    if crate::battery_low(bat) {
+                        s.end_transfer();
+                        s.reply(&format!("450 3DS battery too low ({}): plug in the charger\r\n", crate::battery_text(bat)));
+                    } else if self.prepare_bundle(i, &dir) {
+                        let s = &mut self.sess[i];
+                        s.mode = Mode::Stor;
+                        s.set_name(&dir);
+                        s.reply("150 Opening data connection\r\n");
+                    }
                 } else if let Some(path) = path {
                     if crate::battery_low(bat) {
                         s.end_transfer();
@@ -1209,7 +1314,38 @@ impl Server {
                 };
                 self.sess[i].reply(reply);
             }
-            _ => self.sess[i].reply("502 SITE STATUS, BATCH, COLOR or INSTALL\r\n"),
+            "LOGIN" => {
+                // SITE LOGIN <user> <password>: the password is the rest of the line;
+                // SITE LOGIN alone: back to anonymous
+                let rest = text.get(5..).unwrap_or("").trim_start();
+                let reply = if rest.is_empty() {
+                    self.set_login(None);
+                    "200 Login cleared\r\n"
+                } else {
+                    let (user, pass) = rest.split_once(' ').unwrap_or((rest, ""));
+                    if settings::valid_user(user) {
+                        self.set_login(Some((user.to_string(), pass.to_string())));
+                        "200 Login set\r\n"
+                    } else {
+                        "501 SITE LOGIN <user> <password>\r\n"
+                    }
+                };
+                self.sess[i].logged_in = true; // whoever set it stays in
+                self.sess[i].reply(reply);
+            }
+            "BUNDLE" => {
+                // SITE BUNDLE <dir>: the next STOR is a plain tar unpacked into dir
+                let arg = text.get(6..).unwrap_or("").trim();
+                let s = &mut self.sess[i];
+                match resolve_path(&s.cwd, arg.as_bytes()) {
+                    Some(dir) if !arg.is_empty() => {
+                        s.bundle = Some(dir);
+                        s.reply("200 Send the bundle\r\n");
+                    }
+                    _ => s.reply("501 SITE BUNDLE <dir>\r\n"),
+                }
+            }
+            _ => self.sess[i].reply("502 SITE STATUS, BATCH, COLOR, INSTALL, LOGIN or BUNDLE\r\n"),
         }
     }
 
@@ -1232,7 +1368,7 @@ impl Server {
         let idle = if busy || now < self.last_activity { 0 } else { now - self.last_activity };
         let mut out = String::from("211-Status\r\n");
         out += &format!(
-            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} version={}\r\n",
+            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} login={} version={}\r\n",
             busy as i32,
             idle,
             self.installing() as i32,
@@ -1246,6 +1382,7 @@ impl Server {
             bat.plugged as i32,
             crate::battery_low(bat) as i32,
             self.accent,
+            self.login.is_some() as i32,
             VERSION
         );
         for (j, s) in self.sess.iter().enumerate() {
@@ -1299,6 +1436,48 @@ impl Server {
         }
         out += "211 End\r\n";
         out
+    }
+
+    /// with no login set, every session is in
+    fn logged_in(&self, i: usize) -> bool {
+        self.login.is_none() || self.sess[i].logged_in
+    }
+
+    /// sets or clears the FTP login and keeps it on the SD card
+    pub fn set_login(&mut self, login: Option<(String, String)>) {
+        settings::save_login(login.as_ref().map(|(u, p)| (u.as_str(), p.as_str())));
+        self.login = login;
+        self.last_time = 0; // the top screen shows it
+        self.bottom_dirty = true;
+    }
+
+    /// SITE BUNDLE's STOR: the received bytes go to an unpacker on the disk thread
+    fn prepare_bundle(&mut self, i: usize, dir: &str) -> bool {
+        if !self.sess[i].x.alloc() {
+            self.sess[i].reply("451 Out of memory\r\n");
+            return false;
+        }
+        let s = &mut self.sess[i];
+        let x = &mut s.x;
+        for slot in &mut x.slots {
+            *slot = match std::mem::replace(slot, Slot::Empty) {
+                Slot::Fill { buf, .. } | Slot::Done { buf, .. } | Slot::Free(buf) => Slot::Free(buf),
+                other => other,
+            };
+        }
+        x.cur = 0;
+        x.send_pos = 0;
+        x.done = 0;
+        x.err = false;
+        x.up = true;
+        x.file = None;
+        x.untar = Some(Arc::new(Mutex::new(Untar::new(dir))));
+        x.pos = 0;
+        s.xfer_base = 0;
+        s.xfer_total = s.allo;
+        s.allo = 0;
+        s.bundle_base = s.batch_files_done;
+        true
     }
 
     /// installs wait for transfers and deletions: they share the SD card

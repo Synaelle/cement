@@ -20,6 +20,7 @@ mod server;
 mod settings;
 mod sys;
 mod ui;
+mod untar;
 mod util;
 
 use std::ffi::c_void;
@@ -41,7 +42,7 @@ pub const VERSION: &str = match option_env!("CEMENT_VERSION") {
 /// Compatibility level with the PC apps, reported in SITE STATUS. Bump it (and
 /// REQUIRED_PROTOCOL in Chomp's src/ftp.h) only when the PC side needs this new
 /// 3DS build; Chomp warns about an outdated 3DS app only then.
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 const fn env_ms(v: Option<&str>, default: u64) -> u64 {
     let Some(v) = v else { return default };
@@ -126,7 +127,8 @@ pub struct Server {
     pub install_count: u32,
     pub install_result: Option<InstallResult>,
 
-    pub accent: u32, // drawn UI accent, set by Chomp (SITE COLOR)
+    pub accent: u32,                     // drawn UI accent, set by Chomp (SITE COLOR)
+    pub login: Option<(String, String)>, // FTP user and password; None: anonymous
     pub ui: ui::Ui,
 }
 
@@ -161,7 +163,8 @@ impl Server {
             inst_queue: None,
             install_count: 0,
             install_result: None,
-            accent: settings::load_accent(),
+            accent: 0,
+            login: None,
             ui: ui::Ui::new(),
         }
     }
@@ -251,6 +254,9 @@ impl Server {
             self.bottom_dirty = true;
         }
         self.cia_input(down);
+        if down & sys::KEY_Y != 0 {
+            self.login_keyboard();
+        }
         if down & sys::KEY_SELECT != 0 {
             self.backlight = !self.backlight;
             sys::backlight(sys::SCREEN_TOP, self.backlight);
@@ -274,6 +280,36 @@ impl Server {
         }
         self.draw();
         true
+    }
+}
+
+impl Server {
+    /// Y: the FTP login typed on the console (an empty user name clears it)
+    fn login_keyboard(&mut self) {
+        let current = self.login.as_ref().map(|l| l.0.clone()).unwrap_or_default();
+        let msg = match sys::keyboard("FTP user name (empty: anyone can connect)", &current, false, 32) {
+            None => None,
+            Some(user) if user.trim().is_empty() => {
+                self.set_login(None);
+                Some("Login cleared: anyone can connect".to_string())
+            }
+            Some(user) if !settings::valid_user(user.trim()) => Some("A user name can't have spaces".to_string()),
+            Some(user) => {
+                let user = user.trim().to_string();
+                sys::keyboard(&format!("Password for {user}"), "", true, 64).map(|pass| {
+                    self.set_login(Some((user.clone(), pass)));
+                    format!("Login set for {user}")
+                })
+            }
+        };
+        if let Some(msg) = msg {
+            self.cia_msg = msg;
+            self.cia_msg_time = sys::now_ms();
+        }
+        // the keyboard drew over both screens
+        self.ui.invalidate();
+        self.bottom_dirty = true;
+        self.last_time = 0;
     }
 }
 
@@ -304,6 +340,8 @@ fn main() {
 
     // only ever used through this pointer: the APT hook needs it too
     let mut s = Box::new(Server::new());
+    let saved = settings::load();
+    (s.accent, s.login) = (saved.accent, saved.login);
     s.scan_cias();
     let server: *mut Server = Box::into_raw(s);
     sys::apt_hook(on_apt, server.cast());

@@ -22,16 +22,22 @@ fn fg(c: u32) -> String {
 /// the bottom screen is only lit while it lists CIA files (or an install message)
 pub const BOTTOM_ALWAYS_ON: bool = false;
 
-/// the console keeps no state of its own
-pub struct Ui;
+/// the screens to clear before their next text
+pub struct Ui {
+    clear_top: bool,
+    clear_bottom: bool,
+}
 
 impl Ui {
     pub fn new() -> Ui {
-        Ui
+        Ui { clear_top: false, clear_bottom: false }
     }
 
-    /// after the HOME menu or sleep: nothing to do, every line is printed again
-    pub fn invalidate(&mut self) {}
+    /// after the keyboard, the HOME menu or sleep: rows that aren't printed
+    /// every time may hold something else, so both consoles start blank
+    pub fn invalidate(&mut self) {
+        (self.clear_top, self.clear_bottom) = (true, true);
+    }
 }
 
 impl Server {
@@ -40,7 +46,10 @@ impl Server {
         let pal = Palette::for_accent(self.accent);
         let hi = fg(pal.highlight); // titles and highlights
         let mut t = String::new();
-        t += &format!("\x1b[1;1H{hi} CIA files ready to install\x1b[0m\x1b[K\n");
+        if std::mem::take(&mut self.ui.clear_bottom) {
+            t += "\x1b[2J";
+        }
+        t += &format!("\x1b[1;1H{hi} CIAs sent since start, or in /, /cias\x1b[0m\x1b[K\n");
         t += " --------------------------------------\x1b[K\n";
         const ROWS: usize = 20;
         let first = if self.cia_sel >= ROWS { self.cia_sel - ROWS + 1 } else { 0 };
@@ -78,7 +87,7 @@ impl Server {
         }
         let color = if !show_msg {
             String::new()
-        } else if self.cia_msg.starts_with("Installed") {
+        } else if super::good_news(&self.cia_msg) {
             fg(GOOD)
         } else {
             fg(BAD)
@@ -89,6 +98,7 @@ impl Server {
         } else {
             t += "\x1b[30;1H A: install + delete   Up/Down: select\x1b[K";
         }
+        t += "\x1b[29;1H Y: FTP login (user and password)\x1b[K";
         sys::select(Screen::Bottom);
         sys::print(&t);
         sys::select(Screen::Top);
@@ -103,6 +113,9 @@ impl Server {
         // every line on a fixed row, cleared to the end and kept under the 50
         // column width (a wrapped line used to leave old text behind)
         let mut t = String::new();
+        if std::mem::take(&mut self.ui.clear_top) {
+            t += "\x1b[2J";
+        }
         t += &format!("\x1b[1;1H{hi} Cement Text\x1b[0m v{VERSION}\x1b[K");
         t += "\x1b[2;1H ------------------------------------------------\x1b[K";
         if self.net.ip != 0 {
@@ -111,6 +124,10 @@ impl Server {
             t += "\x1b[4;1H IP   : -\x1b[K";
         }
         t += &format!("\x1b[5;1H Port : {soft}{CTRL_PORT}\x1b[0m\x1b[K");
+        match &self.login {
+            Some((user, _)) => t += &format!("\x1b[6;1H Login: {soft}{}\x1b[0m\x1b[K", clip(user, 40)),
+            None => t += "\x1b[6;1H Login: none, anyone can connect\x1b[K",
+        }
         t += &format!("\x1b[7;1H Status: {}\x1b[K", clip(&self.status, 40));
         t += &format!(
             "\x1b[8;1H Battery: {}{}\x1b[0m{}\x1b[K",
@@ -172,6 +189,7 @@ impl Server {
 
         t += "\x1b[26;1H START: exit   SELECT: top screen on/off\x1b[K";
         t += "\x1b[27;1H Close the lid to sleep (Wi-Fi turns off)\x1b[K";
+        t += "\x1b[28;1H Y: FTP login (user and password)\x1b[K";
         sys::select(Screen::Top);
         sys::print(&t);
     }

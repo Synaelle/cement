@@ -19,6 +19,11 @@ mod gfx;
 #[cfg(not(feature = "text-ui"))]
 pub use gfx::{BOTTOM_ALWAYS_ON, Ui};
 
+/// install and login messages: shown in green, the others (errors) in red
+pub fn good_news(msg: &str) -> bool {
+    msg.starts_with("Installed") || msg.starts_with("Login")
+}
+
 /// how long an install message stays on the bottom screen
 const MSG_MS: u64 = 8000;
 

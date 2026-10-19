@@ -19,6 +19,7 @@ pub const KEY_START: u32 = c::KEY_START;
 pub const KEY_SELECT: u32 = c::KEY_SELECT;
 pub const KEY_UP: u32 = c::KEY_UP; // D-pad or circle pad
 pub const KEY_DOWN: u32 = c::KEY_DOWN;
+pub const KEY_Y: u32 = c::KEY_Y;
 
 pub const MEDIA_NAND: u8 = c::MEDIATYPE_NAND;
 pub const MEDIA_SD: u8 = c::MEDIATYPE_SD;
@@ -171,6 +172,29 @@ pub fn present(screen: Screen, px: &[u32], x0: usize, y0: usize, x1: usize, y1: 
         c::gfxScreenSwapBuffers(gs, false);
         LAST[i] = now_ms();
     }
+}
+
+/// the system keyboard (an applet): call it from the main loop, between frames;
+/// it draws over both screens. None when Cancel was pressed.
+pub fn keyboard(hint: &str, initial: &str, password: bool, max: usize) -> Option<String> {
+    let hint = std::ffi::CString::new(hint).unwrap_or_default();
+    let initial = std::ffi::CString::new(initial).unwrap_or_default();
+    let mut buf = vec![0u8; max * 4 + 1]; // UTF-8
+    unsafe {
+        let mut kb: c::SwkbdState = std::mem::zeroed();
+        c::swkbdInit(&mut kb, c::SWKBD_TYPE_NORMAL, 2, max as i32);
+        c::swkbdSetHintText(&mut kb, hint.as_ptr());
+        c::swkbdSetInitialText(&mut kb, initial.as_ptr());
+        kb.valid_input = c::SWKBD_ANYTHING as _; // an empty answer is allowed (no login)
+        if password {
+            kb.password_mode = c::SWKBD_PASSWORD_HIDE_DELAY as _;
+        }
+        if c::swkbdInputText(&mut kb, buf.as_mut_ptr().cast(), buf.len()) != c::SWKBD_BUTTON_CONFIRM {
+            return None;
+        }
+    }
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    Some(String::from_utf8_lossy(&buf[..end]).into_owned())
 }
 
 pub fn backlight(screens: u32, on: bool) {

@@ -3,13 +3,15 @@
 // The disk thread: every SD card read and write of a transfer happens here, so
 // receiving from the network and writing to the SD card overlap. A transfer
 // owns NBUF buffers; a buffer is handed to the disk thread by value and comes
-// back on the transfer's own channel once it has been written or read.
+// back on the transfer's own channel once it has been written or read. A
+// bundle (SITE BUNDLE) hands its buffers to its unpacker here instead.
 
 use std::alloc::{Layout, alloc, dealloc};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use crate::sys;
+use crate::untar::Untar;
 
 pub const NBUF: usize = 4;
 pub const CHUNK: usize = 256 * 1024;
@@ -59,7 +61,8 @@ pub struct Done {
 }
 
 pub struct Job {
-    pub file: Arc<sys::File>,
+    pub file: Option<Arc<sys::File>>,
+    pub untar: Option<Arc<Mutex<Untar>>>, // a bundle: its bytes are unpacked, in order
     pub write: bool,
     pub slot: usize,
     pub buf: Buf,
@@ -110,16 +113,20 @@ fn run(jobs: Receiver<Option<Job>>) {
 
 fn work(job: Job) {
     let mut buf = job.buf;
-    let (len, ok) = if job.write {
-        match job.file.write_at(job.off, &buf[..job.len]) {
+    let (len, ok) = match (&job.untar, &job.file) {
+        (Some(untar), _) => {
+            untar.lock().unwrap().feed(&buf[..job.len]); // its errors are its own to report
+            (job.len, true)
+        }
+        (None, Some(file)) if job.write => match file.write_at(job.off, &buf[..job.len]) {
             Some(n) => (n, n == job.len),
             None => (0, false),
-        }
-    } else {
-        match job.file.read_at(job.off, &mut buf[..]) {
+        },
+        (None, Some(file)) => match file.read_at(job.off, &mut buf[..]) {
             Some(n) => (n, true),
             None => (0, false),
-        }
+        },
+        (None, None) => (0, false),
     };
     let _ = job.reply.send(Done { slot: job.slot, buf, len, ok });
 }

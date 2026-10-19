@@ -6,7 +6,9 @@
 // - a CIA "install" is written to the file named by CEMENT_AMOUT, and
 //   CEMENT_INSTALLED="<title id hex>:<version>,..." lists the titles already installed
 //   (deleting one takes CEMENT_DELETE_MS, as it can on the console)
-// - keys come from the file named by CEMENT_KEYS ("A", "UP", "DOWN", "SELECT")
+// - keys come from the file named by CEMENT_KEYS ("A", "UP", "DOWN", "SELECT", "Y")
+// - the software keyboard answers with the lines of the file named by
+//   CEMENT_SWKBD, one per call ("<cancel>" or no line left: Cancel)
 // - CEMENT_BATTERY="<percent>[,charging|,plugged]" (default 100), CEMENT_NO_MCU=1
 //   hides the percentage, CEMENT_SDFREE fakes the free space
 // - CEMENT_SCREEN_DUMP=<dir> writes both drawn screens there as top.bmp and
@@ -26,6 +28,7 @@ pub const KEY_SELECT: u32 = 1 << 2;
 pub const KEY_START: u32 = 1 << 3;
 pub const KEY_UP: u32 = 1 << 6;
 pub const KEY_DOWN: u32 = 1 << 7;
+pub const KEY_Y: u32 = 1 << 11;
 
 pub const MEDIA_NAND: u8 = 0;
 pub const MEDIA_SD: u8 = 1;
@@ -75,6 +78,8 @@ pub fn keys_down() -> u32 {
         KEY_UP
     } else if key.starts_with("DOWN") {
         KEY_DOWN
+    } else if key.starts_with('Y') {
+        KEY_Y
     } else if key.starts_with('A') {
         KEY_A
     } else {
@@ -121,6 +126,17 @@ pub fn present(screen: Screen, px: &[u32], _x0: usize, _y0: usize, _x1: usize, _
     if fs::write(&tmp, &b).is_ok() {
         let _ = fs::rename(&tmp, &path);
     }
+}
+
+pub fn keyboard(hint: &str, _initial: &str, _password: bool, _max: usize) -> Option<String> {
+    let file = env("CEMENT_SWKBD")?;
+    let text = fs::read_to_string(&file).ok()?;
+    let mut lines = text.lines();
+    let answer = lines.next()?.to_string();
+    let rest: String = lines.map(|l| format!("{l}\n")).collect();
+    let _ = fs::write(&file, rest);
+    eprintln!("[shim] keyboard \"{hint}\"");
+    (answer != "<cancel>").then_some(answer)
 }
 
 pub fn backlight(screens: u32, on: bool) {

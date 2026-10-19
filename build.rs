@@ -49,7 +49,11 @@ fn snapped(font: &fontdue::Font, px: f32) -> f32 {
 
 /// button glyphs: (Rust name, SVG in assets/buttons, size in pixels). Kenney's
 /// 64 x 64 drawings use the square 8..56, which becomes the glyph.
-const ICONS: &[(&str, &str, usize)] = &[("BTN_A", "switch_button_a.svg", 15), ("BTN_DPAD", "switch_dpad_vertical.svg", 17)];
+const ICONS: &[(&str, &str, usize)] = &[
+    ("BTN_A", "switch_button_a.svg", 15),
+    ("BTN_DPAD", "switch_dpad_vertical.svg", 17),
+    ("BTN_Y", "switch_button_y.svg", 15),
+];
 
 /// the filled paths of a Kenney SVG: (fill colour, outlines as closed polygons)
 fn svg_paths(svg: &str) -> Vec<(u32, Vec<Vec<(f32, f32)>>)> {

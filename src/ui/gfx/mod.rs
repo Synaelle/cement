@@ -185,6 +185,7 @@ fn bite_dot(c: &mut Canvas, x: f32, y: f32, pal: &Palette) {
 #[derive(Clone, Copy)]
 enum Button {
     A,
+    Y,
     Dpad,
     Select,
     Start,
@@ -198,6 +199,7 @@ fn glyph_size(b: Button) -> (f32, f32) {
     let f = &NUNITO_XBOLD_11;
     match b {
         Button::A => (BTN_A.size as f32, BTN_A.size as f32),
+        Button::Y => (BTN_Y.size as f32, BTN_Y.size as f32),
         Button::Dpad => (BTN_DPAD.size as f32, BTN_DPAD.size as f32),
         Button::Select => ((f.width("SELECT", 0.0) + 8.0).round(), GLYPH),
         Button::Start => ((f.width("START", 0.0) + 8.0).round(), GLYPH),
@@ -223,6 +225,10 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &
             c.icon(&BTN_A, x, y, tint);
             BTN_A.size as f32
         }
+        Button::Y => {
+            c.icon(&BTN_Y, x, y, tint);
+            BTN_Y.size as f32
+        }
         Button::Dpad => {
             // red arms on the accent hint would vanish: they take the background there
             c.icon(&BTN_DPAD, x, y, |color| if color == 0xffffff { fg } else if on == pal.accent { on } else { pal.accent });
@@ -238,7 +244,7 @@ fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: C
     let f = &NUNITO_XBOLD_11;
     let h = (f.height + 6.0).round();
     let (gw, gh) = glyph_size(b);
-    let w = 3.0 + gw + 5.0 + f.width(label, 0.0) + 8.0;
+    let w = if label.is_empty() { 3.0 + gw + 3.0 } else { 3.0 + gw + 5.0 + f.width(label, 0.0) + 8.0 };
     c.pill(x, y, w, h, bg);
     glyph(c, x + 3.0, y + ((h - gh) / 2.0).round(), b, fg, bg, pal);
     c.text(f, x + 3.0 + gw + 5.0, y + 3.0 + f.ascent, label, fg, 0.0);
@@ -305,6 +311,11 @@ impl Server {
         // address
         let f = &NUNITO_BOLD_12;
         c.text(f, left, y + f.ascent, "Connect to", pal.dim, 0.0);
+        let who = match &self.login {
+            Some((user, _)) => format!("login: {user}"),
+            None => "no login".to_string(),
+        };
+        c.text_right(f, right, y + f.ascent, &f.fit(&who, 170.0), pal.dim);
         y += f.height + 2.0;
         let f = &FREDOKA_SEMI_26;
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
@@ -403,21 +414,25 @@ impl Server {
             let s = &NUNITO_BOLD_11;
             c.text_right(s, right, top + (f.height - s.height) / 2.0 + s.ascent, &format!("SD {} free", format_big(free)), pal.dim);
         }
-        let list_top = top + f.height + 6.0;
+        let mut list_top = top + f.height + 2.0;
+        let s = &NUNITO_BOLD_11;
+        c.text(s, left, list_top + s.ascent, "Sent since Cement started, or found in / and /cias", pal.dim, 0.0);
+        list_top += s.height + 5.0;
 
         // from the bottom up: buttons, message, install card
         let f = &NUNITO_XBOLD_11;
         let hy = 228.0 - (f.height + 6.0);
         let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
         let mut x = hint(c, left, hy, Button::A, first, pal.accent, WHITE, pal) + 5.0;
-        x = hint(c, x, hy, Button::Dpad, "pick", pal.track, pal.soft, pal) + 5.0;
-        hint(c, x, hy, Button::Select, "screen off", pal.track, pal.soft, pal);
+        x = hint(c, x, hy, Button::Dpad, "", pal.track, pal.soft, pal) + 5.0;
+        x = hint(c, x, hy, Button::Select, "screen off", pal.track, pal.soft, pal) + 5.0;
+        hint(c, x, hy, Button::Y, "login", pal.track, pal.soft, pal);
         let mut bottom = hy - 6.0;
 
         if b.show_msg {
             let f = &NUNITO_XBOLD_12;
             bottom -= f.height;
-            let color = if self.cia_msg.starts_with("Installed") { GOOD } else { BAD };
+            let color = if super::good_news(&self.cia_msg) { GOOD } else { BAD };
             c.text(f, left, bottom + f.ascent, &f.fit(&self.cia_msg, right - left), color, 0.0);
             bottom -= 6.0;
         }
