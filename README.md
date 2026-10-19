@@ -38,5 +38,5 @@ version that plays the 3DS (the SD card is a folder), handy for tests.
 ## License
 
 GPL-3.0 or later, see [LICENSE](LICENSE). Versions before 1.2.32 were MIT.
-The CIA installer follows [FBI](https://github.com/Steveice10/FBI) (MIT); its notice and the
+The CIA installer follows [FBI](https://github.com/Steveice10/FBI) (MIT). Its notice and the
 licenses of the libraries built into the 3DS app are in [NOTICE](NOTICE).
