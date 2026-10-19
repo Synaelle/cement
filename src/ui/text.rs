@@ -1,16 +1,23 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Cement Text: both screens as console text, in red (titles red, highlights
-// bright red, install results green or red).
+// Cement Text: both screens as console text, in soft reds: the highlight and
+// soft colours of the drawn screens' palette (so they follow the accent too),
+// install results in soft green or red.
 
+use super::palette::Palette;
 use super::{Bottom, Top};
 use crate::server::{CTRL_PORT, Mode, progress_of};
 use crate::sys::{self, Screen};
 use crate::util::{base_name, clip, format_size, ip_text};
 use crate::{Server, VERSION, battery_text};
 
-const TITLE: &str = "\x1b[31m";
-const HIGHLIGHT: &str = "\x1b[1;31m";
+const GOOD: u32 = 0x8ccf9a;
+const BAD: u32 = 0xe5484d;
+
+/// a truecolor foreground escape (the console keeps it as RGB565)
+fn fg(c: u32) -> String {
+    format!("\x1b[38;2;{};{};{}m", c >> 16, (c >> 8) & 255, c & 255)
+}
 
 /// the bottom screen is only lit while it lists CIA files (or an install message)
 pub const BOTTOM_ALWAYS_ON: bool = false;
@@ -30,8 +37,10 @@ impl Ui {
 impl Server {
     pub(super) fn draw_bottom(&mut self, b: &Bottom) {
         let (show_msg, busy) = (b.show_msg, b.busy);
+        let pal = Palette::for_accent(self.accent);
+        let hi = fg(pal.highlight); // titles and highlights
         let mut t = String::new();
-        t += &format!("\x1b[1;1H{TITLE} CIA files ready to install\x1b[0m\x1b[K\n");
+        t += &format!("\x1b[1;1H{hi} CIA files ready to install\x1b[0m\x1b[K\n");
         t += " --------------------------------------\x1b[K\n";
         const ROWS: usize = 20;
         let first = if self.cia_sel >= ROWS { self.cia_sel - ROWS + 1 } else { 0 };
@@ -43,7 +52,7 @@ impl Server {
             let sel = first + row == self.cia_sel;
             t += &format!(
                 "{}{} {:<27} {:>9}\x1b[0m\x1b[K\n",
-                if sel { HIGHLIGHT } else { "" },
+                if sel { hi.as_str() } else { "" },
                 if sel { '>' } else { ' ' },
                 clip(base_name(&cia.path), 27),
                 format_size(cia.size)
@@ -68,15 +77,15 @@ impl Server {
             t += "\x1b[K\n\x1b[K\n";
         }
         let color = if !show_msg {
-            ""
+            String::new()
         } else if self.cia_msg.starts_with("Installed") {
-            "\x1b[32m"
+            fg(GOOD)
         } else {
-            "\x1b[31m"
+            fg(BAD)
         };
         t += &format!(" {}{}\x1b[0m\x1b[K\n", color, if show_msg { clip(&self.cia_msg, 38) } else { "" });
         if busy && !self.installing() {
-            t += &format!("\x1b[30;1H{HIGHLIGHT} A: install (waits for transfers)\x1b[0m\x1b[K");
+            t += &format!("\x1b[30;1H{hi} A: install (waits for transfers)\x1b[0m\x1b[K");
         } else {
             t += "\x1b[30;1H A: install + delete   Up/Down: select\x1b[K";
         }
@@ -88,22 +97,24 @@ impl Server {
     pub(super) fn draw_top(&mut self, top: &Top) {
         let now = sys::now_ms();
         let (bat, low, active) = (top.bat, top.low, top.active);
+        let pal = Palette::for_accent(self.accent);
+        let (hi, soft) = (fg(pal.highlight), fg(pal.soft)); // titles and highlights, the address
 
         // every line on a fixed row, cleared to the end and kept under the 50
         // column width (a wrapped line used to leave old text behind)
         let mut t = String::new();
-        t += &format!("\x1b[1;1H{TITLE} Cement Text\x1b[0m v{VERSION}\x1b[K");
+        t += &format!("\x1b[1;1H{hi} Cement Text\x1b[0m v{VERSION}\x1b[K");
         t += "\x1b[2;1H ------------------------------------------------\x1b[K";
         if self.net.ip != 0 {
-            t += &format!("\x1b[4;1H IP   : {HIGHLIGHT}{}\x1b[0m\x1b[K", ip_text(self.net.ip));
+            t += &format!("\x1b[4;1H IP   : {soft}{}\x1b[0m\x1b[K", ip_text(self.net.ip));
         } else {
             t += "\x1b[4;1H IP   : -\x1b[K";
         }
-        t += &format!("\x1b[5;1H Port : {HIGHLIGHT}{CTRL_PORT}\x1b[0m\x1b[K");
+        t += &format!("\x1b[5;1H Port : {soft}{CTRL_PORT}\x1b[0m\x1b[K");
         t += &format!("\x1b[7;1H Status: {}\x1b[K", clip(&self.status, 40));
         t += &format!(
             "\x1b[8;1H Battery: {}{}\x1b[0m{}\x1b[K",
-            if low { "\x1b[31m" } else { "" },
+            if low { hi.as_str() } else { "" },
             battery_text(bat),
             if bat.charging {
                 "  charging"
@@ -114,7 +125,7 @@ impl Server {
             }
         );
         if low {
-            t += "\x1b[13;1H\x1b[31m Battery low: new transfers and installs are\x1b[K\x1b[14;1H refused until the charger is plugged in\x1b[0m\x1b[K";
+            t += &format!("\x1b[13;1H{hi} Battery low: new transfers and installs are\x1b[K\x1b[14;1H refused until the charger is plugged in\x1b[0m\x1b[K");
         } else {
             t += "\x1b[13;1H\x1b[K\x1b[14;1H\x1b[K";
         }

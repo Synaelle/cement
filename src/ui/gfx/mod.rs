@@ -6,11 +6,10 @@
 
 mod canvas;
 mod font;
-mod palette;
 
 use canvas::{Canvas, Color};
 use font::*;
-use palette::Palette;
+use super::palette::Palette;
 
 use super::{Bottom, Top};
 use crate::server::{CTRL_PORT, Mode, progress_of};

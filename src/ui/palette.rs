@@ -1,14 +1,16 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The colours of the drawn screens, all following the accent's hue the way
-// Chomp's applyAccent (app/ui/app.js) does, so both apps match: the default
-// accent keeps the hand-picked palette, any other one puts each colour's
-// lightness on the accent's hue.
+// The screens' colours, all following the accent's hue the way Chomp's
+// applyAccent (app/ui/app.js) does, so both apps match: the default accent
+// keeps the hand-picked palette, any other one puts each colour's lightness on
+// the accent's hue. Cement Text uses a few of them for its console text.
 
-use super::canvas::Color;
 use crate::settings::DEFAULT_ACCENT;
 
+pub type Color = u32; // 0xRRGGBB
+
 #[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "text-ui", allow(dead_code))] // the console uses only some
 pub struct Palette {
     pub accent: Color,
     pub highlight: Color,

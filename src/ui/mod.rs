@@ -7,6 +7,8 @@
 use crate::server::{MAX_SESSIONS, Mode};
 use crate::{Battery, Server, battery_low, sys};
 
+mod palette;
+
 #[cfg(feature = "text-ui")]
 mod text;
 #[cfg(feature = "text-ui")]
