@@ -10,7 +10,12 @@
 
 ## Use it
 
-1. Install `Cement.cia` (or put `Cement.3dsx` in `/3ds/` for the Homebrew Launcher)
+1. Install `Cement.cia` from the [latest release](https://github.com/Synaelle/cement/releases/latest),
+   or scan this in FBI (Remote Install, then Scan QR Code). You can also put `Cement.3dsx` in
+   `/3ds/` for the Homebrew Launcher.
+
+   <img src="meta/qr.png" width="160" alt="QR code for Cement.cia">
+
 2. Open it: the top screen shows the address, like `192.168.1.10` port `5000`
 3. Connect with any FTP client (FileZilla, WinSCP...), or with
    [**Chomp**](https://github.com/Synaelle/chomp) 🍪
