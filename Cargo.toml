@@ -6,7 +6,7 @@ publish = false
 license = "MIT"
 
 # Built for the 3DS with `cargo 3ds build --release` (see the Makefile); built
-# for a PC (`cargo build --release`) it is the test server used by test/.
+# for a PC (`cargo build --release`) it is a test server that plays the 3DS.
 
 [target.'cfg(target_os = "horizon")'.dependencies]
 ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" } # pinned by Cargo.lock

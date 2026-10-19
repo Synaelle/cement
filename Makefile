@@ -28,10 +28,10 @@ GCC_VERSION := $(shell $(DEVKITARM)/bin/arm-none-eabi-gcc -dumpversion)
 export BINDGEN_EXTRA_CLANG_ARGS ?= -isystem $(DEVKITARM)/lib/gcc/arm-none-eabi/$(GCC_VERSION)/include
 
 # version shown on the 3DS and reported to clients:
-# <../VERSION>.<commit count>-<short commit>, plus -dev when there are uncommitted changes
+# <VERSION>.<commit count>-<short commit>, plus -dev when there are uncommitted changes
 GIT          := $(shell command -v git 2>/dev/null || (test -x "/c/Program Files/Git/cmd/git.exe" && echo "/c/Program Files/Git/cmd/git.exe"))
 ifeq ($(strip $(APP_VERSION)),)
-BASE_VERSION := $(strip $(shell tr -d '\r' < ../VERSION 2>/dev/null))
+BASE_VERSION := $(strip $(shell tr -d '\r' < VERSION 2>/dev/null))
 COMMITS      := $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null))
 COMMIT       := $(strip $(shell "$(GIT)" rev-parse --short HEAD 2>/dev/null))
 DIRTY        := $(if $(strip $(shell "$(GIT)" status --porcelain 2>/dev/null)),-dev,)

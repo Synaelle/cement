@@ -10,7 +10,7 @@
 //   (same steps as FBI) and deletes the file afterwards
 //
 // Built for the 3DS (target armv6k-nintendo-3ds) it uses libctru; built for a
-// PC it is the test server used by the tests in test/ (see sys/host.rs).
+// PC it is a test server that plays the 3DS (see sys/host.rs).
 
 mod disk;
 mod install;
@@ -36,8 +36,8 @@ pub const VERSION: &str = match option_env!("CEMENT_VERSION") {
 };
 
 /// Compatibility level with the PC apps, reported in SITE STATUS. Bump it (and
-/// REQUIRED_PROTOCOL in client/src/ftp.h) only when the PC side needs this new
-/// 3DS build; the PC apps warn about an outdated 3DS app only then.
+/// REQUIRED_PROTOCOL in Chomp's src/ftp.h) only when the PC side needs this new
+/// 3DS build; Chomp warns about an outdated 3DS app only then.
 pub const PROTOCOL: u32 = 1;
 
 const fn env_ms(v: Option<&str>, default: u64) -> u64 {
