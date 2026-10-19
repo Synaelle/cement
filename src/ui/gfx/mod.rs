@@ -314,15 +314,13 @@ impl Server {
         c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
         let f = &NUNITO_BOLD_11;
-        // the buttons as small keycaps, then what they do
-        let gy = (y + (f.height - GLYPH) / 2.0).round();
-        let mut x = left;
-        x += glyph(c, x, gy, Button::Start, pal.dim, pal.bg, pal) + 4.0;
-        x = c.text(f, x, y + f.ascent, "exit", pal.dim, 0.0) + 10.0;
-        x += glyph(c, x, gy, Button::Select, pal.dim, pal.bg, pal) + 4.0;
-        x = c.text(f, x, y + f.ascent, "top screen on/off", pal.dim, 0.0) + 10.0;
-        c.text(f, x, y + f.ascent, "close the lid to sleep", pal.dim, 0.0);
-        y += f.height;
+        // the buttons as small keycaps, then what they do, one per line
+        for (button, what) in [(Button::Start, "exit"), (Button::Select, "top screen on/off")] {
+            let gy = (y + (f.height - GLYPH) / 2.0).round();
+            let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
+            c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
+            y += f.height.max(GLYPH) + 3.0;
+        }
 
         if t.low {
             let f = &NUNITO_XBOLD_12;
