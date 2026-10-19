@@ -6,9 +6,11 @@
 
 mod canvas;
 mod font;
+mod palette;
 
 use canvas::{Canvas, Color};
 use font::*;
+use palette::Palette;
 
 use super::{Bottom, Top};
 use crate::server::{CTRL_PORT, Mode, progress_of};
@@ -16,16 +18,7 @@ use crate::sys;
 use crate::util::{base_name, format_size, ip_text};
 use crate::{Server, VERSION, battery_text};
 
-const BG: Color = 0x0e0a0a;
-const BLOB: Color = 0x1a1112;
-const CARD: Color = 0x1d1414;
-const BORDER: Color = 0x4d1d21;
-const TRACK: Color = 0x2a1516;
-const SELECTED: Color = 0x3d1418;
-const TEXT: Color = 0xf2e7e4;
-const DIM: Color = 0xa8928e;
-const HIGHLIGHT: Color = 0xd8676a;
-const SOFT: Color = 0xe9a9a3;
+// fixed whatever the accent: white on accent, install success and error
 const WHITE: Color = 0xffffff;
 const GOOD: Color = 0x8ccf9a;
 const BAD: Color = 0xe5484d;
@@ -91,6 +84,8 @@ pub struct Ui {
     bottom: Option<Screen>,
     bottom_at: u64,       // last bottom screen drawing
     sd_free: Option<u64>, // read again when the CIA list changes
+    pal: Palette,         // the colours for the accent below
+    pal_for: u32,
 }
 
 impl Ui {
@@ -100,6 +95,16 @@ impl Ui {
             bottom: Some(Screen::new(sys::Screen::Bottom, 320)),
             bottom_at: 0,
             sd_free: None,
+            pal: Palette::for_accent(crate::settings::DEFAULT_ACCENT),
+            pal_for: crate::settings::DEFAULT_ACCENT,
+        }
+    }
+
+    /// works the palette out again when the accent changed (not per pixel)
+    fn follow(&mut self, accent: u32) {
+        if accent != self.pal_for {
+            self.pal = Palette::for_accent(accent);
+            self.pal_for = accent;
         }
     }
 
@@ -125,12 +130,12 @@ fn time_left(secs: i64) -> String {
 }
 
 /// a progress bar, `frac` of it filled
-fn bar(c: &mut Canvas, x: f32, y: f32, w: f32, frac: Option<f32>, accent: Color) {
-    c.pill(x, y, w, 8.0, TRACK);
+fn bar(c: &mut Canvas, x: f32, y: f32, w: f32, frac: Option<f32>, pal: &Palette) {
+    c.pill(x, y, w, 8.0, pal.track);
     if let Some(f) = frac {
         let fw = (w * f.clamp(0.0, 1.0)).round();
         if fw > 0.0 {
-            c.round(x, y, fw, 8.0, 4.0, accent);
+            c.round(x, y, fw, 8.0, 4.0, pal.accent);
         }
     }
 }
@@ -152,29 +157,29 @@ fn card_height() -> f32 {
     2.0 + 2.0 * CARD_PAD_Y + NUNITO_XBOLD_13.height + 6.0 + 8.0 + 6.0 + NUNITO_BOLD_11.height
 }
 
-fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText, accent: Color) {
-    c.card(x, y, w, card_height(), 11.0, CARD, BORDER);
+fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText, pal: &Palette) {
+    c.card(x, y, w, card_height(), 11.0, pal.card, pal.border);
     let (l, r) = (x + 1.0 + CARD_PAD_X, x + w - 1.0 - CARD_PAD_X);
     let f = &NUNITO_XBOLD_13;
     let mut ty = y + 1.0 + CARD_PAD_Y;
     let vw = f.width(&t.value, 0.0);
     let title = f.fit(&t.title, r - l - vw - 10.0);
-    c.text(f, l, ty + f.ascent, &title, TEXT, 0.0);
-    c.text_right(f, r, ty + f.ascent, &t.value, HIGHLIGHT);
+    c.text(f, l, ty + f.ascent, &title, pal.text, 0.0);
+    c.text_right(f, r, ty + f.ascent, &t.value, pal.highlight);
     ty += f.height + 6.0;
-    bar(c, l, ty, r - l, t.frac, accent);
+    bar(c, l, ty, r - l, t.frac, pal);
     ty += 8.0 + 6.0;
     let f = &NUNITO_BOLD_11;
     let rw = f.width(&t.right, 0.0);
     let detail = f.fit(&t.detail, r - l - rw - 10.0);
-    c.text(f, l, ty + f.ascent, &detail, DIM, 0.0);
-    c.text_right(f, r, ty + f.ascent, &t.right, DIM);
+    c.text(f, l, ty + f.ascent, &detail, pal.dim, 0.0);
+    c.text_right(f, r, ty + f.ascent, &t.right, pal.dim);
 }
 
 /// the section marker: a dot with a bite taken out of its top right
-fn bite_dot(c: &mut Canvas, x: f32, y: f32, accent: Color) {
-    c.circle(x + 6.0, y + 6.0, 5.5, accent);
-    c.circle(x + 11.0, y + 2.0, 2.6, BG);
+fn bite_dot(c: &mut Canvas, x: f32, y: f32, pal: &Palette) {
+    c.circle(x + 6.0, y + 6.0, 5.5, pal.accent);
+    c.circle(x + 11.0, y + 2.0, 2.6, pal.bg);
 }
 
 /// the button a hint is about
@@ -211,9 +216,9 @@ fn keycap(c: &mut Canvas, x: f32, y: f32, name: &str, fill: Color, ink: Color) -
 }
 
 /// a button glyph; `fg` is its light colour, `on` what is under it. Returns its width.
-fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, accent: Color) -> f32 {
+fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &Palette) -> f32 {
     // Kenney draws in white with red marks (the pressed D-pad arms)
-    let tint = |color: u32| if color == 0xffffff { fg } else { accent };
+    let tint = |color: u32| if color == 0xffffff { fg } else { pal.accent };
     match b {
         Button::A => {
             c.icon(&BTN_A, x, y, tint);
@@ -221,7 +226,7 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, accent
         }
         Button::Dpad => {
             // red arms on the accent hint would vanish: they take the background there
-            c.icon(&BTN_DPAD, x, y, |color| if color == 0xffffff { fg } else if on == accent { on } else { accent });
+            c.icon(&BTN_DPAD, x, y, |color| if color == 0xffffff { fg } else if on == pal.accent { on } else { pal.accent });
             BTN_DPAD.size as f32
         }
         Button::Select => keycap(c, x, y, "SELECT", fg, on),
@@ -230,19 +235,20 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, accent
 }
 
 /// a hint pill: a button glyph and what it does; returns its right edge
-fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: Color, accent: Color) -> f32 {
+fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: Color, pal: &Palette) -> f32 {
     let f = &NUNITO_XBOLD_11;
     let h = (f.height + 6.0).round();
     let (gw, gh) = glyph_size(b);
     let w = 3.0 + gw + 5.0 + f.width(label, 0.0) + 8.0;
     c.pill(x, y, w, h, bg);
-    glyph(c, x + 3.0, y + ((h - gh) / 2.0).round(), b, fg, bg, accent);
+    glyph(c, x + 3.0, y + ((h - gh) / 2.0).round(), b, fg, bg, pal);
     c.text(f, x + 3.0 + gw + 5.0, y + 3.0 + f.ascent, label, fg, 0.0);
     x + w.round()
 }
 
 impl Server {
     pub(super) fn draw_top(&mut self, t: &Top) {
+        self.ui.follow(self.accent);
         let Some(mut scr) = self.ui.top.take() else { return };
         self.paint_top(&mut scr.c, t);
         scr.present();
@@ -255,6 +261,7 @@ impl Server {
             return;
         }
         self.ui.bottom_at = now;
+        self.ui.follow(self.accent);
         if b.dirty || self.ui.sd_free.is_none() {
             self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
         }
@@ -267,15 +274,16 @@ impl Server {
     /// 400 x 240: title and battery, the address, the transfer card
     fn paint_top(&self, c: &mut Canvas, t: &Top) {
         let now = sys::now_ms();
-        c.fill(BG);
-        c.rrect(245.0, 145.0, 210.0, 170.0, [(121.8, 78.2), (88.2, 93.5), (132.3, 76.5), (77.7, 91.8)], BLOB);
+        let pal = &self.ui.pal;
+        c.fill(pal.bg);
+        c.rrect(245.0, 145.0, 210.0, 170.0, [(121.8, 78.2), (88.2, 93.5), (132.3, 76.5), (77.7, 91.8)], pal.blob);
 
         // title row
         let (left, right) = (16.0, 384.0);
         let mut y = 14.0;
         let f = &FREDOKA_BOLD_22;
-        let end = c.text(f, left, y + f.ascent, "cement", TEXT, 0.0);
-        c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &format!("v{VERSION}"), DIM, 0.0);
+        let end = c.text(f, left, y + f.ascent, "cement", pal.text, 0.0);
+        c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &format!("v{VERSION}"), pal.dim, 0.0);
         let bat = t.bat;
         let label = format!(
             "{}{}",
@@ -291,35 +299,35 @@ impl Server {
         let p = &NUNITO_XBOLD_12;
         let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
         let py = y + (f.height - ph) / 2.0;
-        c.pill(right - pw, py, pw, ph, if t.low { self.accent } else { TRACK });
-        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { WHITE } else { HIGHLIGHT }, 0.0);
+        c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
+        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { WHITE } else { pal.highlight }, 0.0);
         y += f.height + 9.0;
 
         // address
         let f = &NUNITO_BOLD_12;
-        c.text(f, left, y + f.ascent, "Connect Chomp to", DIM, 0.0);
+        c.text(f, left, y + f.ascent, "Connect Chomp to", pal.dim, 0.0);
         y += f.height + 2.0;
         let f = &FREDOKA_SEMI_26;
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
-        let mut x = c.text(f, left, y + f.ascent, &ip, TEXT, 1.0);
-        x = c.text(f, x, y + f.ascent, " : ", self.accent, 1.0);
-        c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), TEXT, 1.0);
+        let mut x = c.text(f, left, y + f.ascent, &ip, pal.text, 1.0);
+        x = c.text(f, x, y + f.ascent, " : ", pal.accent, 1.0);
+        c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
         let f = &NUNITO_BOLD_11;
         // the buttons as small keycaps, then what they do
         let gy = (y + (f.height - GLYPH) / 2.0).round();
         let mut x = left;
-        x += glyph(c, x, gy, Button::Start, DIM, BG, self.accent) + 4.0;
-        x = c.text(f, x, y + f.ascent, "exit", DIM, 0.0) + 10.0;
-        x += glyph(c, x, gy, Button::Select, DIM, BG, self.accent) + 4.0;
-        x = c.text(f, x, y + f.ascent, "top screen on/off", DIM, 0.0) + 10.0;
-        c.text(f, x, y + f.ascent, "close the lid to sleep", DIM, 0.0);
+        x += glyph(c, x, gy, Button::Start, pal.dim, pal.bg, pal) + 4.0;
+        x = c.text(f, x, y + f.ascent, "exit", pal.dim, 0.0) + 10.0;
+        x += glyph(c, x, gy, Button::Select, pal.dim, pal.bg, pal) + 4.0;
+        x = c.text(f, x, y + f.ascent, "top screen on/off", pal.dim, 0.0) + 10.0;
+        c.text(f, x, y + f.ascent, "close the lid to sleep", pal.dim, 0.0);
         y += f.height;
 
         if t.low {
             let f = &NUNITO_XBOLD_12;
             y += 6.0;
-            c.text(f, left, y + f.ascent, "Battery low: no new transfers or installs until you charge", HIGHLIGHT, 0.0);
+            c.text(f, left, y + f.ascent, "Battery low: no new transfers or installs until you charge", pal.highlight, 0.0);
         }
 
         // transfer card
@@ -379,23 +387,24 @@ impl Server {
             }
             card.detail = parts.join(" · ");
         }
-        draw_card(c, left, 226.0 - card_height(), right - left, &card, self.accent);
+        draw_card(c, left, 226.0 - card_height(), right - left, &card, pal);
     }
 
     /// 320 x 240: the CIA list, the install card, the last message, the buttons
     fn paint_bottom(&self, c: &mut Canvas, b: &Bottom) {
-        c.fill(BG);
+        let pal = &self.ui.pal;
+        c.fill(pal.bg);
         let (left, right) = (13.0, 307.0);
 
         // header
         let top = 12.0;
         let f = &FREDOKA_BOLD_16;
         let base = top + f.ascent;
-        bite_dot(c, left, base + 0.5 - 12.0, self.accent);
-        c.text(f, left + 15.0, base, "CIAs", TEXT, 0.0);
+        bite_dot(c, left, base + 0.5 - 12.0, pal);
+        c.text(f, left + 15.0, base, "CIAs", pal.text, 0.0);
         if let Some(free) = self.ui.sd_free {
             let s = &NUNITO_BOLD_11;
-            c.text_right(s, right, top + (f.height - s.height) / 2.0 + s.ascent, &format!("SD {} free", format_big(free)), DIM);
+            c.text_right(s, right, top + (f.height - s.height) / 2.0 + s.ascent, &format!("SD {} free", format_big(free)), pal.dim);
         }
         let list_top = top + f.height + 6.0;
 
@@ -403,10 +412,9 @@ impl Server {
         let f = &NUNITO_XBOLD_11;
         let hy = 228.0 - (f.height + 6.0);
         let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
-        let a = self.accent;
-        let mut x = hint(c, left, hy, Button::A, first, a, WHITE, a) + 5.0;
-        x = hint(c, x, hy, Button::Dpad, "pick", TRACK, SOFT, a) + 5.0;
-        hint(c, x, hy, Button::Select, "screen off", TRACK, SOFT, a);
+        let mut x = hint(c, left, hy, Button::A, first, pal.accent, WHITE, pal) + 5.0;
+        x = hint(c, x, hy, Button::Dpad, "pick", pal.track, pal.soft, pal) + 5.0;
+        hint(c, x, hy, Button::Select, "screen off", pal.track, pal.soft, pal);
         let mut bottom = hy - 6.0;
 
         if b.show_msg {
@@ -428,21 +436,21 @@ impl Server {
                 right: String::new(),
             };
             bottom -= card_height();
-            draw_card(c, left, bottom, right - left, &card, self.accent);
+            draw_card(c, left, bottom, right - left, &card, pal);
             bottom -= 6.0;
         }
 
         if self.cias.is_empty() && self.inst.is_none() {
             // empty state
             let h = (bottom - list_top).min(64.0);
-            c.round(left, list_top, right - left, h, 9.0, CARD);
+            c.round(left, list_top, right - left, h, 9.0, pal.card);
             let (a, b) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_12);
             let y = list_top + (h - a.height - 2.0 - b.height) / 2.0;
             let mid = (left + right) / 2.0;
             let line1 = "No CIAs yet";
             let line2 = "Send one from Chomp to install it here";
-            c.text(a, mid - a.width(line1, 0.0) / 2.0, y + a.ascent, line1, TEXT, 0.0);
-            c.text(b, mid - b.width(line2, 0.0) / 2.0, y + a.height + 2.0 + b.ascent, line2, DIM, 0.0);
+            c.text(a, mid - a.width(line1, 0.0) / 2.0, y + a.ascent, line1, pal.text, 0.0);
+            c.text(b, mid - b.width(line2, 0.0) / 2.0, y + a.height + 2.0 + b.ascent, line2, pal.dim, 0.0);
             return;
         }
 
@@ -456,17 +464,17 @@ impl Server {
             let sel = i == self.cia_sel;
             let (h, inset) = if sel { (row_h + 2.0, 1.0) } else { (row_h, 0.0) };
             if sel {
-                c.card(left, y, right - left, h, 9.0, SELECTED, self.accent);
+                c.card(left, y, right - left, h, 9.0, pal.selected, pal.accent);
             } else {
-                c.round(left, y, right - left, h, 9.0, CARD);
+                c.round(left, y, right - left, h, 9.0, pal.card);
             }
             let f = if sel { &NUNITO_XBOLD_13 } else { &NUNITO_BOLD_13 };
             let base = y + inset + 7.0 + f.ascent;
             let (l, r) = (left + inset + 9.0, right - inset - 9.0);
             let size = format_size(cia.size);
             let name = f.fit(base_name(&cia.path), r - l - f.width(&size, 0.0) - 10.0);
-            c.text(f, l, base, &name, TEXT, 0.0);
-            c.text_right(f, r, base, &size, if sel { SOFT } else { DIM });
+            c.text(f, l, base, &name, pal.text, 0.0);
+            c.text_right(f, r, base, &size, if sel { pal.soft } else { pal.dim });
             y += h + 6.0;
         }
     }
