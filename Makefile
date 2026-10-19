@@ -1,5 +1,7 @@
 #---------------------------------------------------------------------------------
-# Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx.
+# Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx, and
+# Cement Text (the console text screens, cargo feature text-ui) as
+# Cement-Text.cia and Cement-Text.3dsx. They have their own title IDs.
 #
 # Needs: nightly Rust with rust-src (rustup toolchain install nightly -c rust-src),
 #        cargo-3ds (cargo install --locked cargo-3ds), devkitARM with libctru
@@ -11,9 +13,9 @@ ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
-TARGET		:=	Cement
 BUILD		:=	build
 ELF		:=	target/armv6k-nintendo-3ds/release/cement-server.elf
+ELF_TEXT	:=	target/text/armv6k-nintendo-3ds/release/cement-server.elf
 
 # tools (override on the command line if they live elsewhere)
 CARGO		?=	cargo +nightly
@@ -42,20 +44,30 @@ endif
 # title version, so it has to go up or updates keep showing the old icon.
 TITLE_VERSION := $(or $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null)),0)
 
-.PHONY: all clean
+# $(call package,<file name>,<title>,<banner>,<icon>,<elf>): the .cia and the .3dsx
+define package
+	@mkdir -p $(BUILD)/$(1)
+	@$(BANNERTOOL) makebanner -i $(3) -a meta/audio.wav -o $(BUILD)/$(1)/banner.bnr
+	@$(BANNERTOOL) makesmdh -s "$(2)" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i $(4) -o $(BUILD)/$(1)/icon.icn
+	@$(MAKEROM) -f cia -o $(1).cia -target t -exefslogo -rsf meta/$(1).rsf -ver $(TITLE_VERSION) 		-elf $(5) -icon $(BUILD)/$(1)/icon.icn -banner $(BUILD)/$(1)/banner.bnr
+	@cp $(5) $(1).elf
+	@echo built ... $(1).cia v$(APP_VERSION)
+	@3dsxtool $(1).elf $(1).3dsx --smdh=$(BUILD)/$(1)/icon.icn
+	@echo built ... $(1).3dsx v$(APP_VERSION)
+endef
 
-all:
+.PHONY: all cement cement-text clean
+
+all: cement cement-text
+
+cement:
 	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --release
-	@mkdir -p $(BUILD)
-	@$(BANNERTOOL) makebanner -i meta/banner.png -a meta/audio.wav -o $(BUILD)/banner.bnr
-	@$(BANNERTOOL) makesmdh -s "Cement" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i meta/icon.png -o $(BUILD)/icon.icn
-	@$(MAKEROM) -f cia -o $(TARGET).cia -target t -exefslogo -rsf meta/$(TARGET).rsf -ver $(TITLE_VERSION) \
-		-elf $(ELF) -icon $(BUILD)/icon.icn -banner $(BUILD)/banner.bnr
-	@cp $(ELF) $(TARGET).elf
-	@echo built ... $(TARGET).cia v$(APP_VERSION)
-	@3dsxtool $(TARGET).elf $(TARGET).3dsx --smdh=$(BUILD)/icon.icn
-	@echo built ... $(TARGET).3dsx v$(APP_VERSION)
+	$(call package,Cement,Cement,meta/banner.png,meta/icon.png,$(ELF))
+
+cement-text:
+	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --release --features text-ui --target-dir target/text
+	$(call package,Cement-Text,Cement Text,meta/banner-text.png,meta/icon-text.png,$(ELF_TEXT))
 
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) target $(TARGET).elf $(TARGET).cia $(TARGET).3dsx
+	@rm -fr $(BUILD) target Cement.elf Cement.cia Cement.3dsx Cement-Text.elf Cement-Text.cia Cement-Text.3dsx

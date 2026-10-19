@@ -20,7 +20,19 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 -------------------------------------------------------------------------------
-Built into the 3DS app (Cement.cia, Cement.3dsx)
+Fredoka and Nunito fonts
+
+The drawn screens use Fredoka (Copyright 2016 The Fredoka Project Authors,
+https://github.com/hafontia/Fredoka-One) and Nunito (Copyright 2014 The Nunito
+Project Authors, https://github.com/googlefonts/nunito), from Google Fonts
+(https://github.com/google/fonts). Both are under the SIL Open Font License 1.1,
+see assets/fonts/fredoka/OFL.txt and assets/fonts/nunito/OFL.txt. The files in
+assets/fonts are fixed-weight instances of the variable fonts (made with
+fontTools), and the build turns a few sizes of them into glyph bitmaps that are
+built into the 3DS app.
+
+-------------------------------------------------------------------------------
+Built into the 3DS app (Cement.cia, Cement.3dsx, Cement-Text.cia, Cement-Text.3dsx)
 
 - libctru (https://github.com/devkitPro/libctru): zlib license
 - ctru-rs and ctru-sys (https://github.com/rust3ds/ctru-rs): zlib license

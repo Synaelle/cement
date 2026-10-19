@@ -7,6 +7,8 @@
 // - keys come from the file named by CEMENT_KEYS ("A", "UP", "DOWN", "SELECT")
 // - CEMENT_BATTERY="<percent>[,charging|,plugged]" (default 100), CEMENT_NO_MCU=1
 //   hides the percentage, CEMENT_SDFREE fakes the free space
+// - CEMENT_SCREEN_DUMP=<dir> writes both drawn screens there as top.bmp and
+//   bottom.bmp each time they change
 // - events the tests check are logged to stderr as "[shim] ..."
 
 use std::ffi::c_void;
@@ -78,10 +80,46 @@ pub fn keys_down() -> u32 {
     }
 }
 
+#[cfg(feature = "text-ui")]
 pub fn select(_: Screen) {}
 
 /// the screens aren't shown on a PC (keeps the test log readable)
+#[cfg(feature = "text-ui")]
 pub fn print(_: &str) {}
+
+/// with CEMENT_SCREEN_DUMP set, saves the whole screen image as a BMP
+#[cfg(not(feature = "text-ui"))]
+pub fn present(screen: Screen, px: &[u32], _x0: usize, _y0: usize, _x1: usize, _y1: usize) {
+    let Some(dir) = env("CEMENT_SCREEN_DUMP") else { return };
+    let (name, w) = match screen {
+        Screen::Top => ("top", 400),
+        Screen::Bottom => ("bottom", 320),
+    };
+    let h = px.len() / w;
+    // 24-bit BMP, rows bottom-up (w * 3 is already a multiple of 4)
+    let size = 54 + w * h * 3;
+    let mut b = Vec::with_capacity(size);
+    b.extend_from_slice(b"BM");
+    for v in [size as u32, 0, 54, 40, w as u32, h as u32] {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&24u16.to_le_bytes());
+    for v in [0u32, (w * h * 3) as u32, 2835, 2835, 0, 0] {
+        b.extend_from_slice(&v.to_le_bytes());
+    }
+    for row in px.chunks(w).rev() {
+        for &p in row {
+            b.extend_from_slice(&[p as u8, (p >> 8) as u8, (p >> 16) as u8]);
+        }
+    }
+    // written next to it and renamed, so a reader never sees half a file
+    let path = PathBuf::from(dir).join(format!("{name}.bmp"));
+    let tmp = path.with_extension("bmp.part");
+    if fs::write(&tmp, &b).is_ok() {
+        let _ = fs::rename(&tmp, &path);
+    }
+}
 
 pub fn backlight(screens: u32, on: bool) {
     eprintln!("[shim] backlight {}={}", if on { "on" } else { "off" }, screens);

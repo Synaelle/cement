@@ -16,9 +16,9 @@
 
 mod disk;
 mod install;
-mod screen;
 mod server;
 mod sys;
+mod ui;
 mod util;
 
 use std::ffi::c_void;
@@ -102,6 +102,7 @@ pub struct Server {
     backlight: bool, // top screen wanted on (SELECT)
     pub bottom_on: bool,
     pub bottom_dirty: bool,
+    pub last_msg: bool, // the install message was shown at the last draw
     pub last_busy: bool,
     pub last_bytes: u64,
     pub last_time: u64,
@@ -120,6 +121,8 @@ pub struct Server {
     pub inst: Option<Install>,
     pub cia_msg: String,
     pub cia_msg_time: u64,
+
+    pub ui: ui::Ui,
 }
 
 impl Server {
@@ -135,6 +138,7 @@ impl Server {
             backlight: true,
             bottom_on: false,
             bottom_dirty: true,
+            last_msg: false,
             last_busy: false,
             last_bytes: 0,
             last_time: 0,
@@ -149,6 +153,7 @@ impl Server {
             inst: None,
             cia_msg: String::new(),
             cia_msg_time: 0,
+            ui: ui::Ui::new(),
         }
     }
 
@@ -272,6 +277,7 @@ fn on_apt(event: AptEvent, param: *mut c_void) {
         }
         AptEvent::Suspend => sys::backlight(sys::SCREEN_BOTH, true), // so the HOME menu is visible
         AptEvent::Wakeup | AptEvent::Restore => {
+            s.ui.invalidate(); // the HOME menu drew over the screens
             s.apply_backlight();
             s.next_net_check = 0;
         }

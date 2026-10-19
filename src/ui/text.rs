@@ -1,33 +1,34 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The two screens: status on the top one, the CIA list on the bottom one.
+// Cement Text: both screens as console text, in red (titles red, highlights
+// bright red, install results green or red).
 
-use crate::server::{CTRL_PORT, MAX_SESSIONS, Mode, progress_of};
+use super::{Bottom, Top};
+use crate::server::{CTRL_PORT, Mode, progress_of};
 use crate::sys::{self, Screen};
 use crate::util::{base_name, clip, format_size, ip_text};
-use crate::{Server, VERSION, battery_low, battery_text};
+use crate::{Server, VERSION, battery_text};
+
+const TITLE: &str = "\x1b[31m";
+const HIGHLIGHT: &str = "\x1b[1;31m";
+
+/// the console keeps no state of its own
+pub struct Ui;
+
+impl Ui {
+    pub fn new() -> Ui {
+        Ui
+    }
+
+    /// after the HOME menu or sleep: nothing to do, every line is printed again
+    pub fn invalidate(&mut self) {}
+}
 
 impl Server {
-    fn draw_bottom(&mut self) {
-        let now = sys::now_ms();
-        let show_msg = !self.cia_msg.is_empty() && now.saturating_sub(self.cia_msg_time) < 8000;
-        let on = (!self.cias.is_empty() || self.installing() || show_msg) && !self.idle_off;
-        if on != self.bottom_on {
-            self.bottom_on = on;
-            sys::backlight(sys::SCREEN_BOTTOM, on);
-        }
-        let busy = self.fs_busy();
-        if busy != self.last_busy {
-            self.last_busy = busy;
-            self.bottom_dirty = true;
-        }
-        if !on || (!self.bottom_dirty && !self.installing() && !show_msg) {
-            return;
-        }
-        self.bottom_dirty = false;
-
+    pub(super) fn draw_bottom(&mut self, b: &Bottom) {
+        let (show_msg, busy) = (b.show_msg, b.busy);
         let mut t = String::new();
-        t += "\x1b[1;1H\x1b[36m CIA files ready to install\x1b[0m\x1b[K\n";
+        t += &format!("\x1b[1;1H{TITLE} CIA files ready to install\x1b[0m\x1b[K\n");
         t += " --------------------------------------\x1b[K\n";
         const ROWS: usize = 20;
         let first = if self.cia_sel >= ROWS { self.cia_sel - ROWS + 1 } else { 0 };
@@ -39,7 +40,7 @@ impl Server {
             let sel = first + row == self.cia_sel;
             t += &format!(
                 "{}{} {:<27} {:>9}\x1b[0m\x1b[K\n",
-                if sel { "\x1b[33m" } else { "" },
+                if sel { HIGHLIGHT } else { "" },
                 if sel { '>' } else { ' ' },
                 clip(base_name(&cia.path), 27),
                 format_size(cia.size)
@@ -68,7 +69,7 @@ impl Server {
         };
         t += &format!(" {}{}\x1b[0m\x1b[K\n", color, if show_msg { clip(&self.cia_msg, 38) } else { "" });
         if busy && !self.installing() {
-            t += "\x1b[30;1H\x1b[33m A: install (waits for transfers)\x1b[0m\x1b[K";
+            t += &format!("\x1b[30;1H{HIGHLIGHT} A: install (waits for transfers)\x1b[0m\x1b[K");
         } else {
             t += "\x1b[30;1H A: install + delete   Up/Down: select\x1b[K";
         }
@@ -77,54 +78,22 @@ impl Server {
         sys::select(Screen::Top);
     }
 
-    pub fn draw(&mut self) {
+    pub(super) fn draw_top(&mut self, top: &Top) {
         let now = sys::now_ms();
-        self.draw_bottom();
-        if now.saturating_sub(self.last_time) < 500 {
-            return;
-        }
-
-        let mut clients = 0; // distinct PCs: the client opens a browse and a transfer connection
-        let mut bytes = 0u64;
-        let mut active = None;
-        for i in 0..MAX_SESSIONS {
-            let s = &self.sess[i];
-            if s.ctrl.is_none() {
-                continue;
-            }
-            let seen = (0..i).any(|j| self.sess[j].ctrl.is_some() && self.sess[j].peer == s.peer);
-            clients += !seen as usize;
-            bytes += s.x.done;
-            if !s.name.is_empty() && (s.mode == Mode::Stor || s.mode == Mode::Retr) {
-                active = Some(i);
-            }
-        }
-        let mut rate = 0;
-        if active.is_some() && bytes >= self.last_bytes {
-            rate = (bytes - self.last_bytes) * 1000 / (now - self.last_time).max(1);
-        }
-        self.rate = (self.rate + rate * 3) / 4;
-        self.last_bytes = bytes;
-        self.last_time = now;
-
-        if self.net.up && self.net.listen.is_some() {
-            self.status = if clients != 0 { format!("{clients} PC(s) connected") } else { "Ready".into() };
-        }
+        let (bat, low, active) = (top.bat, top.low, top.active);
 
         // every line on a fixed row, cleared to the end and kept under the 50
         // column width (a wrapped line used to leave old text behind)
         let mut t = String::new();
-        t += &format!("\x1b[1;1H\x1b[31m Cement\x1b[0m v{VERSION}\x1b[K");
+        t += &format!("\x1b[1;1H{TITLE} Cement Text\x1b[0m v{VERSION}\x1b[K");
         t += "\x1b[2;1H ------------------------------------------------\x1b[K";
         if self.net.ip != 0 {
-            t += &format!("\x1b[4;1H IP   : \x1b[33m{}\x1b[0m\x1b[K", ip_text(self.net.ip));
+            t += &format!("\x1b[4;1H IP   : {HIGHLIGHT}{}\x1b[0m\x1b[K", ip_text(self.net.ip));
         } else {
             t += "\x1b[4;1H IP   : -\x1b[K";
         }
-        t += &format!("\x1b[5;1H Port : \x1b[33m{CTRL_PORT}\x1b[0m\x1b[K");
+        t += &format!("\x1b[5;1H Port : {HIGHLIGHT}{CTRL_PORT}\x1b[0m\x1b[K");
         t += &format!("\x1b[7;1H Status: {}\x1b[K", clip(&self.status, 40));
-        let bat = self.battery();
-        let low = battery_low(bat);
         t += &format!(
             "\x1b[8;1H Battery: {}{}\x1b[0m{}\x1b[K",
             if low { "\x1b[31m" } else { "" },
