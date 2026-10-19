@@ -3,7 +3,9 @@
 // The PC test build of the platform layer, behaving like the old C test shim:
 // - the SD card is a folder (env CEMENT_ROOT, default ".")
 // - creating the file named by CEMENT_SLEEPFLAG closes the lid until it is deleted
-// - a CIA "install" is written to the file named by CEMENT_AMOUT
+// - a CIA "install" is written to the file named by CEMENT_AMOUT, and
+//   CEMENT_INSTALLED="<title id hex>:<version>,..." lists the titles already installed
+//   (deleting one takes CEMENT_DELETE_MS, as it can on the console)
 // - keys come from the file named by CEMENT_KEYS ("A", "UP", "DOWN", "SELECT")
 // - CEMENT_BATTERY="<percent>[,charging|,plugged]" (default 100), CEMENT_NO_MCU=1
 //   hides the percentage, CEMENT_SDFREE fakes the free space
@@ -429,9 +431,20 @@ pub struct AmInstall(fs::File);
 
 pub fn am_delete_title(media: u8, title: u64) {
     eprintln!("[shim] AM_DeleteTitle media={media} id={title:016x}");
+    if let Some(ms) = env("CEMENT_DELETE_MS") {
+        sleep_ms(crate::util::parse_ull(ms.as_bytes()));
+    }
 }
 
 pub fn am_delete_ticket(_: u64) {}
+
+pub fn am_title_version(_media: u8, title: u64) -> Option<u16> {
+    let list = env("CEMENT_INSTALLED")?;
+    list.split(',').find_map(|t| {
+        let (id, version) = t.trim().split_once(':')?;
+        (u64::from_str_radix(id, 16).ok()? == title).then(|| version.parse().ok())?
+    })
+}
 
 pub fn am_query_external_db() {}
 

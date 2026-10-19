@@ -21,7 +21,8 @@ pub struct Cia {
 
 /// what the install thread reports
 pub struct Shared {
-    pub done: Mutex<u64>, // bytes installed (no 64-bit atomics on the ARM11)
+    pub done: Mutex<u64>,     // bytes installed (no 64-bit atomics on the ARM11)
+    pub preparing: AtomicBool, // removing the installed copy first (can take a while)
     finished: AtomicBool,
     rc: AtomicI32,
     err: Mutex<&'static str>,
@@ -151,6 +152,7 @@ impl Server {
         let (path, total) = (cia.path.clone(), cia.size);
         let shared = Arc::new(Shared {
             done: Mutex::new(0),
+            preparing: AtomicBool::new(false),
             finished: AtomicBool::new(false),
             rc: AtomicI32::new(0),
             err: Mutex::new(""),
@@ -228,8 +230,9 @@ fn title_destination(title: u64) -> u8 {
     if nand { sys::MEDIA_NAND } else { sys::MEDIA_SD }
 }
 
-/// FBI cia_get_title_id + tmd_get_title_id
-fn cia_title_id(cia: &[u8]) -> Option<u64> {
+/// the title ID and title version in the CIA's TMD (FBI cia_get_title_id +
+/// tmd_get_title_id; the version is the big-endian u16 at 0x9C of the TMD header)
+fn cia_title(cia: &[u8]) -> Option<(u64, Option<u16>)> {
     const SIG_SIZES: [usize; 6] = [0x240, 0x140, 0x80, 0x240, 0x140, 0x80];
     if cia.len() < 0x10 {
         return None;
@@ -240,11 +243,24 @@ fn cia_title_id(cia: &[u8]) -> Option<u64> {
     if offset + 4 > cia.len() || cia[offset + 3] >= 6 {
         return None;
     }
-    let pos = offset + SIG_SIZES[cia[offset + 3] as usize] + 0x4C;
-    if pos + 8 > cia.len() {
+    let header = offset + SIG_SIZES[cia[offset + 3] as usize];
+    if header + 0x4C + 8 > cia.len() {
         return None;
     }
-    Some(u64::from_be_bytes(cia[pos..pos + 8].try_into().unwrap()))
+    let id = u64::from_be_bytes(cia[header + 0x4C..header + 0x54].try_into().unwrap());
+    let version = cia.get(header + 0x9C..header + 0x9E).map(|v| u16::from_be_bytes([v[0], v[1]]));
+    Some((id, version))
+}
+
+/// The installed copy has to go first only for a reinstall or a downgrade (AM
+/// refuses those over it, D8E08027). An update or a new title installs over it
+/// directly: the delete is slow, so it is skipped whenever it can be.
+fn must_delete(installed: Option<u16>, version: Option<u16>) -> bool {
+    match (installed, version) {
+        (None, _) => false,
+        (Some(_), None) => true,
+        (Some(old), Some(new)) => new <= old,
+    }
 }
 
 /// the install thread
@@ -276,7 +292,7 @@ fn install(path: &str, total: u64, shared: &Shared) {
                     }
                 };
                 if am.is_none() {
-                    let Some(id) = cia_title_id(&buf[..n]) else {
+                    let Some((id, version)) = cia_title(&buf[..n]) else {
                         fail(&mut r, 0, "Not a valid CIA file");
                         break;
                     };
@@ -286,13 +302,15 @@ fn install(path: &str, total: u64, shared: &Shared) {
                         fail(&mut r, 0, "This title is for New 3DS only");
                         break;
                     }
-                    // like FBI: replace an existing install, except when updating ourselves
-                    if sys::self_title() != Some((id, dest)) {
+                    // like FBI, but only when AM needs it, and never when updating ourselves
+                    if sys::self_title() != Some((id, dest)) && must_delete(sys::am_title_version(dest, id), version) {
+                        shared.preparing.store(true, Ordering::Relaxed);
                         sys::am_delete_title(dest, id);
                         sys::am_delete_ticket(id);
                         if dest == sys::MEDIA_SD {
                             sys::am_query_external_db();
                         }
+                        shared.preparing.store(false, Ordering::Relaxed);
                     }
                     match sys::am_start(dest) {
                         Ok(h) => am = Some(h),
@@ -340,6 +358,14 @@ fn install(path: &str, total: u64, shared: &Shared) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deletes() {
+        assert!(!must_delete(None, Some(3))); // not installed
+        assert!(!must_delete(Some(2), Some(3))); // update
+        assert!(must_delete(Some(3), Some(3))); // reinstall
+        assert!(must_delete(Some(4), Some(3))); // downgrade
+    }
 
     #[test]
     fn destinations() {

@@ -534,6 +534,13 @@ pub fn am_delete_ticket(title: u64) {
     }
 }
 
+/// the installed version of a title, None when it isn't installed
+pub fn am_title_version(media: u8, title: u64) -> Option<u16> {
+    let mut id = title;
+    let mut info = c::AM_TitleInfo::default();
+    unsafe { ok(c::AM_GetTitleInfo(media, 1, &mut id, &mut info)) }.then_some(info.version)
+}
+
 pub fn am_query_external_db() {
     unsafe {
         c::AM_QueryAvailableExternalTitleDatabase(std::ptr::null_mut());

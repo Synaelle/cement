@@ -305,7 +305,7 @@ impl Server {
 
         // address
         let f = &NUNITO_BOLD_12;
-        c.text(f, left, y + f.ascent, "Connect Chomp to", pal.dim, 0.0);
+        c.text(f, left, y + f.ascent, "Connect to", pal.dim, 0.0);
         y += f.height + 2.0;
         let f = &FREDOKA_SEMI_26;
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
@@ -314,18 +314,18 @@ impl Server {
         c.text(f, x, y + f.ascent, &CTRL_PORT.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
         let f = &NUNITO_BOLD_11;
-        // the buttons as small keycaps, then what they do, one per line
-        for (button, what) in [(Button::Start, "exit"), (Button::Select, "top screen on/off")] {
+        // the buttons as small keycaps, then what they do, one per line; a low
+        // battery warning on the right of them, one line each too
+        let warning = ["Battery low: no new transfers", "or installs until you charge"];
+        for (i, (button, what)) in [(Button::Start, "exit"), (Button::Select, "top screen on/off")].into_iter().enumerate() {
             let gy = (y + (f.height - GLYPH) / 2.0).round();
             let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
             c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
+            if t.low {
+                let w = &NUNITO_XBOLD_12;
+                c.text_right(w, right, y + (f.height - w.height) / 2.0 + w.ascent, warning[i], pal.highlight);
+            }
             y += f.height.max(GLYPH) + 3.0;
-        }
-
-        if t.low {
-            let f = &NUNITO_XBOLD_12;
-            y += 6.0;
-            c.text(f, left, y + f.ascent, "Battery low: no new transfers or installs until you charge", pal.highlight, 0.0);
         }
 
         // transfer card
@@ -426,11 +426,16 @@ impl Server {
         if let Some(inst) = &self.inst {
             let done = *inst.shared.done.lock().unwrap();
             let pct = if inst.total != 0 { done * 100 / inst.total } else { 0 };
+            let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
             let card = CardText {
                 title: format!("Installing {}", base_name(&inst.path)),
-                value: format!("{pct}%"),
-                frac: (inst.total != 0).then(|| done as f32 / inst.total as f32),
-                detail: format!("{} of {}", format_size(done), format_size(inst.total)),
+                value: if preparing { String::new() } else { format!("{pct}%") },
+                frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
+                detail: if preparing {
+                    "Preparing... removing the old copy".into()
+                } else {
+                    format!("{} of {}", format_size(done), format_size(inst.total))
+                },
                 right: String::new(),
             };
             bottom -= card_height();
@@ -442,13 +447,10 @@ impl Server {
             // empty state
             let h = (bottom - list_top).min(64.0);
             c.round(left, list_top, right - left, h, 9.0, pal.card);
-            let (a, b) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_12);
-            let y = list_top + (h - a.height - 2.0 - b.height) / 2.0;
+            let f = &NUNITO_XBOLD_13;
+            let line = "No CIAs yet: upload one over FTP";
             let mid = (left + right) / 2.0;
-            let line1 = "No CIAs yet";
-            let line2 = "Send one from Chomp to install it here";
-            c.text(a, mid - a.width(line1, 0.0) / 2.0, y + a.ascent, line1, pal.text, 0.0);
-            c.text(b, mid - b.width(line2, 0.0) / 2.0, y + a.height + 2.0 + b.ascent, line2, pal.dim, 0.0);
+            c.text(f, mid - f.width(line, 0.0) / 2.0, list_top + (h - f.height) / 2.0 + f.ascent, line, pal.text, 0.0);
             return;
         }
 

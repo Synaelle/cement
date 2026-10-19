@@ -54,12 +54,16 @@ impl Server {
         if let Some(inst) = &self.inst {
             let done = *inst.shared.done.lock().unwrap();
             t += &format!(" Installing {}\x1b[K\n", clip(base_name(&inst.path), 27));
-            t += &format!(
-                "   {} / {}  {}%\x1b[K\n",
-                format_size(done),
-                format_size(inst.total),
-                if inst.total != 0 { done * 100 / inst.total } else { 0 }
-            );
+            if inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed) {
+                t += "   Preparing... removing the old copy\x1b[K\n";
+            } else {
+                t += &format!(
+                    "   {} / {}  {}%\x1b[K\n",
+                    format_size(done),
+                    format_size(inst.total),
+                    if inst.total != 0 { done * 100 / inst.total } else { 0 }
+                );
+            }
         } else {
             t += "\x1b[K\n\x1b[K\n";
         }
