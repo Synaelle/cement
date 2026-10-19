@@ -41,15 +41,21 @@ APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION).$(COMMITS)-$(COMMIT)$(DIRTY),$(B
 endif
 
 # CIA title version = build number. The HOME menu caches icons per title ID and
-# title version, so it has to go up or updates keep showing the old icon.
+# title version, so it has to go up or updates keep showing the old icon, and
+# the 3DS refuses to install a lower one (D8E08027). makerom -ver only keeps 4
+# bits (it wrapped every 16 builds), so the number goes in as major.minor.micro
+# (10, 6 and 4 bits of one 16 bit version).
 TITLE_VERSION := $(or $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null)),0)
+TITLE_MAJOR   := $(shell echo $$(( $(TITLE_VERSION) >> 10 )))
+TITLE_MINOR   := $(shell echo $$(( ($(TITLE_VERSION) >> 4) & 63 )))
+TITLE_MICRO   := $(shell echo $$(( $(TITLE_VERSION) & 15 )))
 
 # $(call package,<file name>,<title>,<banner>,<icon>,<elf>): the .cia and the .3dsx
 define package
 	@mkdir -p $(BUILD)/$(1)
 	@$(BANNERTOOL) makebanner -i $(3) -a meta/audio.wav -o $(BUILD)/$(1)/banner.bnr
 	@$(BANNERTOOL) makesmdh -s "$(2)" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i $(4) -o $(BUILD)/$(1)/icon.icn
-	@$(MAKEROM) -f cia -o $(1).cia -target t -exefslogo -rsf meta/$(1).rsf -ver $(TITLE_VERSION) 		-elf $(5) -icon $(BUILD)/$(1)/icon.icn -banner $(BUILD)/$(1)/banner.bnr
+	@$(MAKEROM) -f cia -o $(1).cia -target t -exefslogo -rsf meta/$(1).rsf -major $(TITLE_MAJOR) -minor $(TITLE_MINOR) -micro $(TITLE_MICRO) 		-elf $(5) -icon $(BUILD)/$(1)/icon.icn -banner $(BUILD)/$(1)/banner.bnr
 	@cp $(5) $(1).elf
 	@echo built ... $(1).cia v$(APP_VERSION)
 	@3dsxtool $(1).elf $(1).3dsx --smdh=$(BUILD)/$(1)/icon.icn
