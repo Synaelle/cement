@@ -16,6 +16,8 @@
 Prefer plain console text? **Cement Text** (`Cement-Text.cia`) is the same app with the old
 text screens, in red. Both can be installed side by side.
 
+Cement is tested on a New 3DS. It should run on an Old 3DS too, but that hasn't been tried on real hardware yet.
+
 ## Chomp + Cement
 
 [Chomp](https://github.com/Synaelle/chomp) is the Windows app made for Cement: an explorer
