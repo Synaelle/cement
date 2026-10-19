@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The disk thread: every SD card read and write of a transfer happens here, so
 // receiving from the network and writing to the SD card overlap. A transfer
 // owns NBUF buffers; a buffer is handed to the disk thread by value and comes

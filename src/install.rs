@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Uploaded CIA files (bottom screen list) and installing them, following FBI
 // (source/fbi/action/installcias.c).
 // FBI: Copyright (C) 2015-2019 Steveice10, MIT license (see NOTICE)

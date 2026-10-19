@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The two screens: status on the top one, the CIA list on the bottom one.
 
 use crate::server::{CTRL_PORT, MAX_SESSIONS, Mode, progress_of};

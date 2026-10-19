@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The PC test build of the platform layer, behaving like the old C test shim:
 // - the SD card is a folder (env CEMENT_ROOT, default ".")
 // - creating the file named by CEMENT_SLEEPFLAG closes the lid until it is deleted

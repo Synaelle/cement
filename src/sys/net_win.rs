@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Winsock, for the Windows test build only (the GUI client's engine test runs a server here).
 
 use std::mem::size_of;

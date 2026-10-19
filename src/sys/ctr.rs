@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The 3DS side of the platform layer: libctru through ctru-sys.
 
 // like the C server, the status of cleanup and best-effort calls is ignored

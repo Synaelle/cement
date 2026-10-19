@@ -1,6 +1,13 @@
-The CIA install code in server/source/main.c follows FBI
-(https://github.com/Steveice10/FBI), and server/meta/Cement.rsf is based on
-the template from buildtools (https://github.com/Steveice10/buildtools).
+Cement is licensed under the GNU General Public License, version 3 or later
+(see LICENSE). It includes or is built with the following, under their own
+licenses.
+
+-------------------------------------------------------------------------------
+FBI and buildtools
+
+The CIA install code in src/install.rs follows FBI
+(https://github.com/Steveice10/FBI), and meta/Cement.rsf is based on the
+template from buildtools (https://github.com/Steveice10/buildtools).
 
 Both are under the MIT license:
 
@@ -11,3 +18,16 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+-------------------------------------------------------------------------------
+Built into the 3DS app (Cement.cia, Cement.3dsx)
+
+- libctru (https://github.com/devkitPro/libctru): zlib license
+- ctru-rs and ctru-sys (https://github.com/rust3ds/ctru-rs): zlib license
+- pthread-3ds and shim-3ds (https://github.com/rust3ds): MIT or Apache-2.0
+- the Rust standard library (https://github.com/rust-lang/rust): MIT or Apache-2.0
+- Rust crates libc, bitflags, cfg-if, macaddr, spin, static_assertions:
+  MIT, or MIT or Apache-2.0
+- newlib, the C library of devkitARM (https://sourceware.org/newlib/):
+  BSD-style licenses, see its COPYING.NEWLIB
+- libgcc: GPL-3.0 with the GCC Runtime Library Exception

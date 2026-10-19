@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // FTP sessions: commands, data transfers and the network loop.
 //
 // One non-blocking poll() loop on the main thread handles every socket; the

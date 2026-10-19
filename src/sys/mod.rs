@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Platform layer. On the 3DS it is libctru (ctr.rs); on a PC it is a stand-in
 // (host.rs) with the same behaviour as the old C test shim, so the protocol
 // tests in test/ run against the very same server code.

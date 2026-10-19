@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Small helpers shared by the server: path resolution, number parsing, formatting.
 
 pub const PATH_SIZE: usize = 1024;

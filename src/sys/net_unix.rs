@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // BSD sockets through libc: the 3DS (libctru's soc service) and Linux.
 
 use std::mem::size_of;

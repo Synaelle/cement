@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Synaelle
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Cement - minimal, fast FTP server for the 3DS (SD card only)
 //
 // Design:
