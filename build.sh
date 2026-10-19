@@ -14,11 +14,12 @@ cd "$(dirname "$0")"
 MAKEROM=$(command -v "${MAKEROM:-makerom}" || true)
 BANNERTOOL=$(command -v "${BANNERTOOL:-bannertool}" || true)
 
-# version: <VERSION>.<commit count>-<commit>, plus -dev with uncommitted changes
+# version: <VERSION>.<commit count>, plus -<commit>-dev with uncommitted changes
 base=$(tr -d '\r\n' < VERSION) # no CR from a Windows checkout
 if count=$(git rev-list --count HEAD 2>/dev/null); then
-	dirty=$([ -n "$(git status --porcelain)" ] && echo -dev || true)
-	APP_VERSION="$base.$count-$(git rev-parse --short HEAD)$dirty"
+	# line endings and file modes differ between a Windows checkout and WSL: not changes
+	dirty=$([ -n "$(git -c core.autocrlf=true -c core.filemode=false status --porcelain)" ] && echo "-$(git rev-parse --short HEAD)-dev" || true)
+	APP_VERSION="$base.$count$dirty"
 else
 	APP_VERSION="$base-dev"
 fi

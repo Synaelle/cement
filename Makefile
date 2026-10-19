@@ -36,8 +36,9 @@ ifeq ($(strip $(APP_VERSION)),)
 BASE_VERSION := $(strip $(shell tr -d '\r' < VERSION 2>/dev/null))
 COMMITS      := $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null))
 COMMIT       := $(strip $(shell "$(GIT)" rev-parse --short HEAD 2>/dev/null))
-DIRTY        := $(if $(strip $(shell "$(GIT)" status --porcelain 2>/dev/null)),-dev,)
-APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION).$(COMMITS)-$(COMMIT)$(DIRTY),$(BASE_VERSION)-dev)
+# line endings and file modes differ between a Windows checkout and WSL: not changes
+DIRTY        := $(if $(strip $(shell "$(GIT)" -c core.autocrlf=true -c core.filemode=false status --porcelain 2>/dev/null)),-dev,)
+APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION).$(COMMITS)$(if $(DIRTY),-$(COMMIT)-dev,),$(BASE_VERSION)-dev)
 endif
 
 # CIA title version = build number. The HOME menu caches icons per title ID and
