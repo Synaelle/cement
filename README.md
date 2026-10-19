@@ -1,10 +1,12 @@
 <p align="center">
-  <img src="meta/banner.png" alt="i eat cement">
+  <img src="meta/banner.png" alt="Cement">
 </p>
 
 <h1 align="center">Cement</h1>
 
 <p align="center">A tiny, fast FTP server for your 3DS's SD card 🧱</p>
+
+> The names and the design are a work in progress, nothing here is final yet.
 
 ## Use it
 
