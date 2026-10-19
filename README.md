@@ -18,14 +18,28 @@
 Prefer plain console text? **Cement Text** (`Cement-Text.cia`) is the same app with the old
 text screens, in red. Both can be installed side by side.
 
+## Login
+
+With no login set, anyone on your Wi-Fi can connect (any user name and password works).
+To ask for a user name and password, press **Y** on the 3DS and type them, or set them from
+Chomp. An empty user name goes back to no login. They're kept in
+`sdmc:/3ds/cement/settings.ini` as plain text, so it keeps out the curious, not a determined
+person with your SD card. FTP itself isn't encrypted either.
+
 Cement is tested on a New 3DS. It should run on an Old 3DS too, but that hasn't been tried on real hardware yet.
 
 ## Chomp + Cement
 
 [Chomp](https://github.com/Synaelle/chomp) is the Windows app made for Cement: an explorer
 with drag and drop, resumable transfers, Send to PC, and a command line for scripts. It
-uses a few extras Cement adds to FTP (`SITE STATUS`, `SITE BATCH`) to show progress, time
-left, free space and the battery. Cement works fine without it, with any FTP client.
+uses a few extras Cement adds to FTP (`SITE STATUS`, `SITE BATCH`...) to show progress, time
+left, free space and the battery, to install CIAs and set the login from the PC. When it sends
+many small files at once, it packs them into one uncompressed bundle that Cement unpacks as it
+arrives, which is much faster than one file at a time. Cement works fine without it, with any
+FTP client.
+
+Cement 2.0-RC3 speaks version 3 of these extras (logins and bundles). Chomp tells you when the
+Cement on your 3DS is too old for it.
 
 ## Build
 
@@ -43,13 +57,6 @@ copies devkitARM out of the official image). `cargo build --release` instead mak
 version that plays the 3DS (the SD card is a folder), handy for tests.
 
 ## Planned
-
-Next release:
-
-- A user name and password of your choice
-- Unpacking the uncompressed bundles Chomp sends when there are many small files
-
-Later:
 
 - Updating from within the app
 - Versions for other consoles
