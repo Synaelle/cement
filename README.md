@@ -6,15 +6,6 @@
 
 <p align="center">A tiny, fast FTP server for your 3DS's SD card 🧱</p>
 
-## What it does
-
-- 📂 **Serves the SD card** over Wi-Fi with plain FTP (and only the SD card)
-- ⚡ **Fast uploads**: the SD card writes while the next data is still arriving
-- 📦 **Installs CIAs** you send it: pick one on the bottom screen, press A
-- 🔋 **Easy on the battery**: close the lid to sleep, screens turn off when idle,
-  transfers wait when the battery is nearly empty
-- 📊 **Shows** its IP, transfers, SD space and battery on the top screen
-
 ## Use it
 
 1. Install `Cement.cia` (or put `Cement.3dsx` in `/3ds/` for the Homebrew Launcher)
