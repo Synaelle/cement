@@ -92,6 +92,9 @@ pub fn shutdown() -> bool {
 pub fn keys_down() -> u32 {
     let file = env("CEMENT_KEYS").unwrap_or_else(|| "keys.txt".into());
     let Ok(text) = fs::read_to_string(&file) else { return 0 };
+    if text.trim().is_empty() {
+        return 0; // still being written: read it next time
+    }
     let _ = fs::remove_file(&file);
     let key = text.trim();
     *TOUCH.lock().unwrap() = None;
