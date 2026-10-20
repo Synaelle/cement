@@ -90,15 +90,7 @@ pub fn keys_down() -> u32 {
     }
 }
 
-#[cfg(feature = "text-ui")]
-pub fn select(_: Screen) {}
-
-/// the screens aren't shown on a PC (keeps the test log readable)
-#[cfg(feature = "text-ui")]
-pub fn print(_: &str) {}
-
 /// with CEMENT_SCREEN_DUMP set, saves the whole screen image as a BMP
-#[cfg(not(feature = "text-ui"))]
 pub fn present(screen: Screen, px: &[u32], _x0: usize, _y0: usize, _x1: usize, _y1: usize) {
     let Some(dir) = env("CEMENT_SCREEN_DUMP") else { return };
     let (name, w) = match screen {

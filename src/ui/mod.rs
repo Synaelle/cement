@@ -1,22 +1,14 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The two screens: status on the top one, the CIA list on the bottom one.
-// What is shown and when is decided here, the same for both builds; text.rs
-// (Cement Text, feature text-ui) prints it on the console, gfx/ draws it.
+// What is shown and when is decided here, gfx/ draws it.
 
 use crate::server::{MAX_SESSIONS, Mode};
 use crate::{Battery, Server, battery_low, sys};
 
 mod palette;
 
-#[cfg(feature = "text-ui")]
-mod text;
-#[cfg(feature = "text-ui")]
-pub use text::{BOTTOM_ALWAYS_ON, Ui};
-
-#[cfg(not(feature = "text-ui"))]
 mod gfx;
-#[cfg(not(feature = "text-ui"))]
 pub use gfx::{BOTTOM_ALWAYS_ON, Ui};
 
 /// install and login messages: shown in green, the others (errors) in red
@@ -29,7 +21,6 @@ const MSG_MS: u64 = 8000;
 
 /// what the bottom screen shows besides the CIA list
 pub struct Bottom {
-    #[cfg_attr(feature = "text-ui", allow(dead_code))] // the console reprints everything
     pub dirty: bool,    // the list, the selection or the message changed
     pub show_msg: bool, // cia_msg is still recent
     pub busy: bool,     // transfers or file changes going on: an install waits
@@ -37,7 +28,6 @@ pub struct Bottom {
 
 /// what the top screen shows besides the server fields
 pub struct Top {
-    #[cfg_attr(feature = "text-ui", allow(dead_code))] // in the status line there
     pub clients: usize,        // distinct PCs: the client opens a browse and a transfer connection
     pub active: Option<usize>, // session moving a file
     pub bat: Battery,

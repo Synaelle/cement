@@ -1,7 +1,6 @@
 #---------------------------------------------------------------------------------
-# Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx, and
-# Cement Text (the console text screens, cargo feature text-ui) as
-# Cement-Text.cia and Cement-Text.3dsx. They have their own title IDs.
+# Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx.
+# Cement Text (the console text version) lives on the cement-text branch now.
 #
 # Needs: nightly Rust with rust-src (rustup toolchain install nightly -c rust-src),
 #        cargo-3ds (cargo install --locked cargo-3ds), devkitARM with libctru
@@ -15,7 +14,6 @@ endif
 
 BUILD		:=	build
 ELF		:=	target/armv6k-nintendo-3ds/release/cement-server.elf
-ELF_TEXT	:=	target/text/armv6k-nintendo-3ds/release/cement-server.elf
 
 # tools (override on the command line if they live elsewhere)
 CARGO		?=	cargo +nightly
@@ -61,18 +59,14 @@ define package
 	@echo built ... $(1).3dsx v$(APP_VERSION)
 endef
 
-.PHONY: all cement cement-text clean
+.PHONY: all cement clean
 
-all: cement cement-text
+all: cement
 
 cement:
 	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --release
 	$(call package,Cement,Cement,meta/banner.png,meta/icon.png,$(ELF))
 
-cement-text:
-	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --release --features text-ui --target-dir target/text
-	$(call package,Cement-Text,Cement Text,meta/banner-text.png,meta/icon-text.png,$(ELF_TEXT))
-
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) target Cement.elf Cement.cia Cement.3dsx Cement-Text.elf Cement-Text.cia Cement-Text.3dsx
+	@rm -fr $(BUILD) target Cement.elf Cement.cia Cement.3dsx

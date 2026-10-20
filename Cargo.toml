@@ -8,10 +8,6 @@ license = "GPL-3.0-or-later"
 # Built for the 3DS with `cargo 3ds build --release` (see the Makefile); built
 # for a PC (`cargo build --release`) it is a test server that plays the 3DS.
 
-[features]
-# Cement Text: the console text screens instead of the drawn ones
-text-ui = []
-
 [build-dependencies]
 fontdue = "0.9" # rasterises assets/fonts into glyph atlases (build.rs)
 

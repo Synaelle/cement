@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds Cement.cia and Cement.3dsx, and Cement Text (Cement-Text.cia and
-# Cement-Text.3dsx), on Linux (or WSL).
+# Builds Cement.cia and Cement.3dsx on Linux (or WSL). Cement Text is built
+# from the cement-text branch.
 #
 # Needs: nightly Rust with rust-src, cargo-3ds and libclang, makerom and
 #        bannertool (on PATH, or MAKEROM=/path BANNERTOOL=/path), and either

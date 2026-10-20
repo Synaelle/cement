@@ -4,7 +4,6 @@
 // no TTF is ever opened on the 3DS, and the button glyphs (assets/buttons,
 // Kenney's SVGs) into coverage masks. Writes $OUT_DIR/fonts.rs (metrics,
 // kerning, glyphs) and the bitmaps; src/ui/gfx/font.rs includes them.
-// Cement Text (feature text-ui) draws no fonts and skips all of this.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -189,10 +188,6 @@ fn main() {
     println!("cargo:rerun-if-changed=assets/fonts");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let mut rs = String::new();
-    if std::env::var_os("CARGO_FEATURE_TEXT_UI").is_some() {
-        std::fs::write(out.join("fonts.rs"), rs).unwrap();
-        return;
-    }
 
     let chars = chars();
     for &(name, file, px) in SIZES {

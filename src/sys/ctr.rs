@@ -38,8 +38,6 @@ fn ok(r: c::Result) -> bool {
 // startup and shutdown
 
 static mut TOP: c::PrintConsole = unsafe { std::mem::zeroed() };
-#[cfg(feature = "text-ui")]
-static mut BOTTOM: c::PrintConsole = unsafe { std::mem::zeroed() };
 static mut SOC_BUF: *mut u32 = std::ptr::null_mut();
 
 /// false when the SD card can't be opened (nothing else is fatal)
@@ -53,11 +51,6 @@ pub fn init() -> bool {
         // may be denied to some .3dsx launchers: ptm:u bars then
         MCU.store(ok(c::mcuHwcInit()), Ordering::Relaxed);
         c::AM_InitializeExternalTitleDatabase(false); // as FBI does at startup
-        #[cfg(feature = "text-ui")]
-        {
-            c::consoleInit(c::GFX_BOTTOM, &raw mut BOTTOM);
-            c::consoleInit(c::GFX_TOP, &raw mut TOP);
-        }
 
         let layout = std::alloc::Layout::from_size_align(SOC_BUFSIZE, SOC_ALIGN).unwrap();
         SOC_BUF = std::alloc::alloc(layout).cast();
@@ -72,7 +65,6 @@ pub fn init() -> bool {
 
 /// shown when init failed, until START
 pub fn fatal(msg: &str) {
-    #[cfg(not(feature = "text-ui"))]
     unsafe {
         c::consoleInit(c::GFX_TOP, &raw mut TOP); // the drawn screens may not be up
     }
@@ -123,27 +115,8 @@ pub fn keys_down() -> u32 {
     }
 }
 
-#[cfg(feature = "text-ui")]
-pub fn select(screen: Screen) {
-    unsafe {
-        c::consoleSelect(match screen {
-            Screen::Top => &raw mut TOP,
-            Screen::Bottom => &raw mut BOTTOM,
-        });
-    }
-}
-
-/// console text (escape codes included)
-#[cfg(feature = "text-ui")]
-pub fn print(text: &str) {
-    let mut out = std::io::stdout().lock();
-    let _ = out.write_all(text.as_bytes());
-    let _ = out.flush();
-}
-
 /// copies the rectangle x0..x1, y0..y1 of a screen image (0xRRGGBB, row by
 /// row) into the framebuffer being drawn and shows it at the next VBlank
-#[cfg(not(feature = "text-ui"))]
 pub fn present(screen: Screen, px: &[u32], x0: usize, y0: usize, x1: usize, y1: usize) {
     static mut LAST: [u64; 2] = [0; 2];
     let (gs, w, i) = match screen {
