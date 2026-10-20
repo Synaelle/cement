@@ -157,11 +157,8 @@ impl Server {
         let pal = &self.ui.pal;
         let s = &NUNITO_BOLD_11;
         let free = self.ui.sd_free.map(|v| format!("{} free", format_big(v))).unwrap_or_default();
-        let fw = s.width(&free, 0.0);
-        // the section marker, then where these CIAs come from
+        // the section marker, and the free space
         bite_dot(c, LEFT, CONTENT + ((s.height - 12.0) / 2.0).round(), pal);
-        let info = s.fit("Sent since start, or in / /cia /cias /fbi", RIGHT - LEFT - 16.0 - fw - 8.0);
-        c.text(s, LEFT + 16.0, CONTENT + s.ascent, &info, pal.dim, 0.0);
         c.text_right(s, RIGHT, CONTENT + s.ascent, &free, pal.dim);
         let top = CONTENT + s.height + 4.0;
 
