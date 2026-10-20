@@ -74,6 +74,14 @@ You also need `makerom`, `bannertool` and libclang, plus devkitPro or Docker (th
 copies devkitARM out of the official image). `cargo build --release` instead makes a PC
 version that plays the 3DS (the SD card is a folder), handy for tests.
 
+## Legacy version (C and C++)
+
+Before 2.0, Cement was written in C (the 3DS app) and C++ (the Windows app and the command
+line). That version is on the [legacy branch](../../tree/legacy), with its builds in the
+[1.2.28 release](../../releases/tag/v1.2.28) and its own build steps in its README (devkitPro
+for the 3DS app, MinGW-w64 or g++ for the PC apps). It's still supported, but it only gets bug
+fixes: new features go to this version and to [Chomp](https://github.com/Synaelle/chomp).
+
 ## Planned
 
 - Updating from within the app
