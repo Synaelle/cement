@@ -18,7 +18,12 @@ pub const KEY_A: u32 = c::KEY_A;
 pub const KEY_START: u32 = c::KEY_START;
 pub const KEY_UP: u32 = c::KEY_UP; // D-pad or circle pad
 pub const KEY_DOWN: u32 = c::KEY_DOWN;
-pub const KEY_Y: u32 = c::KEY_Y;
+pub const KEY_B: u32 = c::KEY_B;
+pub const KEY_L: u32 = c::KEY_L;
+pub const KEY_R: u32 = c::KEY_R;
+pub const KEY_LEFT: u32 = c::KEY_LEFT;
+pub const KEY_RIGHT: u32 = c::KEY_RIGHT;
+pub const KEY_TOUCH: u32 = c::KEY_TOUCH;
 
 pub const MEDIA_NAND: u8 = c::MEDIATYPE_NAND;
 pub const MEDIA_SD: u8 = c::MEDIATYPE_SD;
@@ -108,10 +113,36 @@ pub fn sleep_ms(ms: u64) {
     unsafe { c::svcSleepThread(ms as i64 * 1_000_000) }
 }
 
+static mut TOUCH: Option<(u16, u16)> = None;
+
 pub fn keys_down() -> u32 {
     unsafe {
         c::hidScanInput();
-        c::hidKeysDown()
+        let down = c::hidKeysDown();
+        TOUCH = None;
+        if down & KEY_TOUCH != 0 {
+            let mut pos = c::touchPosition { px: 0, py: 0 };
+            c::hidTouchRead(&mut pos);
+            TOUCH = Some((pos.px, pos.py));
+        }
+        down
+    }
+}
+
+/// where the bottom screen was touched, when keys_down saw KEY_TOUCH
+pub fn touch() -> Option<(u16, u16)> {
+    unsafe { TOUCH }
+}
+
+/// powers the console off (ptm:sysm); false when that service isn't allowed
+pub fn shutdown() -> bool {
+    unsafe {
+        if !ok(c::ptmSysmInit()) {
+            return false;
+        }
+        let r = c::PTMSYSM_ShutdownAsync(0);
+        c::ptmSysmExit();
+        ok(r)
     }
 }
 

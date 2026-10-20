@@ -16,6 +16,7 @@
 
 mod disk;
 mod install;
+mod menu;
 mod server;
 mod settings;
 mod sys;
@@ -61,6 +62,7 @@ const fn env_ms(v: Option<&str>, default: u64) -> u64 {
 // with shorter times (CEMENT_SCREEN_IDLE_MS, CEMENT_FAST_LINGER_MS).
 const SCREEN_IDLE_MS: u64 = env_ms(option_env!("CEMENT_SCREEN_IDLE_MS"), 60 * 1000); // no button, transfer or install
 const FAST_LINGER_MS: u64 = env_ms(option_env!("CEMENT_FAST_LINGER_MS"), 5000); // keeps fast mode between the files of a job
+const MINUTE_MS: u64 = env_ms(option_env!("CEMENT_MINUTE_MS"), 60 * 1000); // the auto off minutes (Settings)
 
 // below this, on battery power, new transfers and installs are refused: the
 // console dying in the middle of an SD card write can corrupt the file system
@@ -112,6 +114,7 @@ pub struct Server {
     // power
     pub idle_off: bool, // the screens are off because of the idle timer
     last_wake: u64,     // last button press, transfer or install
+    pub last_ftp: u64,  // last FTP command that is real use (not a status poll): auto off
     fast: bool,
     fast_until: u64,
     battery_cache: Option<(u64, Battery)>,
@@ -126,7 +129,9 @@ pub struct Server {
     pub install_count: u32,
     pub install_result: Option<InstallResult>,
 
-    pub accent: u32,                     // drawn UI accent, set by Chomp (SITE COLOR)
+    pub menu: menu::Menu,
+    pub prefs: settings::Prefs,
+    pub accent: u32,                     // drawn UI accent, set in Settings or by Chomp (SITE COLOR)
     pub login: Option<(String, String)>, // FTP user and password; None: anonymous
     pub ui: ui::Ui,
 }
@@ -150,6 +155,7 @@ impl Server {
             rate: 0,
             idle_off: false,
             last_wake: 0,
+            last_ftp: 0,
             fast: false,
             fast_until: 0,
             battery_cache: None,
@@ -161,6 +167,8 @@ impl Server {
             inst_queue: None,
             install_count: 0,
             install_result: None,
+            menu: menu::Menu::new(),
+            prefs: settings::Prefs::default(),
             accent: 0,
             login: None,
             ui: ui::Ui::new(),
@@ -215,7 +223,7 @@ impl Server {
         }
 
         // the bottom screen follows idle_off in ui::Server::bottom
-        let idle = now.saturating_sub(self.last_wake) >= SCREEN_IDLE_MS;
+        let idle = self.prefs.screen_idle && now.saturating_sub(self.last_wake) >= SCREEN_IDLE_MS;
         if self.idle_off && !idle {
             self.idle_off = false;
             self.bottom_dirty = true;
@@ -230,11 +238,38 @@ impl Server {
         false
     }
 
+    /// Settings' auto off: true when the console is being turned off
+    fn auto_off(&mut self) -> bool {
+        let minutes = self.prefs.auto_off as u64;
+        let used = self.last_wake.max(self.last_ftp);
+        if minutes == 0 || self.working() || sys::now_ms().saturating_sub(used) < minutes * MINUTE_MS {
+            return false;
+        }
+        self.net_down();
+        if sys::shutdown() {
+            return true;
+        }
+        // not allowed (some .3dsx launchers): say so once, and stop trying
+        self.prefs.auto_off = 0;
+        self.cia_message("This launcher can't turn the 3DS off: auto off is off".into());
+        settings::save_prefs(&self.prefs);
+        self.last_wake = sys::now_ms();
+        false
+    }
+
+    /// the network comes up at the next check (FTP server turned back on)
+    pub fn wake_net(&mut self) {
+        self.next_net_check = 0;
+    }
+
     /// one main loop iteration; false to quit
     fn step(&mut self) -> bool {
         let mut down = sys::keys_down();
         if self.manage_power(down) {
             down = 0; // the press only turned a screen back on
+        }
+        if self.auto_off() {
+            return false;
         }
         self.poll_install();
         if down & sys::KEY_START != 0 {
@@ -245,15 +280,14 @@ impl Server {
             self.cia_msg_time = sys::now_ms();
             self.bottom_dirty = true;
         }
-        self.cia_input(down);
-        if down & sys::KEY_Y != 0 {
-            self.login_keyboard();
-        }
+        self.menu_input(down);
 
         let now = sys::now_ms();
         if now >= self.next_net_check {
             self.next_net_check = now + 1000;
-            if !self.net.up {
+            if !self.prefs.ftp {
+                // turned off in Settings: nothing listens
+            } else if !self.net.up {
                 self.net_up();
             } else if !sys::wifi_connected() {
                 self.net_down();
@@ -266,13 +300,14 @@ impl Server {
         } else {
             sys::sleep_ms(50);
         }
+        self.menu_refresh();
         self.draw();
         true
     }
 }
 
 impl Server {
-    /// Y: the FTP login typed on the console (an empty user name clears it)
+    /// Settings' login row: the FTP login typed on the console (an empty user name clears it)
     fn login_keyboard(&mut self) {
         let current = self.login.as_ref().map(|l| l.0.clone()).unwrap_or_default();
         let msg = match sys::keyboard("FTP user name (empty: anyone can connect)", &current, false, 32) {
@@ -329,7 +364,10 @@ fn main() {
     // only ever used through this pointer: the APT hook needs it too
     let mut s = Box::new(Server::new());
     let saved = settings::load();
-    (s.accent, s.login) = (saved.accent, saved.login);
+    (s.accent, s.login, s.prefs) = (saved.accent, saved.login, saved.prefs);
+    if !s.prefs.ftp {
+        s.status = "FTP server off".into();
+    }
     s.scan_cias();
     let server: *mut Server = Box::into_raw(s);
     sys::apt_hook(on_apt, server.cast());

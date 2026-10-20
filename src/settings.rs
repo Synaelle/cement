@@ -1,8 +1,9 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Settings kept on the SD card in sdmc:/3ds/cement/settings.ini, one
-// "key=value" per line: the accent colour (SITE COLOR) and the FTP login
-// (SITE LOGIN, or Y on the bottom screen). The password is stored as plain text.
+// "key=value" per line: the accent colour (Settings, or SITE COLOR when synced
+// with Chomp), the FTP login (SITE LOGIN, or Settings / Y) and the other
+// choices of the Settings tab. The password is stored as plain text.
 
 use crate::sys::{self, File};
 
@@ -67,7 +68,26 @@ fn set(changes: &[(&str, Option<&str>)]) -> bool {
 pub struct Settings {
     pub accent: u32,
     pub login: Option<(String, String)>, // user and password; None: anonymous
+    pub prefs: Prefs,
 }
+
+/// the switches of the Settings tab
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Prefs {
+    pub color_sync: bool,  // Chomp's SITE COLOR sets the accent (else only the 3DS does)
+    pub ftp: bool,         // the FTP server runs
+    pub screen_idle: bool, // the screens turn off after an idle minute
+    pub auto_off: u32,     // minutes without use before the console turns off, 0 = never
+}
+
+impl Default for Prefs {
+    fn default() -> Prefs {
+        Prefs { color_sync: true, ftp: true, screen_idle: true, auto_off: 0 }
+    }
+}
+
+/// the auto off choices, in minutes
+pub const AUTO_OFF: [u32; 5] = [0, 5, 15, 30, 60];
 
 pub fn load() -> Settings {
     let text = read();
@@ -76,7 +96,27 @@ pub fn load() -> Settings {
         (Some(u), p) if valid_user(&u) => Some((u, p.unwrap_or_default())),
         _ => None,
     };
-    Settings { accent, login }
+    let flag = |key: &str, default: bool| get(&text, key).map_or(default, |v| v.trim() != "0");
+    let d = Prefs::default();
+    let auto_off = get(&text, "auto_off").and_then(|v| v.trim().parse().ok()).filter(|m| AUTO_OFF.contains(m));
+    let prefs = Prefs {
+        color_sync: flag("color_sync", d.color_sync),
+        ftp: flag("ftp", d.ftp),
+        screen_idle: flag("screen_idle", d.screen_idle),
+        auto_off: auto_off.unwrap_or(d.auto_off),
+    };
+    Settings { accent, login, prefs }
+}
+
+pub fn save_prefs(p: &Prefs) -> bool {
+    let b = |v: bool| if v { "1" } else { "0" };
+    let auto_off = p.auto_off.to_string();
+    set(&[
+        ("color_sync", Some(b(p.color_sync))),
+        ("ftp", Some(b(p.ftp))),
+        ("screen_idle", Some(b(p.screen_idle))),
+        ("auto_off", Some(&auto_off)),
+    ])
 }
 
 pub fn save_accent(accent: u32) -> bool {

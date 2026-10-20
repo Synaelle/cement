@@ -63,6 +63,22 @@ impl Font {
         w
     }
 
+    /// `s`, or its end that fits in `max` after an ellipsis (paths)
+    pub fn fit_start(&self, s: &str, max: f32) -> String {
+        if self.width(s, 0.0) <= max {
+            return s.to_string();
+        }
+        let room = max - self.width("…", 0.0);
+        let mut start = s.len();
+        for (i, _) in s.char_indices().rev() {
+            if self.width(&s[i..], 0.0) > room {
+                break;
+            }
+            start = i;
+        }
+        format!("…{}", &s[start..])
+    }
+
     /// `s`, or as much of it as fits in `max` with an ellipsis
     pub fn fit(&self, s: &str, max: f32) -> String {
         if self.width(s, 0.0) <= max {

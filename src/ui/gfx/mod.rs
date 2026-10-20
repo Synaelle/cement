@@ -4,6 +4,7 @@
 // RAM when something changed; only the rows and columns that differ from what
 // is shown are copied to the framebuffer.
 
+mod bottom;
 mod canvas;
 mod font;
 
@@ -14,7 +15,7 @@ use super::palette::Palette;
 use super::{Bottom, Top};
 use crate::server::{Mode, progress_of};
 use crate::sys;
-use crate::util::{base_name, format_size, ip_text};
+use crate::util::{format_size, ip_text};
 use crate::{PROTOCOL, Server, VERSION, battery_text};
 
 // fixed whatever the accent: white on accent, install success and error
@@ -83,6 +84,7 @@ pub struct Ui {
     bottom: Option<Screen>,
     bottom_at: u64,       // last bottom screen drawing
     sd_free: Option<u64>, // read again when the CIA list changes
+    hits: Vec<bottom::Hit>, // where the bottom screen's tabs, rows and swatches are
     pal: Palette,         // the colours for the accent below
     pal_for: u32,
 }
@@ -94,6 +96,7 @@ impl Ui {
             bottom: Some(Screen::new(sys::Screen::Bottom, 320)),
             bottom_at: 0,
             sd_free: None,
+            hits: Vec::new(),
             pal: Palette::for_accent(crate::settings::DEFAULT_ACCENT),
             pal_for: crate::settings::DEFAULT_ACCENT,
         }
@@ -105,6 +108,12 @@ impl Ui {
             self.pal = Palette::for_accent(accent);
             self.pal_for = accent;
         }
+    }
+
+    /// what a touch at (x, y) on the bottom screen lands on
+    pub fn hit(&self, x: u16, y: u16) -> Option<crate::menu::Tap> {
+        let (x, y) = (x as f32, y as f32);
+        self.hits.iter().find(|h| x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1).map(|h| h.tap)
     }
 
     /// after the HOME menu or sleep: the framebuffers hold something else
@@ -185,7 +194,7 @@ fn bite_dot(c: &mut Canvas, x: f32, y: f32, pal: &Palette) {
 #[derive(Clone, Copy)]
 enum Button {
     A,
-    Y,
+    B,
     Dpad,
     Start,
 }
@@ -198,7 +207,7 @@ fn glyph_size(b: Button) -> (f32, f32) {
     let f = &NUNITO_XBOLD_11;
     match b {
         Button::A => (BTN_A.size as f32, BTN_A.size as f32),
-        Button::Y => (BTN_Y.size as f32, BTN_Y.size as f32),
+        Button::B => (BTN_B.size as f32, BTN_B.size as f32),
         Button::Dpad => (BTN_DPAD.size as f32, BTN_DPAD.size as f32),
         Button::Start => ((f.width("START", 0.0) + 8.0).round(), GLYPH),
     }
@@ -223,9 +232,9 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &
             c.icon(&BTN_A, x, y, tint);
             BTN_A.size as f32
         }
-        Button::Y => {
-            c.icon(&BTN_Y, x, y, tint);
-            BTN_Y.size as f32
+        Button::B => {
+            c.icon(&BTN_B, x, y, tint);
+            BTN_B.size as f32
         }
         Button::Dpad => {
             // red arms on the accent hint would vanish: they take the background there
@@ -268,7 +277,7 @@ impl Server {
             self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
         }
         let Some(mut scr) = self.ui.bottom.take() else { return };
-        self.paint_bottom(&mut scr.c, b);
+        self.ui.hits = self.paint_bottom(&mut scr.c, b);
         scr.present();
         self.ui.bottom = Some(scr);
     }
@@ -382,7 +391,7 @@ impl Server {
         } else {
             let up = self.net.up && self.net.listen.is_some();
             card.title = if up && t.clients != 0 { pcs(t.clients) } else { self.status.clone() };
-            card.detail = "No transfer right now".into();
+            card.detail = if self.prefs.ftp { "No transfer right now" } else { "Turn it back on in Settings, on the bottom screen" }.into();
         }
         if let (Some(s), Some(bp)) = (batch, &bp) {
             if s.batch_kind != "delete" && bp.batch_bytes != 0 && t.active.is_none() {
@@ -397,99 +406,5 @@ impl Server {
             card.detail = parts.join(" · ");
         }
         draw_card(c, left, 226.0 - card_height(), right - left, &card, pal);
-    }
-
-    /// 320 x 240: the CIA list, the install card, the last message, the buttons
-    fn paint_bottom(&self, c: &mut Canvas, b: &Bottom) {
-        let pal = &self.ui.pal;
-        c.fill(pal.bg);
-        let (left, right) = (13.0, 307.0);
-
-        // header
-        let top = 12.0;
-        let f = &FREDOKA_BOLD_16;
-        let base = top + f.ascent;
-        bite_dot(c, left, base + 0.5 - 12.0, pal);
-        c.text(f, left + 15.0, base, "CIAs", pal.text, 0.0);
-        if let Some(free) = self.ui.sd_free {
-            let s = &NUNITO_BOLD_11;
-            c.text_right(s, right, top + (f.height - s.height) / 2.0 + s.ascent, &format!("SD {} free", format_big(free)), pal.dim);
-        }
-        let mut list_top = top + f.height + 2.0;
-        let s = &NUNITO_BOLD_11;
-        c.text(s, left, list_top + s.ascent, "Sent since Cement started, or found in / and /cias", pal.dim, 0.0);
-        list_top += s.height + 5.0;
-
-        // from the bottom up: buttons, message, install card
-        let f = &NUNITO_XBOLD_11;
-        let hy = 228.0 - (f.height + 6.0);
-        let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
-        let mut x = hint(c, left, hy, Button::A, first, pal.accent, WHITE, pal) + 5.0;
-        x = hint(c, x, hy, Button::Dpad, "", pal.track, pal.soft, pal) + 5.0;
-        hint(c, x, hy, Button::Y, "login", pal.track, pal.soft, pal);
-        let mut bottom = hy - 6.0;
-
-        if b.show_msg {
-            let f = &NUNITO_XBOLD_12;
-            bottom -= f.height;
-            let color = if super::good_news(&self.cia_msg) { GOOD } else { BAD };
-            c.text(f, left, bottom + f.ascent, &f.fit(&self.cia_msg, right - left), color, 0.0);
-            bottom -= 6.0;
-        }
-
-        if let Some(inst) = &self.inst {
-            let done = *inst.shared.done.lock().unwrap();
-            let pct = if inst.total != 0 { done * 100 / inst.total } else { 0 };
-            let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
-            let card = CardText {
-                title: format!("Installing {}", base_name(&inst.path)),
-                value: if preparing { String::new() } else { format!("{pct}%") },
-                frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
-                detail: if preparing {
-                    "Preparing... removing the old copy".into()
-                } else {
-                    format!("{} of {}", format_size(done), format_size(inst.total))
-                },
-                right: String::new(),
-            };
-            bottom -= card_height();
-            draw_card(c, left, bottom, right - left, &card, pal);
-            bottom -= 6.0;
-        }
-
-        if self.cias.is_empty() && self.inst.is_none() {
-            // empty state
-            let h = (bottom - list_top).min(64.0);
-            c.round(left, list_top, right - left, h, 9.0, pal.card);
-            let f = &NUNITO_XBOLD_13;
-            let line = "No CIAs yet: upload one over FTP";
-            let mid = (left + right) / 2.0;
-            c.text(f, mid - f.width(line, 0.0) / 2.0, list_top + (h - f.height) / 2.0 + f.ascent, line, pal.text, 0.0);
-            return;
-        }
-
-        // the list: as many rows as fit, scrolled to keep the selection in view
-        let row_h = NUNITO_XBOLD_13.height + 14.0;
-        let room = bottom - list_top + 6.0 - 2.0; // the selected row has a border
-        let rows = ((room / (row_h + 6.0)).floor() as usize).max(1);
-        let first = if self.cia_sel >= rows { self.cia_sel - rows + 1 } else { 0 };
-        let mut y = list_top;
-        for (i, cia) in self.cias.iter().enumerate().skip(first).take(rows) {
-            let sel = i == self.cia_sel;
-            let (h, inset) = if sel { (row_h + 2.0, 1.0) } else { (row_h, 0.0) };
-            if sel {
-                c.card(left, y, right - left, h, 9.0, pal.selected, pal.accent);
-            } else {
-                c.round(left, y, right - left, h, 9.0, pal.card);
-            }
-            let f = if sel { &NUNITO_XBOLD_13 } else { &NUNITO_BOLD_13 };
-            let base = y + inset + 7.0 + f.ascent;
-            let (l, r) = (left + inset + 9.0, right - inset - 9.0);
-            let size = format_size(cia.size);
-            let name = f.fit(base_name(&cia.path), r - l - f.width(&size, 0.0) - 10.0);
-            c.text(f, l, base, &name, pal.text, 0.0);
-            c.text_right(f, r, base, &size, if sel { pal.soft } else { pal.dim });
-            y += h + 6.0;
-        }
     }
 }

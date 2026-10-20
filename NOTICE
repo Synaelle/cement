@@ -34,7 +34,7 @@ built into the 3DS app.
 -------------------------------------------------------------------------------
 Button glyphs
 
-The A button and D-pad glyphs on the drawn screens come from Input Prompts by
+The A, B, L, R and D-pad glyphs on the drawn screens come from Input Prompts by
 Kenney (https://kenney.nl/assets/input-prompts), released under Creative
 Commons Zero (CC0 1.0). The SVG files used and Kenney's license text are in
 assets/buttons. The build rasterises and tints them for the 3DS app.

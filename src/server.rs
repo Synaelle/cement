@@ -985,6 +985,11 @@ impl Server {
         let cmd = cmd.as_str();
         let now = sys::now_ms();
         self.sess[i].last_cmd = now;
+        // a client that only polls (Chomp's status) isn't someone using the 3DS
+        let poll = cmd == "NOOP" || (cmd == "SITE" && arg.len() >= 6 && arg[..6].eq_ignore_ascii_case(b"STATUS"));
+        if !poll {
+            self.last_ftp = now;
+        }
 
         // a deletion is a stream of DELE/RMD commands: count it as busy for a moment
         if matches!(cmd, "DELE" | "RMD" | "XRMD" | "RNFR" | "RNTO" | "MKD" | "XMKD") {
@@ -1294,6 +1299,9 @@ impl Server {
                 if arg.is_empty() {
                     let text = format!("200 #{:06x}\r\n", self.accent);
                     self.sess[i].reply(&text);
+                } else if settings::parse_color(arg).is_some() && !self.prefs.color_sync {
+                    // the colour is picked on the 3DS (Settings): Chomp's isn't applied
+                    self.sess[i].reply("200 Accent kept: colour sync is off on the 3DS\r\n");
                 } else if let Some(c) = settings::parse_color(arg) {
                     if c != self.accent {
                         self.accent = c;
@@ -1369,7 +1377,7 @@ impl Server {
         let idle = if busy || now < self.last_activity { 0 } else { now - self.last_activity };
         let mut out = String::from("211-Status\r\n");
         out += &format!(
-            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} login={} version={}\r\n",
+            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} login={} color_sync={} version={}\r\n",
             busy as i32,
             idle,
             self.installing() as i32,
@@ -1384,6 +1392,7 @@ impl Server {
             crate::battery_low(bat) as i32,
             self.accent,
             self.login.is_some() as i32,
+            self.prefs.color_sync as i32,
             VERSION
         );
         for (j, s) in self.sess.iter().enumerate() {

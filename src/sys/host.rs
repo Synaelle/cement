@@ -6,7 +6,9 @@
 // - a CIA "install" is written to the file named by CEMENT_AMOUT, and
 //   CEMENT_INSTALLED="<title id hex>:<version>,..." lists the titles already installed
 //   (deleting one takes CEMENT_DELETE_MS, as it can on the console)
-// - keys come from the file named by CEMENT_KEYS ("A", "UP", "DOWN", "SELECT", "Y")
+// - keys come from the file named by CEMENT_KEYS ("A", "B", "L", "R", "UP",
+//   "DOWN", "LEFT", "RIGHT", "SELECT", or "TOUCH <x> <y>" on the bottom screen)
+// - turning the console off (auto off) is logged as "[shim] shutdown"
 // - the software keyboard answers with the lines of the file named by
 //   CEMENT_SWKBD, one per call ("<cancel>" or no line left: Cancel)
 // - CEMENT_BATTERY="<percent>[,charging|,plugged]" (default 100), CEMENT_NO_MCU=1
@@ -31,7 +33,12 @@ pub const KEY_SELECT: u32 = 1 << 2;
 pub const KEY_START: u32 = 1 << 3;
 pub const KEY_UP: u32 = 1 << 6;
 pub const KEY_DOWN: u32 = 1 << 7;
-pub const KEY_Y: u32 = 1 << 11;
+pub const KEY_B: u32 = 1 << 1;
+pub const KEY_L: u32 = 1 << 9;
+pub const KEY_R: u32 = 1 << 8;
+pub const KEY_LEFT: u32 = 1 << 5;
+pub const KEY_RIGHT: u32 = 1 << 4;
+pub const KEY_TOUCH: u32 = 1 << 20;
 
 pub const MEDIA_NAND: u8 = 0;
 pub const MEDIA_SD: u8 = 1;
@@ -70,24 +77,41 @@ pub fn sleep_ms(ms: u64) {
     std::thread::sleep(std::time::Duration::from_millis(ms));
 }
 
+static TOUCH: std::sync::Mutex<Option<(u16, u16)>> = std::sync::Mutex::new(None);
+
+/// where the bottom screen was touched ("TOUCH x y" in the keys file)
+pub fn touch() -> Option<(u16, u16)> {
+    *TOUCH.lock().unwrap()
+}
+
+pub fn shutdown() -> bool {
+    eprintln!("[shim] shutdown");
+    true
+}
+
 pub fn keys_down() -> u32 {
     let file = env("CEMENT_KEYS").unwrap_or_else(|| "keys.txt".into());
     let Ok(text) = fs::read_to_string(&file) else { return 0 };
     let _ = fs::remove_file(&file);
     let key = text.trim();
-    if key.starts_with("SELECT") {
-        KEY_SELECT
-    } else if key.starts_with("UP") {
-        KEY_UP
-    } else if key.starts_with("DOWN") {
-        KEY_DOWN
-    } else if key.starts_with('Y') {
-        KEY_Y
-    } else if key.starts_with('A') {
-        KEY_A
-    } else {
-        0
+    *TOUCH.lock().unwrap() = None;
+    if let Some(at) = key.strip_prefix("TOUCH") {
+        let mut n = at.split_whitespace().map(|v| v.parse::<u16>().unwrap_or(0));
+        *TOUCH.lock().unwrap() = Some((n.next().unwrap_or(0), n.next().unwrap_or(0)));
+        return KEY_TOUCH;
     }
+    // longest names first: "LEFT" before "L"
+    for (name, key_bit) in [("SELECT", KEY_SELECT), ("RIGHT", KEY_RIGHT), ("LEFT", KEY_LEFT), ("UP", KEY_UP), ("DOWN", KEY_DOWN)] {
+        if key.starts_with(name) {
+            return key_bit;
+        }
+    }
+    for (name, key_bit) in [("A", KEY_A), ("B", KEY_B), ("L", KEY_L), ("R", KEY_R)] {
+        if key == name {
+            return key_bit;
+        }
+    }
+    0
 }
 
 /// with CEMENT_SCREEN_DUMP set, saves the whole screen image as a BMP

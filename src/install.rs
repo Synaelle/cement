@@ -72,9 +72,10 @@ impl Server {
         self.bottom_dirty = true;
     }
 
-    /// the SD card root and /cias, so the list survives a restart (two listings: cheap)
+    /// the SD card root, /cia, /cias and /fbi, so the list survives a restart
+    /// (a listing each: cheap)
     pub fn scan_cias(&mut self) {
-        for dir in ["/", "/cias"] {
+        for dir in ["/", "/cia", "/cias", "/fbi"] {
             let mut found = Vec::new();
             sys::list_dir(dir, &mut |name, is_dir, size| {
                 if !is_dir && is_cia(name) {
@@ -129,7 +130,7 @@ impl Server {
         self.inst.is_some()
     }
 
-    fn cia_message(&mut self, msg: String) {
+    pub fn cia_message(&mut self, msg: String) {
         self.cia_msg = msg;
         self.cia_msg_time = sys::now_ms();
         self.bottom_dirty = true;
@@ -185,6 +186,7 @@ impl Server {
         let inst = self.inst.take().unwrap();
         sys::set_sleep_allowed(true);
         let rc = inst.shared.rc.load(Ordering::Relaxed);
+        self.menu.browse.loaded = false; // the installed file is gone, or the list is the same
         if rc >= 0 {
             self.cia_remove(&inst.path);
             self.cia_message(format!("Installed {}", util::clip(base_name(&inst.path), 30)));

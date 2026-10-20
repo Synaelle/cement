@@ -147,6 +147,7 @@ AccessControlInfo:
    - news:u
    - nwm::UDS
    - ptm:u
+   - ptm:sysm # auto off (Settings)
    - pxi:dev
    - soc:U
    - ssl:C

@@ -11,7 +11,6 @@ use std::path::PathBuf;
 /// (Rust name, font file, size in pixels)
 const SIZES: &[(&str, &str, f32)] = &[
     ("FREDOKA_BOLD_22", "fredoka/Fredoka-Bold.ttf", 22.0),
-    ("FREDOKA_BOLD_16", "fredoka/Fredoka-Bold.ttf", 16.0),
     ("FREDOKA_SEMI_26", "fredoka/Fredoka-SemiBold.ttf", 26.0),
     // the board's body sizes plus 1 px: smaller is hard to read on the real LCDs
     ("NUNITO_XBOLD_13", "nunito/Nunito-ExtraBold.ttf", 13.0),
@@ -51,7 +50,9 @@ fn snapped(font: &fontdue::Font, px: f32) -> f32 {
 const ICONS: &[(&str, &str, usize)] = &[
     ("BTN_A", "switch_button_a.svg", 15),
     ("BTN_DPAD", "switch_dpad_vertical.svg", 17),
-    ("BTN_Y", "switch_button_y.svg", 15),
+    ("BTN_B", "switch_button_b.svg", 15),
+    ("BTN_L", "switch_button_l.svg", 15),
+    ("BTN_R", "switch_button_r.svg", 15),
 ];
 
 /// the filled paths of a Kenney SVG: (fill colour, outlines as closed polygons)
