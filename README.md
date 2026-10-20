@@ -20,13 +20,24 @@
 3. Connect with any FTP client (FileZilla, WinSCP...), or with
    [**Chomp**](https://github.com/Synaelle/chomp) 🍪
 
-Prefer plain console text? **Cement Text** (`Cement-Text.cia`) is the same app with the old
-text screens, in red. Both can be installed side by side.
+## On the 3DS
+
+The bottom screen has three tabs (switch with L and R, or touch them):
+
+- **Recent**: the CIA files sent since Cement started, and those in `/`, `/cia`, `/cias` and
+  `/fbi`. Press A to install one (the file is deleted once it's installed).
+- **Browse**: the folders of the SD card, to install a CIA from anywhere. B goes back up.
+- **Settings**: the colour (or let Chomp pick it), the FTP login, turning the FTP server off,
+  keeping the screens on, and turning the 3DS off after a while without use.
+
+Prefer plain console text? **Cement Text** (`Cement-Text.cia`) is the old text version of
+Cement, in red. It stays as it is now and is only updated when Chomp needs it to, so it
+doesn't get the tabs. Both can be installed side by side.
 
 ## Login
 
 With no login set, anyone on your Wi-Fi can connect (any user name and password works).
-To ask for a user name and password, press **Y** on the 3DS and type them, or set them from
+To ask for a user name and password, set them in Settings on the 3DS (FTP login), or from
 Chomp. An empty user name goes back to no login. They're kept in
 `sdmc:/3ds/cement/settings.ini` as plain text, so it keeps out the curious, not a determined
 person with your SD card. FTP itself isn't encrypted either.
