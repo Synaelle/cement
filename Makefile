@@ -27,8 +27,9 @@ export PATH := $(DEVKITARM)/bin:$(DEVKITPRO)/tools/bin:$(PATH)
 GCC_VERSION := $(shell $(DEVKITARM)/bin/arm-none-eabi-gcc -dumpversion)
 export BINDGEN_EXTRA_CLANG_ARGS ?= -isystem $(DEVKITARM)/lib/gcc/arm-none-eabi/$(GCC_VERSION)/include
 
-# version shown on the 3DS and reported to clients:
-# <VERSION>.<commit count>-<short commit>, plus -dev when there are uncommitted changes
+# version shown on the 3DS and reported to clients: the VERSION file as it is
+# (major.minor.micro, bumped by hand for a release), plus -<short commit>-dev
+# when there are uncommitted changes
 GIT          := $(shell command -v git 2>/dev/null || (test -x "/c/Program Files/Git/cmd/git.exe" && echo "/c/Program Files/Git/cmd/git.exe"))
 ifeq ($(strip $(APP_VERSION)),)
 BASE_VERSION := $(strip $(shell tr -d '\r' < VERSION 2>/dev/null))
@@ -36,10 +37,11 @@ COMMITS      := $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null))
 COMMIT       := $(strip $(shell "$(GIT)" rev-parse --short HEAD 2>/dev/null))
 # line endings and file modes differ between a Windows checkout and WSL: not changes
 DIRTY        := $(if $(strip $(shell "$(GIT)" -c core.autocrlf=true -c core.filemode=false status --porcelain 2>/dev/null)),-dev,)
-APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION).$(COMMITS)$(if $(DIRTY),-$(COMMIT)-dev,),$(BASE_VERSION)-dev)
+APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION)$(if $(DIRTY),-$(COMMIT)-dev,),$(BASE_VERSION)-dev)
 endif
 
-# CIA title version = build number. The HOME menu caches icons per title ID and
+# CIA title version = build number (the commit count, never shown). The HOME
+# menu caches icons per title ID and
 # title version, so it has to go up or updates keep showing the old icon, and
 # the 3DS refuses to install a lower one (D8E08027). makerom clears the minor
 # bits (4-9) of the version, which made it wrap every 16 builds: the count goes
