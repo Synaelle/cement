@@ -40,7 +40,7 @@ Commons Zero (CC0 1.0). The SVG files used and Kenney's license text are in
 assets/buttons. The build rasterises and tints them for the 3DS app.
 
 -------------------------------------------------------------------------------
-Built into the 3DS app (Cement.cia, Cement.3dsx, Cement-Text.cia, Cement-Text.3dsx)
+Built into the 3DS app (Cement.cia, Cement.3dsx)
 
 - libctru (https://github.com/devkitPro/libctru): zlib license
 - ctru-rs and ctru-sys (https://github.com/rust3ds/ctru-rs): zlib license
