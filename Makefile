@@ -1,5 +1,6 @@
 #---------------------------------------------------------------------------------
-# Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx.
+# Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx,
+# "make PROFILE=fast" a quicker build to try changes (see Cargo.toml).
 #
 # Needs: nightly Rust with rust-src (rustup toolchain install nightly -c rust-src),
 #        cargo-3ds (cargo install --locked cargo-3ds), devkitARM with libctru
@@ -12,7 +13,8 @@ $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>dev
 endif
 
 BUILD		:=	build
-ELF		:=	target/armv6k-nintendo-3ds/release/cement-server.elf
+PROFILE		?=	release
+ELF		:=	target/armv6k-nintendo-3ds/$(PROFILE)/cement-server.elf
 
 # tools (override on the command line if they live elsewhere)
 CARGO		?=	cargo +nightly
@@ -28,7 +30,7 @@ export BINDGEN_EXTRA_CLANG_ARGS ?= -isystem $(DEVKITARM)/lib/gcc/arm-none-eabi/$
 
 # version shown on the 3DS and reported to clients: the VERSION file as it is
 # (major.minor.micro, bumped by hand for a release), plus -<short commit>-dev
-# when there are uncommitted changes
+# when there are uncommitted changes or for a fast build
 GIT          := $(shell command -v git 2>/dev/null || (test -x "/c/Program Files/Git/cmd/git.exe" && echo "/c/Program Files/Git/cmd/git.exe"))
 ifeq ($(strip $(APP_VERSION)),)
 BASE_VERSION := $(strip $(shell tr -d '\r' < VERSION 2>/dev/null))
@@ -36,6 +38,9 @@ COMMITS      := $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null))
 COMMIT       := $(strip $(shell "$(GIT)" rev-parse --short HEAD 2>/dev/null))
 # line endings and file modes differ between a Windows checkout and WSL: not changes
 DIRTY        := $(if $(strip $(shell "$(GIT)" -c core.autocrlf=true -c core.filemode=false status --porcelain 2>/dev/null)),-dev,)
+ifneq ($(PROFILE),release)
+DIRTY        := -dev
+endif
 APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION)$(if $(DIRTY),-$(COMMIT)-dev,),$(BASE_VERSION)-dev)
 endif
 
@@ -65,7 +70,7 @@ endef
 all: cement
 
 cement:
-	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --release
+	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --profile $(PROFILE)
 	$(call package,Cement,Cement,meta/banner.png,meta/icon.png,$(ELF))
 
 clean:

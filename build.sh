@@ -6,19 +6,27 @@
 #        devkitPro installed (DEVKITARM set) or Docker, which then uses the
 #        official devkitpro/devkitarm image.
 #
-# usage: ./build.sh
+# usage: ./build.sh        a release build
+#        ./build.sh fast   a quicker build to try changes, no LTO (always -<commit>-dev)
 set -eu
 cd "$(dirname "$0")"
 
 MAKEROM=$(command -v "${MAKEROM:-makerom}" || true)
 BANNERTOOL=$(command -v "${BANNERTOOL:-bannertool}" || true)
 
+PROFILE=release
+case "${1:-}" in
+	"") ;;
+	fast) PROFILE=fast ;;
+	*) echo "usage: ./build.sh [fast]" >&2; exit 1 ;;
+esac
+
 # version: the VERSION file as it is (major.minor.micro, bumped by hand for a
-# release), plus -<commit>-dev with uncommitted changes
+# release), plus -<commit>-dev with uncommitted changes or for a fast build
 base=$(tr -d '\r\n' < VERSION) # no CR from a Windows checkout
 if git rev-parse HEAD >/dev/null 2>&1; then
 	# line endings and file modes differ between a Windows checkout and WSL: not changes
-	dirty=$([ -n "$(git -c core.autocrlf=true -c core.filemode=false status --porcelain)" ] && echo "-$(git rev-parse --short HEAD)-dev" || true)
+	dirty=$({ [ "$PROFILE" = fast ] || [ -n "$(git -c core.autocrlf=true -c core.filemode=false status --porcelain)" ]; } && echo "-$(git rev-parse --short HEAD)-dev" || true)
 	APP_VERSION="$base$dirty"
 else
 	APP_VERSION="$base-dev"
@@ -51,4 +59,4 @@ if [ -z "${LIBCLANG_PATH:-}" ]; then
 	for d in /usr/lib/llvm-*/lib; do [ -d "$d" ] && LIBCLANG_PATH=$d; done
 	[ -n "${LIBCLANG_PATH:-}" ] && export LIBCLANG_PATH
 fi
-make APP_VERSION="$APP_VERSION" MAKEROM="$MAKEROM" BANNERTOOL="$BANNERTOOL"
+make PROFILE="$PROFILE" APP_VERSION="$APP_VERSION" MAKEROM="$MAKEROM" BANNERTOOL="$BANNERTOOL"
