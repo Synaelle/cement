@@ -129,6 +129,9 @@ impl Server {
             if t != tab {
                 self.menu.tab = t;
                 self.menu.view = false;
+                if self.menu.confirm.take().is_some() {
+                    self.cia_msg.clear(); // a question about the other tab's selection
+                }
                 self.menu.browse.loaded = false; // listed again: files come and go over FTP
                 self.bottom_dirty = true;
             }
