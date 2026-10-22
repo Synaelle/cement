@@ -18,7 +18,7 @@
 
 2. Open it: the top screen shows the address, like `192.168.1.10` port `5000`
 3. Connect with any FTP client (FileZilla, WinSCP...), or with
-   [**Baguette**](https://github.com/Synaelle/chomp) 🥖
+   [**Baguette**](https://github.com/Synaelle/baguette) 🥖
 
 ## On the 3DS
 
@@ -44,7 +44,7 @@ Cement is tested on a New 3DS. It should run on an Old 3DS too, but that hasn't 
 
 ## Baguette + Cement
 
-[Baguette](https://github.com/Synaelle/chomp) (formerly Chomp) is the Windows app made for Cement: an explorer
+[Baguette](https://github.com/Synaelle/baguette) (formerly Chomp) is the Windows app made for Cement: an explorer
 with drag and drop, resumable transfers, Send to PC, and a command line for scripts. It
 uses a few extras Cement adds to FTP (`SITE STATUS`, `SITE BATCH`...) to show progress, time
 left, free space and the battery, to install CIAs and set the login from the PC. When it sends
@@ -78,7 +78,7 @@ Before 2.0, Cement was written in C (the 3DS app) and C++ (the Windows app and t
 line). That version is on the [legacy branch](../../tree/legacy), with its builds in the
 [1.2.28 release](../../releases/tag/v1.2.28) and its own build steps in its README (devkitPro
 for the 3DS app, MinGW-w64 or g++ for the PC apps). It's still supported, but it only gets bug
-fixes: new features go to this version and to [Baguette](https://github.com/Synaelle/chomp).
+fixes: new features go to this version and to [Baguette](https://github.com/Synaelle/baguette).
 
 ## Planned
 
