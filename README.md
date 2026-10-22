@@ -30,8 +30,6 @@ The bottom screen has three tabs (switch with L and R, or touch them):
 - **Settings**: the FTP login, turning the FTP server off, keeping the screens on, and turning
   the 3DS off after a while without use.
 
-**Cement Text**, the old console text version, is discontinued: 2.0.64 was its last release.
-
 ## Login
 
 With no login set, anyone on your Wi-Fi can connect (any user name and password works).
@@ -71,14 +69,6 @@ cargo install --locked cargo-3ds
 You also need `makerom`, `bannertool` and libclang, plus devkitPro or Docker (the script
 copies devkitARM out of the official image). `cargo build --release` instead makes a PC
 version that plays the 3DS (the SD card is a folder), handy for tests.
-
-## Legacy version (C and C++)
-
-Before 2.0, Cement was written in C (the 3DS app) and C++ (the Windows app and the command
-line). That version is on the [legacy branch](../../tree/legacy), with its builds in the
-[1.2.28 release](../../releases/tag/v1.2.28) and its own build steps in its README (devkitPro
-for the 3DS app, MinGW-w64 or g++ for the PC apps). It's still supported, but it only gets bug
-fixes: new features go to this version and to [Baguette](https://github.com/Synaelle/baguette).
 
 ## Planned
 
