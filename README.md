@@ -54,6 +54,12 @@ cargo install --locked cargo-3ds
 
 `./build.sh fast` builds quicker to try a change (no LTO, always a dev version).
 
+## Contributing
+
+Contributions are welcome, as long as they stay within what Cement is for (a fast FTP server and
+CIA installer for the 3DS) and don't break how Baguette and Cement talk to each other. For
+something bigger, open an issue first to talk it through.
+
 ## Credits
 
 Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One) and
