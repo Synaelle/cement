@@ -18,7 +18,7 @@
 
 2. Open it: the top screen shows the address, like `192.168.1.10` port `5000`
 3. Connect with any FTP client (FileZilla, WinSCP...), or with
-   [**Chomp**](https://github.com/Synaelle/chomp) 🍪
+   [**Baguette**](https://github.com/Synaelle/chomp) 🥖
 
 ## On the 3DS
 
@@ -27,25 +27,24 @@ The bottom screen has three tabs (switch with L and R, or touch them):
 - **Recent**: the CIA files sent since Cement started, and those in `/`, `/cia`, `/cias` and
   `/fbi`. Press A to install one (the file is deleted once it's installed).
 - **Browse**: the folders of the SD card, to install a CIA from anywhere. B goes back up.
-- **Settings**: the colour (or let Chomp pick it), the FTP login, turning the FTP server off,
+- **Settings**: the colour (or let Baguette pick it), the FTP login, turning the FTP server off,
   keeping the screens on, and turning the 3DS off after a while without use.
 
 **Cement Text**, the old console text version, is discontinued: 2.0.64 was its last release.
-A simpler version of Cement, Cement Lite, is on its way instead.
 
 ## Login
 
 With no login set, anyone on your Wi-Fi can connect (any user name and password works).
 To ask for a user name and password, set them in Settings on the 3DS (FTP login), or from
-Chomp. An empty user name goes back to no login. They're kept in
+Baguette. An empty user name goes back to no login. They're kept in
 `sdmc:/3ds/cement/settings.ini` as plain text, so it keeps out the curious, not a determined
 person with your SD card. FTP itself isn't encrypted either.
 
 Cement is tested on a New 3DS. It should run on an Old 3DS too, but that hasn't been tried on real hardware yet.
 
-## Chomp + Cement
+## Baguette + Cement
 
-[Chomp](https://github.com/Synaelle/chomp) is the Windows app made for Cement: an explorer
+[Baguette](https://github.com/Synaelle/chomp) (formerly Chomp) is the Windows app made for Cement: an explorer
 with drag and drop, resumable transfers, Send to PC, and a command line for scripts. It
 uses a few extras Cement adds to FTP (`SITE STATUS`, `SITE BATCH`...) to show progress, time
 left, free space and the battery, to install CIAs and set the login from the PC. When it sends
@@ -53,9 +52,9 @@ many small files at once, it packs them into one uncompressed bundle that Cement
 arrives, which is much faster than one file at a time. Cement works fine without it, with any
 FTP client.
 
-Chomp and Cement have their own version numbers, so what tells which Chomp goes with which
+Baguette and Cement have their own version numbers, so what tells which Baguette goes with which
 Cement is the protocol level of these extras, shown next to the version on the 3DS top screen
-and in Chomp. Cement 2.0 speaks protocol 3 (logins and bundles), and Chomp tells you when the
+and in Baguette. Cement 2.0 speaks protocol 3 (logins and bundles), and Baguette tells you when the
 Cement on your 3DS is too old for it.
 
 ## Build
@@ -79,7 +78,7 @@ Before 2.0, Cement was written in C (the 3DS app) and C++ (the Windows app and t
 line). That version is on the [legacy branch](../../tree/legacy), with its builds in the
 [1.2.28 release](../../releases/tag/v1.2.28) and its own build steps in its README (devkitPro
 for the 3DS app, MinGW-w64 or g++ for the PC apps). It's still supported, but it only gets bug
-fixes: new features go to this version and to [Chomp](https://github.com/Synaelle/chomp).
+fixes: new features go to this version and to [Baguette](https://github.com/Synaelle/chomp).
 
 ## Planned
 
