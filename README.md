@@ -23,14 +23,18 @@
 L and R switch the bottom screen's tabs:
 
 - **Recent**: the CIAs you sent, and those in `/`, `/cia`, `/cias` and `/fbi`
-- **Browse**: every folder of the SD card
-- **Settings**: FTP login, FTP server on or off, CIA details on the top screen, screens and auto off
+- **Browse**: every folder of the SD card. A on an image (PNG, JPEG or BMP, like Luma's
+  screenshots) shows it on the top screen
+- **Settings**: FTP login, FTP server on or off, CIA details on the top screen, file protection,
+  screens and auto off. The top screen tells what the selected one does
 
 The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.
-A installs it (and deletes the file once it's installed), X deletes it.
+A installs it (and deletes the file once it's installed). X deletes the selected file or folder,
+pressed twice. Like in Baguette, `/Nintendo 3DS`, `/boot.firm`, `/luma`, `/gm9` and `/boot.3dsx`
+can't be deleted while "Protect important 3DS files" is on.
 
-With no login set, anyone on your Wi-Fi can connect. The login is stored as plain text on the SD
-card.
+With no login set, anyone on your Wi-Fi can connect. The password isn't kept on the SD card, only a
+salted hash of it.
 
 ## Baguette
 
