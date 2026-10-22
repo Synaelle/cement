@@ -52,8 +52,7 @@ cargo install --locked cargo-3ds
 ./build.sh
 ```
 
-`./build.sh fast` builds quicker to try a change (no LTO, always a dev version), and
-`cargo build --release` makes a PC version for tests, where the SD card is a folder.
+`./build.sh fast` builds quicker to try a change (no LTO, always a dev version).
 
 ## Credits
 
