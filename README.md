@@ -4,7 +4,7 @@
 
 <h1 align="center">Cement</h1>
 
-<p align="center">A fast FTP server for your 3DS's SD card 🧱</p>
+<p align="center">FTP server, file browser and CIA installer for your 3DS</p>
 
 > The names and the design are a work in progress, nothing here is final yet.
 
