@@ -4,8 +4,8 @@
 // - Recent: the CIA files sent since Cement started, or found at startup
 // - Browse: the SD card's folders, to open them and install a CIA from them
 // On both, X deletes the selected CIA file (pressed twice: it can't be undone).
-// - Settings: the login, the FTP server, the screens turning off, the console
-//   turning off when idle (picking the colour is off until the redesign is done)
+// - Settings: the login, the FTP server, the CIA details on the top screen, the
+//   screens turning off, the console turning off when idle (picking the colour is off until the redesign is done)
 // The state and the buttons are handled here; ui/gfx draws them and says what
 // each touched spot is (Ui::hit).
 
@@ -37,11 +37,12 @@ impl Tab {
 pub enum Row {
     Login,
     Ftp,
+    CiaInfo,
     ScreenIdle,
     AutoOff,
 }
 
-pub const ROWS: [Row; 4] = [Row::Login, Row::Ftp, Row::ScreenIdle, Row::AutoOff];
+pub const ROWS: [Row; 5] = [Row::Login, Row::Ftp, Row::CiaInfo, Row::ScreenIdle, Row::AutoOff];
 
 /// what a touch landed on (the drawing records where each one is)
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -127,6 +128,18 @@ impl Server {
             Tab::Recent => self.recent_input(down, tap),
             Tab::Browse => self.browse_input(down, tap),
             Tab::Settings => self.settings_input(down, tap),
+        }
+    }
+
+    /// the CIA file selected in Recent or Browse, and its size
+    pub fn selected_cia(&self) -> Option<(String, u64)> {
+        match self.menu.tab {
+            Tab::Recent => self.cias.get(self.cia_sel).map(|c| (c.path.clone(), c.size)),
+            Tab::Browse => {
+                let b = &self.menu.browse;
+                b.entries.get(b.sel).filter(|e| !e.dir && is_cia(&e.name)).map(|e| (join(&b.dir, &e.name), e.size))
+            }
+            Tab::Settings => None,
         }
     }
 
@@ -299,6 +312,10 @@ impl Server {
                     self.status = "Starting...".into();
                     self.wake_net();
                 }
+                self.save_prefs();
+            }
+            Row::CiaInfo => {
+                self.prefs.cia_info = !self.prefs.cia_info;
                 self.save_prefs();
             }
             Row::ScreenIdle => {

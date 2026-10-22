@@ -247,7 +247,7 @@ impl Server {
         }
     }
 
-    /// the login, the FTP server, the screens turning off, the console turning off
+    /// the login, the FTP server, the CIA details, the screens and the console turning off
     fn paint_settings(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
         self.bottom_stack(c, b, &[(Button::A, "change"), (Button::Dpad, "")]);
@@ -263,6 +263,7 @@ impl Server {
             let label = match row {
                 Row::Login => "FTP login",
                 Row::Ftp => "FTP server",
+                Row::CiaInfo => "CIA details on the top screen",
                 Row::ScreenIdle => "Screens off when idle",
                 Row::AutoOff => "Turn the 3DS off when idle",
             };
@@ -270,6 +271,7 @@ impl Server {
             let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
             match row {
                 Row::Ftp => toggle(c, r, cy, self.prefs.ftp, pal),
+                Row::CiaInfo => toggle(c, r, cy, self.prefs.cia_info, pal),
                 Row::ScreenIdle => toggle(c, r, cy, self.prefs.screen_idle, pal),
                 Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
                 Row::AutoOff => match self.prefs.auto_off {

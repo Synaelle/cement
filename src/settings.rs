@@ -77,11 +77,12 @@ pub struct Prefs {
     pub ftp: bool,         // the FTP server runs
     pub screen_idle: bool, // the screens turn off after an idle minute
     pub auto_off: u32,     // minutes without use before the console turns off, 0 = never
+    pub cia_info: bool,    // the selected CIA's details on the top screen
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { ftp: true, screen_idle: true, auto_off: 0 }
+        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true }
     }
 }
 
@@ -102,6 +103,7 @@ pub fn load() -> Settings {
         ftp: flag("ftp", d.ftp),
         screen_idle: flag("screen_idle", d.screen_idle),
         auto_off: auto_off.unwrap_or(d.auto_off),
+        cia_info: flag("cia_info", d.cia_info),
     };
     Settings { accent, login, prefs }
 }
@@ -113,6 +115,7 @@ pub fn save_prefs(p: &Prefs) -> bool {
         ("ftp", Some(b(p.ftp))),
         ("screen_idle", Some(b(p.screen_idle))),
         ("auto_off", Some(&auto_off)),
+        ("cia_info", Some(b(p.cia_info))),
     ])
 }
 

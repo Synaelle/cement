@@ -62,10 +62,11 @@ impl Server {
         Some(Bottom { dirty, show_msg, busy })
     }
 
-    /// every 500 ms: the transfer rate and the status line
+    /// every 500 ms (or when the selected CIA changed): the transfer rate and the status line
     fn top(&mut self) -> Option<Top> {
         let now = sys::now_ms();
-        if now.saturating_sub(self.last_time) < 500 {
+        let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
+        if now.saturating_sub(self.last_time) < 500 && !self.ui.info_stale(&sel) {
             return None;
         }
 

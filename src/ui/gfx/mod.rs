@@ -14,9 +14,10 @@ use super::palette::Palette;
 use crate::settings::DEFAULT_ACCENT;
 
 use super::{Bottom, Top};
+use crate::install::{CiaInfo, ICON, cia_info, version_text};
 use crate::server::{Mode, progress_of};
 use crate::sys;
-use crate::util::{format_size, ip_text};
+use crate::util::{base_name, format_size, ip_text};
 use crate::{PROTOCOL, Server, VERSION, battery_text};
 
 // fixed whatever the accent: white on accent, install success and error
@@ -88,6 +89,7 @@ pub struct Ui {
     hits: Vec<bottom::Hit>, // where the bottom screen's tabs, rows and swatches are
     pal: Palette,         // the colours for the accent below
     pal_for: u32,
+    info: Option<(String, u64, Option<CiaInfo>)>, // the selected CIA's path, size and details
 }
 
 impl Ui {
@@ -100,6 +102,7 @@ impl Ui {
             hits: Vec::new(),
             pal: Palette::for_accent(crate::settings::DEFAULT_ACCENT),
             pal_for: crate::settings::DEFAULT_ACCENT,
+            info: None,
         }
     }
 
@@ -115,6 +118,15 @@ impl Ui {
     pub fn hit(&self, x: u16, y: u16) -> Option<crate::menu::Tap> {
         let (x, y) = (x as f32, y as f32);
         self.hits.iter().find(|h| x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1).map(|h| h.tap)
+    }
+
+    /// whether the CIA details drawn are for another file than `sel` (or none)
+    pub fn info_stale(&self, sel: &Option<(String, u64)>) -> bool {
+        match (&self.info, sel) {
+            (None, None) => false,
+            (Some((p, s, _)), Some((q, t))) => p != q || s != t,
+            _ => true,
+        }
     }
 
     /// after the HOME menu or sleep: the framebuffers hold something else
@@ -264,9 +276,76 @@ fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: C
     x + w.round()
 }
 
+/// what installing the CIA would do to the installed copy
+fn install_kind(info: &CiaInfo) -> &'static str {
+    match (info.installed, info.version) {
+        (None, _) => "new",
+        (Some(_), None) => "reinstall",
+        (Some(old), Some(new)) if new > old => "update",
+        (Some(old), Some(new)) if new == old => "reinstall",
+        _ => "downgrade",
+    }
+}
+
+const TICKET_H: f32 = 42.0;
+
+/// the selected CIA under the address: its icon, title and publisher, then
+/// version, size, where it installs and its title ID, and what installing it does
+fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, info: Option<&CiaInfo>, pal: &Palette) {
+    c.card(x, y, w, TICKET_H, 9.0, pal.card, pal.border);
+    let ix = x + 5.0;
+    let iy = (y + (TICKET_H - ICON as f32) / 2.0).round();
+    match info.and_then(|i| i.icon.as_ref()) {
+        Some(px) => c.image(ix, iy, ICON, px, 6.0),
+        None => c.round(ix, iy, ICON as f32, ICON as f32, 6.0, pal.track),
+    }
+    let (l, mut r) = (ix + ICON as f32 + 8.0, x + w - 10.0);
+    if let Some(info) = info {
+        let kind = install_kind(info);
+        let p = &NUNITO_XBOLD_11;
+        let (kw, kh) = (p.width(kind, 0.0) + 14.0, p.height + 4.0);
+        let accent = kind == "new" || kind == "update";
+        let ky = (y + (TICKET_H - kh) / 2.0).round();
+        c.pill(r - kw, ky, kw, kh, if accent { pal.accent } else { pal.track });
+        c.text(p, r - kw + 7.0, ky + 2.0 + p.ascent, kind, if accent { WHITE } else { pal.soft }, 0.0);
+        r -= kw + 8.0;
+    }
+    let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
+    let top = (y + (TICKET_H - f.height - d.height) / 2.0).round();
+    let title = info.map_or(base_name(path), |i| i.title.as_str());
+    let title = f.fit(title, r - l);
+    let end = c.text(f, l, top + f.ascent, &title, pal.text, 0.0);
+    if let Some(i) = info.filter(|i| !i.publisher.is_empty() && end + 6.0 < r - 20.0) {
+        let by = d.fit(&format!("by {}", i.publisher), r - end - 6.0);
+        c.text(d, end + 6.0, top + f.ascent, &by, pal.dim, 0.0);
+    }
+    let detail = match info {
+        Some(i) => {
+            let mut parts = Vec::new();
+            if let Some(v) = i.version {
+                parts.push(version_text(v));
+            }
+            parts.push(format_size(size));
+            parts.push(if i.nand { "NAND" } else { "SD" }.to_string());
+            parts.push(format!("{:016X}", i.id));
+            parts.join(" · ")
+        }
+        None => format!("{} · not a CIA Cement can read", format_size(size)),
+    };
+    c.text(d, l, top + f.height + d.ascent, &d.fit(&detail, r - l), pal.dim, 0.0);
+}
+
 impl Server {
     pub(super) fn draw_top(&mut self, t: &Top) {
         self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
+        let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
+        if self.ui.info_stale(&sel) {
+            // read once per selection: a few KB from the SD card
+            self.ui.info = sel.map(|(path, size)| {
+                let info = cia_info(&path);
+                (path, size, info)
+            });
+        }
         let Some(mut scr) = self.ui.top.take() else { return };
         self.paint_top(&mut scr.c, t);
         scr.present();
@@ -338,21 +417,35 @@ impl Server {
         x = c.text(f, x, y + f.ascent, ":", pal.accent, 1.0);
         c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
-        let f = &NUNITO_BOLD_11;
         // the buttons as small keycaps, then what they do, one per line; a low
-        // battery warning on the right of them, one line each too
+        // battery warning on the right of them, one line each too. With the CIA
+        // details on, START goes up to the title row to leave them the room.
         let warning = ["Battery low: no new transfers", "or installs until you charge"];
-        for (i, hint) in [Some((Button::Start, "exit")), None].into_iter().enumerate() {
-            if let Some((button, what)) = hint {
-                let gy = (y + (f.height - GLYPH) / 2.0).round();
-                let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
-                c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
+        let f = &NUNITO_BOLD_11;
+        let ticket = self.prefs.cia_info.then_some(self.ui.info.as_ref()).flatten();
+        let start = if self.prefs.cia_info { None } else { Some((Button::Start, "exit")) };
+        if self.prefs.cia_info {
+            let w = glyph_size(Button::Start).0 + 4.0 + f.width("exit", 0.0);
+            let tx = right - pw - 10.0 - w;
+            let ty = (py + (ph - GLYPH) / 2.0).round();
+            let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
+            c.text(f, x, ty + ((GLYPH - f.height) / 2.0).round() + f.ascent, "exit", pal.dim, 0.0);
+        }
+        if let (Some((path, size, info)), false) = (ticket, t.low) {
+            draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
+        } else if start.is_some() || t.low {
+            for (i, hint) in [start, None].into_iter().enumerate() {
+                if let Some((button, what)) = hint {
+                    let gy = (y + (f.height - GLYPH) / 2.0).round();
+                    let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
+                    c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
+                }
+                if t.low {
+                    let w = &NUNITO_XBOLD_12;
+                    c.text_right(w, right, y + (f.height - w.height) / 2.0 + w.ascent, warning[i], pal.highlight);
+                }
+                y += f.height.max(GLYPH) + 3.0;
             }
-            if t.low {
-                let w = &NUNITO_XBOLD_12;
-                c.text_right(w, right, y + (f.height - w.height) / 2.0 + w.ascent, warning[i], pal.highlight);
-            }
-            y += f.height.max(GLYPH) + 3.0;
         }
 
         // transfer card

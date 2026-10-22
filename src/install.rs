@@ -254,6 +254,122 @@ fn cia_title(cia: &[u8]) -> Option<(u64, Option<u16>)> {
     Some((id, version))
 }
 
+/// what the top screen shows about the selected CIA
+pub struct CiaInfo {
+    pub title: String,     // the SMDH short title, or the file name
+    pub publisher: String, // empty when the CIA has no SMDH
+    pub id: u64,
+    pub version: Option<u16>,
+    pub installed: Option<u16>, // the version installed now, None when it isn't
+    pub nand: bool,
+    pub icon: Option<Vec<u32>>, // ICON x ICON pixels, 0xRRGGBB
+}
+
+/// the drawn icon size: the 48 px SMDH icon scaled down
+pub const ICON: usize = 32;
+
+/// the CIA header's size, cert chain, ticket, TMD and meta sizes, and the
+/// content size; each section starts 64-byte aligned
+fn cia_sections(h: &[u8]) -> Option<([usize; 5], u64)> {
+    if h.len() < 0x20 {
+        return None;
+    }
+    let word = |i: usize| u32::from_le_bytes(h[i * 4..i * 4 + 4].try_into().unwrap()) as usize;
+    let content = u64::from_le_bytes(h[0x18..0x20].try_into().unwrap());
+    Some(([word(0), word(2), word(3), word(4), word(5)], content))
+}
+
+/// UTF-16LE up to the first 0; None when the font can't draw it (Latin-1 only)
+fn utf16(b: &[u8]) -> Option<String> {
+    let units = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&u| u != 0);
+    let s: String = char::decode_utf16(units).collect::<Result<_, _>>().ok()?;
+    let s = s.trim().to_string();
+    (!s.is_empty() && s.chars().all(|c| (c as u32) < 0x100 && !c.is_control())).then_some(s)
+}
+
+/// the 48 x 48 RGB565 SMDH icon (8 x 8 tiles, Z-order inside them), scaled
+/// to ICON x ICON by averaging
+fn icon(raw: &[u8]) -> Vec<u32> {
+    const N: usize = 48;
+    let mut src = vec![[0f32; 3]; N * N];
+    for (i, px) in raw.chunks_exact(2).take(N * N).enumerate() {
+        let v = u16::from_le_bytes([px[0], px[1]]) as u32;
+        let (tile, k) = (i / 64, i % 64);
+        let x = (tile % (N / 8)) * 8 + ((k & 1) | ((k >> 1) & 2) | ((k >> 2) & 4));
+        let y = (tile / (N / 8)) * 8 + (((k >> 1) & 1) | ((k >> 2) & 2) | ((k >> 3) & 4));
+        let (r, g, b) = ((v >> 11) & 31, (v >> 5) & 63, v & 31);
+        src[y * N + x] = [(r * 255 / 31) as f32, (g * 255 / 63) as f32, (b * 255 / 31) as f32];
+    }
+    // how much of source pixel i falls in destination pixel d, along one axis
+    let scale = N as f32 / ICON as f32;
+    let weight = |d: usize, i: usize| {
+        let (a, b) = (d as f32 * scale, (d + 1) as f32 * scale);
+        ((i + 1) as f32).min(b) - (i as f32).max(a)
+    };
+    let mut out = Vec::with_capacity(ICON * ICON);
+    for dy in 0..ICON {
+        for dx in 0..ICON {
+            let mut sum = [0f32; 3];
+            let (y0, x0) = ((dy as f32 * scale) as usize, (dx as f32 * scale) as usize);
+            for y in y0..(y0 + 2).min(N) {
+                for x in x0..(x0 + 2).min(N) {
+                    let w = weight(dy, y).max(0.0) * weight(dx, x).max(0.0);
+                    for c in 0..3 {
+                        sum[c] += src[y * N + x][c] * w;
+                    }
+                }
+            }
+            let ch = |v: f32| ((v / (scale * scale)).round() as u32).min(255);
+            out.push(ch(sum[0]) << 16 | ch(sum[1]) << 8 | ch(sum[2]));
+        }
+    }
+    out
+}
+
+/// the title, publisher and icon (from the SMDH in the CIA's meta section)
+/// and the title ID and version (from the TMD); None when it isn't a CIA
+pub fn cia_info(path: &str) -> Option<CiaInfo> {
+    let f = File::open_read(path)?;
+    let mut head = vec![0u8; 0x4000];
+    let n = f.read_at(0, &mut head)?;
+    let (id, version) = cia_title(&head[..n])?;
+    let name = base_name(path);
+    let mut info = CiaInfo {
+        title: name.strip_suffix(".cia").or(name.strip_suffix(".CIA")).unwrap_or(name).to_string(),
+        publisher: String::new(),
+        id,
+        version,
+        installed: None,
+        nand: title_destination(id) == sys::MEDIA_NAND,
+        icon: None,
+    };
+    info.installed = sys::am_title_version(title_destination(id), id);
+    // the meta section: 0x400 bytes of dependencies and such, then the SMDH
+    let (sizes, content) = cia_sections(&head[..n])?;
+    let align = |v: u64| (v + 0x3F) & !0x3F;
+    let meta = sizes[..4].iter().map(|&s| align(s as u64)).sum::<u64>() + align(content);
+    if sizes[4] >= 0x400 + 0x36C0 {
+        let mut smdh = vec![0u8; 0x36C0];
+        if f.read_at(meta + 0x400, &mut smdh) == Some(smdh.len()) && &smdh[..4] == b"SMDH" {
+            // English first, then any language the font can draw
+            let titles = |lang: usize| {
+                let t = &smdh[8 + lang * 0x200..][..0x200];
+                utf16(&t[..0x80]).map(|short| (short, utf16(&t[0x180..0x200]).unwrap_or_default()))
+            };
+            if let Some((title, publisher)) = [1].into_iter().chain(0..16).find_map(titles) {
+                (info.title, info.publisher) = (title, publisher);
+            }
+            info.icon = Some(icon(&smdh[0x24C0..0x24C0 + 48 * 48 * 2]));
+        }
+    }
+    Some(info)
+}
+
+/// "v1.2.0" from a title version (6 bits minor, 4 bits micro)
+pub fn version_text(v: u16) -> String {
+    format!("v{}.{}.{}", v >> 10, (v >> 4) & 0x3F, v & 0xF)
+}
+
 /// The installed copy has to go first only for a reinstall or a downgrade (AM
 /// refuses those over it, D8E08027). An update or a new title installs over it
 /// directly: the delete is slow, so it is skipped whenever it can be.

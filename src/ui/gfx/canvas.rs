@@ -143,6 +143,19 @@ impl Canvas {
         }
     }
 
+    /// a square image of `size` pixels (0xRRGGBB) at whole pixels, its corners rounded by `r`
+    pub fn image(&mut self, x: f32, y: f32, size: usize, px: &[u32], r: f32) {
+        let (x, y) = (x.round() as i32, y.round() as i32);
+        let s = size as f32;
+        for (i, &c) in px.iter().enumerate().take(size * size) {
+            let (fx, fy) = ((i % size) as f32 + 0.5, (i / size) as f32 + 0.5);
+            // distance into the nearest corner's quarter circle, if in one
+            let (dx, dy) = ((r - fx).max(fx - (s - r)), (r - fy).max(fy - (s - r)));
+            let cover = if dx > 0.0 && dy > 0.0 { ellipse_cover(dx, dy, r, r) } else { 1.0 };
+            self.blend(x + (i % size) as i32, y + (i / size) as i32, c, (cover * 255.0 + 0.5) as u32);
+        }
+    }
+
     /// right-aligned at `right`
     pub fn text_right(&mut self, f: &Font, right: f32, y: f32, s: &str, c: Color) {
         let w = f.width(s, 0.0);
