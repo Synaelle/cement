@@ -11,54 +11,35 @@
 ## Use it
 
 1. Install `Cement.cia` from the [latest release](https://github.com/Synaelle/cement/releases/latest),
-   or scan this in FBI (Remote Install, then Scan QR Code). You can also put `Cement.3dsx` in
-   `/3ds/` for the Homebrew Launcher.
+   or scan this in FBI (Remote Install, then Scan QR Code):
 
    <img src="meta/qr.png" width="160" alt="QR code for Cement.cia">
 
-2. Open it: the top screen shows the address, like `192.168.1.10` port `5000`
-3. Connect with any FTP client (FileZilla, WinSCP...), or with
-   [**Baguette**](https://github.com/Synaelle/baguette) 🥖
+2. Open it and connect to the address shown on the top screen (like `192.168.1.10:5000`) with
+   any FTP client, or with [**Baguette**](https://github.com/Synaelle/baguette) 🥖
 
 ## On the 3DS
 
-The bottom screen has three tabs (switch with L and R, or touch them):
+L and R switch the bottom screen's tabs:
 
-- **Recent**: the CIA files sent since Cement started, and those in `/`, `/cia`, `/cias` and
-  `/fbi`. Press A to install one (the file is deleted once it's installed).
-- **Browse**: the folders of the SD card, to install a CIA from anywhere. B goes back up.
-- **Settings**: the FTP login, turning the FTP server off, keeping the screens on, and turning
-  the 3DS off after a while without use.
+- **Recent**: the CIAs you sent, and those in `/`, `/cia`, `/cias` and `/fbi`
+- **Browse**: every folder of the SD card
+- **Settings**: FTP login, FTP server on or off, screens and auto off
 
-## Login
+A installs the selected CIA (and deletes the file once it's installed), X deletes it.
 
-With no login set, anyone on your Wi-Fi can connect (any user name and password works).
-To ask for a user name and password, set them in Settings on the 3DS (FTP login), or from
-Baguette. An empty user name goes back to no login. They're kept in
-`sdmc:/3ds/cement/settings.ini` as plain text, so it keeps out the curious, not a determined
-person with your SD card. FTP itself isn't encrypted either.
+With no login set, anyone on your Wi-Fi can connect. The login is stored as plain text on the SD
+card.
 
-Cement is tested on a New 3DS. It should run on an Old 3DS too, but that hasn't been tried on real hardware yet.
+## Baguette
 
-## Baguette + Cement
-
-[Baguette](https://github.com/Synaelle/baguette) (formerly Chomp) is the Windows app made for Cement: an explorer
-with drag and drop, resumable transfers, Send to PC, and a command line for scripts. It
-uses a few extras Cement adds to FTP (`SITE STATUS`, `SITE BATCH`...) to show progress, time
-left, free space and the battery, to install CIAs and set the login from the PC. When it sends
-many small files at once, it packs them into one uncompressed bundle that Cement unpacks as it
-arrives, which is much faster than one file at a time. Cement works fine without it, with any
-FTP client.
-
-Baguette and Cement have their own version numbers, so what tells which Baguette goes with which
-Cement is the protocol level of these extras, shown next to the version on the 3DS top screen
-and in Baguette. Cement 2.0 speaks protocol 3 (logins and bundles), and Baguette tells you when the
-Cement on your 3DS is too old for it.
+[Baguette](https://github.com/Synaelle/baguette) is the Windows app made for Cement. It shows
+transfer progress and the 3DS battery, installs CIAs from the PC and sends many small files much
+faster. Cement works fine with any other FTP client too.
 
 ## Build
 
-Cement is written in Rust ([ctru-rs](https://github.com/rust3ds/ctru-rs) over libctru).
-On Linux or WSL:
+On Linux or WSL, with devkitPro (or Docker), `makerom`, `bannertool` and libclang:
 
 ```sh
 rustup toolchain install nightly -c rust-src
@@ -66,23 +47,15 @@ cargo install --locked cargo-3ds
 ./build.sh
 ```
 
-You also need `makerom`, `bannertool` and libclang, plus devkitPro or Docker (the script
-copies devkitARM out of the official image). `cargo build --release` instead makes a PC
-version that plays the 3DS (the SD card is a folder), handy for tests.
-
-## Planned
-
-- Updating from within the app
-- Versions for other consoles
+`cargo build --release` makes a PC version for tests, where the SD card is a folder.
 
 ## Credits
 
-The fonts are [Fredoka](https://github.com/hafontia/Fredoka-One) and
-[Nunito](https://github.com/googlefonts/nunito) (SIL Open Font License), and the button glyphs
-come from [Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0). Thanks!
+Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One) and
+[Nunito](https://github.com/googlefonts/nunito) (SIL Open Font License). Button glyphs:
+[Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0).
 
 ## License
 
-GPL-3.0 or later, see [LICENSE](LICENSE). Versions before 1.2.32 were MIT.
-The CIA installer follows [FBI](https://github.com/Steveice10/FBI) (MIT). Its notice and the
-licenses of the libraries built into the 3DS app are in [NOTICE](NOTICE).
+GPL-3.0 or later, see [LICENSE](LICENSE). The CIA installer follows
+[FBI](https://github.com/Steveice10/FBI) (MIT), see [NOTICE](NOTICE).
