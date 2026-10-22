@@ -20,7 +20,7 @@ use crate::sys;
 use crate::util::{base_name, format_size, ip_text};
 use crate::{PROTOCOL, Server, VERSION, battery_text};
 
-// fixed whatever the accent: white on accent, install success and error
+// fixed whatever the accent: the switches' knob, install success and error
 const WHITE: Color = 0xffffff;
 const GOOD: Color = 0x8ccf9a;
 const BAD: Color = 0xe5484d;
@@ -307,7 +307,7 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
         let accent = kind == "new" || kind == "update";
         let ky = (y + (TICKET_H - kh) / 2.0).round();
         c.pill(r - kw, ky, kw, kh, if accent { pal.accent } else { pal.track });
-        c.text(p, r - kw + 7.0, ky + 2.0 + p.ascent, kind, if accent { WHITE } else { pal.soft }, 0.0);
+        c.text(p, r - kw + 7.0, ky + 2.0 + p.ascent, kind, if accent { pal.on_accent } else { pal.soft }, 0.0);
         r -= kw + 8.0;
     }
     let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
@@ -399,7 +399,7 @@ impl Server {
         let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
         let py = y + (f.height - ph) / 2.0;
         c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
-        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { WHITE } else { pal.highlight }, 0.0);
+        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { pal.on_accent } else { pal.highlight }, 0.0);
         y += f.height + 9.0;
 
         // address

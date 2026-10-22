@@ -96,7 +96,7 @@ impl Server {
             c.pill(x, y, w, h, if on { pal.accent } else { pal.track });
             let name = tab.name();
             let tx = x + ((w - f.width(name, 0.0)) / 2.0).round();
-            c.text(f, tx, y + ((h - f.height) / 2.0).round() + f.ascent, name, if on { WHITE } else { pal.soft }, 0.0);
+            c.text(f, tx, y + ((h - f.height) / 2.0).round() + f.ascent, name, if on { pal.on_accent } else { pal.soft }, 0.0);
             hits.push(Hit { x0: x, y0: 0.0, x1: x + w, y1: y + h + 3.0, tap: Tap::Tab(tab) });
         }
     }
@@ -109,7 +109,7 @@ impl Server {
         let hy = 230.0 - (f.height + 6.0);
         let mut x = LEFT;
         for (k, &(button, label)) in hints.iter().enumerate() {
-            let (bg, fg) = if k == 0 { (pal.accent, WHITE) } else { (pal.track, pal.soft) };
+            let (bg, fg) = if k == 0 { (pal.accent, pal.on_accent) } else { (pal.track, pal.soft) };
             x = hint(c, x, hy, button, label, bg, fg, pal) + 5.0;
         }
         let mut bottom = hy - 5.0;
