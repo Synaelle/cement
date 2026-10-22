@@ -24,9 +24,10 @@ L and R switch the bottom screen's tabs:
 
 - **Recent**: the CIAs you sent, and those in `/`, `/cia`, `/cias` and `/fbi`
 - **Browse**: every folder of the SD card
-- **Settings**: FTP login, FTP server on or off, screens and auto off
+- **Settings**: FTP login, FTP server on or off, CIA details on the top screen, screens and auto off
 
-A installs the selected CIA (and deletes the file once it's installed), X deletes it.
+The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.
+A installs it (and deletes the file once it's installed), X deletes it.
 
 With no login set, anyone on your Wi-Fi can connect. The login is stored as plain text on the SD
 card.
