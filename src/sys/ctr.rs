@@ -19,6 +19,7 @@ pub const KEY_START: u32 = c::KEY_START;
 pub const KEY_UP: u32 = c::KEY_UP; // D-pad or circle pad
 pub const KEY_DOWN: u32 = c::KEY_DOWN;
 pub const KEY_B: u32 = c::KEY_B;
+pub const KEY_X: u32 = c::KEY_X;
 pub const KEY_L: u32 = c::KEY_L;
 pub const KEY_R: u32 = c::KEY_R;
 pub const KEY_LEFT: u32 = c::KEY_LEFT;

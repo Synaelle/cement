@@ -155,7 +155,11 @@ impl Server {
         let top = CONTENT + s.height + 4.0;
 
         let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
-        let bottom = self.bottom_stack(c, b, &[(Button::A, first), (Button::Dpad, "")]);
+        let mut hints = vec![(Button::A, first), (Button::Dpad, "")];
+        if !self.cias.is_empty() {
+            hints.push((Button::X, "delete"));
+        }
+        let bottom = self.bottom_stack(c, b, &hints);
         if self.cias.is_empty() && self.inst.is_none() {
             empty(c, top, bottom, "No CIAs yet: upload one over FTP", pal);
             return;
@@ -206,6 +210,9 @@ impl Server {
             hints.push((Button::B, "back"));
         }
         hints.push((Button::Dpad, ""));
+        if br.entries.get(br.sel).is_some_and(|e| !e.dir && is_cia(&e.name)) {
+            hints.push((Button::X, "delete"));
+        }
         let bottom = self.bottom_stack(c, b, &hints);
         if br.failed {
             empty(c, top, bottom, "This folder can't be opened", pal);

@@ -3,6 +3,7 @@
 // The bottom screen's tabs, switched with L and R or by touching them:
 // - Recent: the CIA files sent since Cement started, or found at startup
 // - Browse: the SD card's folders, to open them and install a CIA from them
+// On both, X deletes the selected CIA file (pressed twice: it can't be undone).
 // - Settings: the login, the FTP server, the screens turning off, the console
 //   turning off when idle (picking the colour is off until the redesign is done)
 // The state and the buttons are handled here; ui/gfx draws them and says what
@@ -70,8 +71,12 @@ const MAX_ENTRIES: usize = 1000;
 pub struct Menu {
     pub tab: Tab,
     pub browse: Browser,
-    pub row: usize, // Settings
+    pub row: usize,                     // Settings
+    confirm: Option<(String, u64)>,     // a CIA X was pressed on once, and until when a second X deletes it
 }
+
+/// how long a second X has to come to delete the file
+const CONFIRM_MS: u64 = 4000;
 
 impl Menu {
     pub fn new() -> Menu {
@@ -79,6 +84,7 @@ impl Menu {
             tab: Tab::Recent,
             browse: Browser { dir: "/".into(), entries: Vec::new(), sel: 0, loaded: false, failed: false },
             row: 0,
+            confirm: None,
         }
     }
 }
@@ -124,7 +130,38 @@ impl Server {
         }
     }
 
+    /// X on a CIA: the first press asks, a second one within CONFIRM_MS deletes it
+    fn ask_delete(&mut self, path: String) {
+        let now = sys::now_ms();
+        let name = base_name(&path).to_string();
+        self.bottom_dirty = true;
+        if self.inst.as_ref().is_some_and(|i| i.path == path) || self.inst_queue.as_deref() == Some(path.as_str()) {
+            self.cia_message(format!("{name} is being installed"));
+            return;
+        }
+        let again = self.menu.confirm.as_ref().is_some_and(|(p, until)| *p == path && now < *until);
+        if !again {
+            self.cia_message(format!("Press X again to delete {name}"));
+            self.menu.confirm = Some((path, now + CONFIRM_MS));
+            return;
+        }
+        self.menu.confirm = None;
+        if sys::delete_file(&path) {
+            self.cia_remove(&path);
+            self.menu.browse.loaded = false;
+            self.cia_message(format!("Deleted {name}"));
+        } else {
+            self.cia_message(format!("{name} couldn't be deleted"));
+        }
+    }
+
     fn recent_input(&mut self, down: u32, tap: Option<Tap>) {
+        if down & sys::KEY_X != 0 {
+            if let Some(cia) = self.cias.get(self.cia_sel) {
+                self.ask_delete(cia.path.clone());
+            }
+            return;
+        }
         match tap {
             // a touch selects a row, a second one on it installs
             Some(Tap::Item(i)) if i < self.cias.len() && self.inst.is_none() => {
@@ -221,6 +258,15 @@ impl Server {
             }
         } else if down & sys::KEY_A != 0 {
             self.browse_activate();
+        } else if down & sys::KEY_X != 0 {
+            match b.entries.get(b.sel) {
+                Some(e) if !e.dir && is_cia(&e.name) => {
+                    let path = join(&b.dir, &e.name);
+                    self.ask_delete(path);
+                }
+                Some(_) => self.cia_message("Only CIA files can be deleted here".into()),
+                None => {}
+            }
         } else {
             return;
         }

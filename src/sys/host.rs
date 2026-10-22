@@ -6,7 +6,7 @@
 // - a CIA "install" is written to the file named by CEMENT_AMOUT, and
 //   CEMENT_INSTALLED="<title id hex>:<version>,..." lists the titles already installed
 //   (deleting one takes CEMENT_DELETE_MS, as it can on the console)
-// - keys come from the file named by CEMENT_KEYS ("A", "B", "L", "R", "UP",
+// - keys come from the file named by CEMENT_KEYS ("A", "B", "X", "L", "R", "UP",
 //   "DOWN", "LEFT", "RIGHT", "SELECT", or "TOUCH <x> <y>" on the bottom screen)
 // - turning the console off (auto off) is logged as "[shim] shutdown"
 // - the software keyboard answers with the lines of the file named by
@@ -34,6 +34,7 @@ pub const KEY_START: u32 = 1 << 3;
 pub const KEY_UP: u32 = 1 << 6;
 pub const KEY_DOWN: u32 = 1 << 7;
 pub const KEY_B: u32 = 1 << 1;
+pub const KEY_X: u32 = 1 << 10;
 pub const KEY_L: u32 = 1 << 9;
 pub const KEY_R: u32 = 1 << 8;
 pub const KEY_LEFT: u32 = 1 << 5;
@@ -109,7 +110,7 @@ pub fn keys_down() -> u32 {
             return key_bit;
         }
     }
-    for (name, key_bit) in [("A", KEY_A), ("B", KEY_B), ("L", KEY_L), ("R", KEY_R)] {
+    for (name, key_bit) in [("A", KEY_A), ("B", KEY_B), ("X", KEY_X), ("L", KEY_L), ("R", KEY_R)] {
         if key == name {
             return key_bit;
         }

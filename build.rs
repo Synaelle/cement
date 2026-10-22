@@ -51,6 +51,7 @@ const ICONS: &[(&str, &str, usize)] = &[
     ("BTN_A", "switch_button_a.svg", 15),
     ("BTN_DPAD", "switch_dpad_vertical.svg", 17),
     ("BTN_B", "switch_button_b.svg", 15),
+    ("BTN_X", "switch_button_x.svg", 15),
     ("BTN_L", "switch_button_l.svg", 15),
     ("BTN_R", "switch_button_r.svg", 15),
 ];

@@ -196,6 +196,7 @@ fn bite_dot(c: &mut Canvas, x: f32, y: f32, pal: &Palette) {
 enum Button {
     A,
     B,
+    X,
     Dpad,
     Start,
 }
@@ -209,6 +210,7 @@ fn glyph_size(b: Button) -> (f32, f32) {
     match b {
         Button::A => (BTN_A.size as f32, BTN_A.size as f32),
         Button::B => (BTN_B.size as f32, BTN_B.size as f32),
+        Button::X => (BTN_X.size as f32, BTN_X.size as f32),
         Button::Dpad => (BTN_DPAD.size as f32, BTN_DPAD.size as f32),
         Button::Start => ((f.width("START", 0.0) + 8.0).round(), GLYPH),
     }
@@ -236,6 +238,10 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &
         Button::B => {
             c.icon(&BTN_B, x, y, tint);
             BTN_B.size as f32
+        }
+        Button::X => {
+            c.icon(&BTN_X, x, y, tint);
+            BTN_X.size as f32
         }
         Button::Dpad => {
             // red arms on the accent hint would vanish: they take the background there

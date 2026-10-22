@@ -11,9 +11,10 @@ mod palette;
 mod gfx;
 pub use gfx::{BOTTOM_ALWAYS_ON, Ui};
 
-/// install and login messages: shown in green, the others (errors) in red
+/// install, login and delete messages: shown in green, the others (errors,
+/// questions) in red
 pub fn good_news(msg: &str) -> bool {
-    msg.starts_with("Installed") || msg.starts_with("Login")
+    msg.starts_with("Installed") || msg.starts_with("Login") || msg.starts_with("Deleted")
 }
 
 /// how long an install message stays on the bottom screen
