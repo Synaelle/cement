@@ -57,8 +57,9 @@ cargo install --locked cargo-3ds
 ## Contributing
 
 Contributions are welcome, as long as they stay within what Cement is for (a fast FTP server and
-CIA installer for the 3DS) and don't break how Baguette and Cement talk to each other. For
-something bigger, open an issue first to talk it through.
+CIA installer for the 3DS) and don't break how Baguette and Cement talk to each other. A change
+to that protocol has to be made in both apps. For something bigger, open an issue first to talk it
+through.
 
 ## Credits
 
