@@ -21,3 +21,6 @@ GEMINI.md
 .windsurfrules
 .aider*
 .github/copilot-instructions.md
+
+# local tools (Zeste for testing)
+.tools/
