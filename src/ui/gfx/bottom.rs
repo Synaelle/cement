@@ -8,6 +8,7 @@ use super::canvas::{Canvas, Color};
 use super::font::*;
 use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, bite_dot, card_height, draw_card, format_big, hint};
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
+use crate::picture::is_image;
 use crate::ui::Bottom;
 use crate::ui::palette::Palette;
 use crate::util::{base_name, format_size, is_cia};
@@ -189,9 +190,10 @@ impl Server {
         let pal = &self.ui.pal;
         let br = &self.menu.browse;
         let s = &NUNITO_BOLD_11;
-        let count = match br.entries.len() {
-            1 => "1 item".to_string(),
-            n => format!("{n} items"),
+        let count = match (self.ui.viewed_size(), br.entries.len()) {
+            (Some((w, h)), _) => format!("{w} x {h}"),
+            (None, 1) => "1 item".to_string(),
+            (None, n) => format!("{n} items"),
         };
         let cw = s.width(&count, 0.0);
         let p = &NUNITO_XBOLD_12;
@@ -203,14 +205,19 @@ impl Server {
 
         let action = match br.entries.get(br.sel) {
             Some(e) if !e.dir && is_cia(&e.name) => "install",
+            Some(e) if !e.dir && is_image(&e.name) => {
+                if self.menu.view { "close" } else { "view" }
+            }
             _ => "open",
         };
         let mut hints = vec![(Button::A, action)];
-        if br.dir != "/" {
+        if self.menu.view {
+            hints.push((Button::B, "close"));
+        } else if br.dir != "/" {
             hints.push((Button::B, "back"));
         }
         hints.push((Button::Dpad, ""));
-        if br.entries.get(br.sel).is_some_and(|e| !e.dir && is_cia(&e.name)) {
+        if !br.entries.is_empty() {
             hints.push((Button::X, "delete"));
         }
         let bottom = self.bottom_stack(c, b, &hints);
@@ -264,6 +271,7 @@ impl Server {
                 Row::Login => "FTP login",
                 Row::Ftp => "FTP server",
                 Row::CiaInfo => "CIA details on the top screen",
+                Row::Protect => "Protect important 3DS files",
                 Row::ScreenIdle => "Screens off when idle",
                 Row::AutoOff => "Turn the 3DS off when idle",
             };
@@ -272,6 +280,7 @@ impl Server {
             match row {
                 Row::Ftp => toggle(c, r, cy, self.prefs.ftp, pal),
                 Row::CiaInfo => toggle(c, r, cy, self.prefs.cia_info, pal),
+                Row::Protect => toggle(c, r, cy, self.prefs.protect, pal),
                 Row::ScreenIdle => toggle(c, r, cy, self.prefs.screen_idle, pal),
                 Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
                 Row::AutoOff => match self.prefs.auto_off {

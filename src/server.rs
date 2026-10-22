@@ -1044,7 +1044,7 @@ impl Server {
                         s.logged_in = true;
                         s.reply("230 Logged in\r\n");
                     }
-                    Some((user, password)) if s.user == *user && pass == *password => {
+                    Some((user, hash)) if s.user == *user && settings::check_pass(hash, &pass) => {
                         s.logged_in = true;
                         s.reply("230 Logged in\r\n");
                     }
@@ -1449,9 +1449,11 @@ impl Server {
         self.login.is_none() || self.sess[i].logged_in
     }
 
-    /// sets or clears the FTP login and keeps it on the SD card
+    /// sets (user, password) or clears the FTP login and keeps it on the SD
+    /// card, the password as a hash
     pub fn set_login(&mut self, login: Option<(String, String)>) {
-        settings::save_login(login.as_ref().map(|(u, p)| (u.as_str(), p.as_str())));
+        let login = login.map(|(u, p)| (u, settings::hash_pass(&p)));
+        settings::save_login(login.as_ref().map(|(u, h)| (u.as_str(), h.as_str())));
         self.login = login;
         self.last_time = 0; // the top screen shows it
         self.bottom_dirty = true;

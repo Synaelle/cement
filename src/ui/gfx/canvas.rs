@@ -156,6 +156,22 @@ impl Canvas {
         }
     }
 
+    /// a w x h image (0xRRGGBB) at whole pixels, clipped to the canvas
+    pub fn blit(&mut self, x: i32, y: i32, w: usize, h: usize, px: &[u32]) {
+        for row in 0..h {
+            let ty = y + row as i32;
+            if ty < 0 || ty as usize >= self.h {
+                continue;
+            }
+            for col in 0..w {
+                let tx = x + col as i32;
+                if tx >= 0 && (tx as usize) < self.w {
+                    self.px[ty as usize * self.w + tx as usize] = px[row * w + col];
+                }
+            }
+        }
+    }
+
     /// right-aligned at `right`
     pub fn text_right(&mut self, f: &Font, right: f32, y: f32, s: &str, c: Color) {
         let w = f.width(s, 0.0);

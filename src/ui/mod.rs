@@ -14,7 +14,7 @@ pub use gfx::{BOTTOM_ALWAYS_ON, Ui};
 /// install, login and delete messages: shown in green, the others (errors,
 /// questions) in red
 pub fn good_news(msg: &str) -> bool {
-    msg.starts_with("Installed") || msg.starts_with("Login") || msg.starts_with("Deleted")
+    msg.starts_with("Installed") || msg.starts_with("Login") || msg.starts_with("Deleted") || msg == "Protection on"
 }
 
 /// how long an install message stays on the bottom screen
@@ -62,11 +62,11 @@ impl Server {
         Some(Bottom { dirty, show_msg, busy })
     }
 
-    /// every 500 ms (or when the selected CIA changed): the transfer rate and the status line
+    /// every 500 ms, or when the selected CIA or Settings row changed: the transfer rate and the status line
     fn top(&mut self) -> Option<Top> {
         let now = sys::now_ms();
         let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
-        if now.saturating_sub(self.last_time) < 500 && !self.ui.info_stale(&sel) {
+        if now.saturating_sub(self.last_time) < 500 && !self.ui.top_stale(&sel, (self.menu.tab, self.menu.row, self.viewed_image())) {
             return None;
         }
 

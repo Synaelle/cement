@@ -14,6 +14,8 @@ use super::palette::Palette;
 use crate::settings::DEFAULT_ACCENT;
 
 use super::{Bottom, Top};
+use crate::menu::{ROWS, Row, Tab};
+use crate::picture::{self, Picture};
 use crate::install::{CiaInfo, ICON, cia_info, version_text};
 use crate::server::{Mode, progress_of};
 use crate::sys;
@@ -90,6 +92,8 @@ pub struct Ui {
     pal: Palette,         // the colours for the accent below
     pal_for: u32,
     info: Option<(String, u64, Option<CiaInfo>)>, // the selected CIA's path, size and details
+    drawn_for: (Tab, usize, Option<String>),      // the tab, Settings row and image the top screen shows
+    picture: Option<(String, Result<Picture, String>)>, // the image viewed from Browse, or why it can't be
 }
 
 impl Ui {
@@ -103,6 +107,8 @@ impl Ui {
             pal: Palette::for_accent(crate::settings::DEFAULT_ACCENT),
             pal_for: crate::settings::DEFAULT_ACCENT,
             info: None,
+            drawn_for: (Tab::Recent, 0, None),
+            picture: None,
         }
     }
 
@@ -120,8 +126,21 @@ impl Ui {
         self.hits.iter().find(|h| x >= h.x0 && x < h.x1 && y >= h.y0 && y < h.y1).map(|h| h.tap)
     }
 
-    /// whether the CIA details drawn are for another file than `sel` (or none)
-    pub fn info_stale(&self, sel: &Option<(String, u64)>) -> bool {
+    /// whether the top screen shows another CIA than `sel` (or none), or
+    /// another tab or Settings row than `now`
+    pub fn top_stale(&self, sel: &Option<(String, u64)>, now: (Tab, usize, Option<String>)) -> bool {
+        now != self.drawn_for || self.info_stale(sel)
+    }
+
+    /// the viewed image's own size, once it is decoded
+    pub fn viewed_size(&self) -> Option<(u32, u32)> {
+        match &self.picture {
+            Some((p, Ok(pic))) if self.drawn_for.2.as_ref() == Some(p) => Some(pic.full),
+            _ => None,
+        }
+    }
+
+    fn info_stale(&self, sel: &Option<(String, u64)>) -> bool {
         match (&self.info, sel) {
             (None, None) => false,
             (Some((p, s, _)), Some((q, t))) => p != q || s != t,
@@ -289,6 +308,76 @@ fn install_kind(info: &CiaInfo) -> &'static str {
 
 const TICKET_H: f32 = 42.0;
 
+/// the image viewer: the picture centred on the background
+fn paint_picture(c: &mut Canvas, pic: &Picture, pal: &Palette) {
+    c.fill(pal.bg);
+    let (x, y) = ((c.w - pic.w) / 2, (c.h - pic.h) / 2);
+    c.blit(x as i32, y as i32, pic.w, pic.h, &pic.px);
+}
+
+/// the image viewer's message (opening, or why it can't show it), centred in a card
+fn paint_note(c: &mut Canvas, title: &str, detail: &str, pal: &Palette) {
+    c.fill(pal.bg);
+    let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
+    let w = 300.0;
+    let h = if detail.is_empty() { f.height + 24.0 } else { f.height + d.height + 26.0 };
+    let (x, y) = ((c.w as f32 - w) / 2.0, ((c.h as f32 - h) / 2.0).round());
+    c.card(x, y, w, h, 11.0, pal.card, pal.border);
+    let title = f.fit(title, w - 24.0);
+    c.text(f, (c.w as f32 - f.width(&title, 0.0)) / 2.0, y + 12.0 + f.ascent, &title, pal.text, 0.0);
+    if !detail.is_empty() {
+        let detail = d.fit(detail, w - 24.0);
+        c.text(d, (c.w as f32 - d.width(&detail, 0.0)) / 2.0, y + 14.0 + f.height + d.ascent, &detail, pal.dim, 0.0);
+    }
+}
+
+/// what a Settings row does, for the top screen (two lines at most)
+fn help(row: Row) -> &'static str {
+    match row {
+        Row::Login => "The user name and password a PC needs to connect. With none, anyone on your Wi-Fi can connect.",
+        Row::Ftp => "Off, no PC can connect and the connected ones are dropped. Installing and browsing here still work.",
+        Row::CiaInfo => "Shows the selected CIA under the address: its icon, title, version and whether it's new or an update.",
+        Row::Protect => "X can't delete /Nintendo 3DS, /boot.firm, /luma, /gm9 or /boot.3dsx. Luma's screenshots stay free.",
+        Row::ScreenIdle => "Both screens go dark after a minute with no button or transfer. Any button lights them again.",
+        Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
+    }
+}
+
+/// `text` cut into lines no wider than `w`, at spaces
+fn wrap(f: &Font, text: &str, w: f32) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split(' ') {
+        match lines.last_mut() {
+            Some(line) if f.width(&format!("{line} {word}"), 0.0) <= w => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
+}
+
+/// the help card in the ticket's place: a "?" and what the row does
+fn draw_help(c: &mut Canvas, x: f32, y: f32, w: f32, text: &str, pal: &Palette) {
+    c.card(x, y, w, TICKET_H, 9.0, pal.card, pal.border);
+    let q = &NUNITO_XBOLD_13;
+    let (cx, cy) = (x + 19.0, y + TICKET_H / 2.0);
+    c.circle(cx, cy, 10.0, pal.selected);
+    c.text(q, cx - (q.width("?", 0.0) / 2.0).round(), cy - (q.height / 2.0).round() + q.ascent, "?", pal.highlight, 0.0);
+    let f = &NUNITO_BOLD_11;
+    let (l, r) = (x + 38.0, x + w - 12.0);
+    let mut lines = wrap(f, text, r - l);
+    if lines.len() > 2 {
+        let rest = lines[1..].join(" ");
+        lines = vec![lines[0].clone(), f.fit(&rest, r - l)];
+    }
+    let top = (y + (TICKET_H - f.height * lines.len() as f32) / 2.0).round();
+    for (i, line) in lines.iter().enumerate() {
+        c.text(f, l, top + i as f32 * f.height + f.ascent, line, pal.soft, 0.0);
+    }
+}
+
 /// the selected CIA under the address: its icon, title and publisher, then
 /// version, size, where it installs and its title ID, and what installing it does
 fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, info: Option<&CiaInfo>, pal: &Palette) {
@@ -346,7 +435,28 @@ impl Server {
                 (path, size, info)
             });
         }
+        let view = self.viewed_image();
+        self.ui.drawn_for = (self.menu.tab, self.menu.row, view.clone());
         let Some(mut scr) = self.ui.top.take() else { return };
+        if let Some(path) = view {
+            if self.ui.picture.as_ref().is_none_or(|(p, _)| *p != path) {
+                // decoding holds the loop up a moment: say so first
+                paint_note(&mut scr.c, &format!("Opening {}...", base_name(&path)), "", &self.ui.pal);
+                scr.present();
+                let pic = picture::load(&path);
+                self.ui.picture = Some((path, pic));
+                self.bottom_dirty = true; // its size goes in the Browse header
+            }
+            match &self.ui.picture {
+                Some((_, Ok(pic))) => paint_picture(&mut scr.c, pic, &self.ui.pal),
+                Some((path, Err(why))) => paint_note(&mut scr.c, &format!("Can't show {}", base_name(path)), why, &self.ui.pal),
+                None => {}
+            }
+            scr.present();
+            self.ui.top = Some(scr);
+            return;
+        }
+        self.ui.picture = None; // its memory back
         self.paint_top(&mut scr.c, t);
         scr.present();
         self.ui.top = Some(scr);
@@ -397,17 +507,14 @@ impl Server {
         let py = y + (f.height - ph) / 2.0;
         c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
         c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { pal.on_accent } else { pal.highlight }, 0.0);
-        // with the CIA details on, START goes up here to leave them the room
-        let mut room = right - pw - 8.0;
-        if self.prefs.cia_info {
-            let h = &NUNITO_BOLD_11;
-            let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);
-            let tx = right - pw - 10.0 - w;
-            let ty = (py + (ph - GLYPH) / 2.0).round();
-            let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
-            c.text(h, x, ty + ((GLYPH - h.height) / 2.0).round() + h.ascent, "exit", pal.dim, 0.0);
-            room = tx - 8.0;
-        }
+        // START left of the battery, leaving the room under the address free
+        let h = &NUNITO_BOLD_11;
+        let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);
+        let tx = right - pw - 10.0 - w;
+        let ty = (py + (ph - GLYPH) / 2.0).round();
+        let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
+        c.text(h, x, ty + ((GLYPH - h.height) / 2.0).round() + h.ascent, "exit", pal.dim, 0.0);
+        let room = tx - 8.0;
         // the protocol level says which Baguette goes with this Cement (they version apart);
         // a long -dev version is cut short before the hint
         let v = &NUNITO_BOLD_11;
@@ -430,28 +537,19 @@ impl Server {
         x = c.text(f, x, y + f.ascent, ":", pal.accent, 1.0);
         c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
-        // the buttons as small keycaps, then what they do, one per line; a low
-        // battery warning on the right of them, one line each too (START is in
-        // the title row with the CIA details on)
-        let warning = ["Battery low: no new transfers", "or installs until you charge"];
-        let f = &NUNITO_BOLD_11;
+        // under the address: a low battery warning, what the selected Settings
+        // row does, or the selected CIA
         let ticket = self.prefs.cia_info.then_some(self.ui.info.as_ref()).flatten();
-        let start = if self.prefs.cia_info { None } else { Some((Button::Start, "exit")) };
-        if let (Some((path, size, info)), false) = (ticket, t.low) {
-            draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
-        } else if start.is_some() || t.low {
-            for (i, hint) in [start, None].into_iter().enumerate() {
-                if let Some((button, what)) = hint {
-                    let gy = (y + (f.height - GLYPH) / 2.0).round();
-                    let x = left + glyph(c, left, gy, button, pal.dim, pal.bg, pal) + 4.0;
-                    c.text(f, x, y + f.ascent, what, pal.dim, 0.0);
-                }
-                if t.low {
-                    let w = &NUNITO_XBOLD_12;
-                    c.text_right(w, right, y + (f.height - w.height) / 2.0 + w.ascent, warning[i], pal.highlight);
-                }
-                y += f.height.max(GLYPH) + 3.0;
+        if t.low {
+            let w = &NUNITO_XBOLD_12;
+            for line in ["Battery low: no new transfers", "or installs until you charge"] {
+                c.text_right(w, right, y + 4.0 + w.ascent, line, pal.highlight);
+                y += w.height + 3.0;
             }
+        } else if self.menu.tab == Tab::Settings {
+            draw_help(c, left, y + 4.0, right - left, help(ROWS[self.menu.row]), pal);
+        } else if let Some((path, size, info)) = ticket {
+            draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
         }
 
         // transfer card

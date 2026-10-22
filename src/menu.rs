@@ -2,13 +2,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The bottom screen's tabs, switched with L and R or by touching them:
 // - Recent: the CIA files sent since Cement started, or found at startup
-// - Browse: the SD card's folders, to open them and install a CIA from them
-// On both, X deletes the selected CIA file (pressed twice: it can't be undone).
+// - Browse: the SD card's folders, to open them and install a CIA from them;
+//   A on an image shows it on the top screen until B (or A again)
+// On both, X deletes the selected file (pressed twice: it can't be undone);
+// Browse deletes folders and any file too, except the important 3DS files
+// while their protection is on (protect.rs).
 // - Settings: the login, the FTP server, the CIA details on the top screen, the
-//   screens turning off, the console turning off when idle (picking the colour is off until the redesign is done)
+//   protection of the important 3DS files, the screens turning off, the console
+//   turning off when idle (picking the colour is off until the redesign is done)
 // The state and the buttons are handled here; ui/gfx draws them and says what
 // each touched spot is (Ui::hit).
 
+use crate::picture::is_image;
+use crate::protect;
 use crate::settings::{self, AUTO_OFF};
 use crate::util::{base_name, is_cia};
 use crate::{Server, sys};
@@ -38,11 +44,12 @@ pub enum Row {
     Login,
     Ftp,
     CiaInfo,
+    Protect,
     ScreenIdle,
     AutoOff,
 }
 
-pub const ROWS: [Row; 5] = [Row::Login, Row::Ftp, Row::CiaInfo, Row::ScreenIdle, Row::AutoOff];
+pub const ROWS: [Row; 6] = [Row::Login, Row::Ftp, Row::CiaInfo, Row::Protect, Row::ScreenIdle, Row::AutoOff];
 
 /// what a touch landed on (the drawing records where each one is)
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -73,10 +80,11 @@ pub struct Menu {
     pub tab: Tab,
     pub browse: Browser,
     pub row: usize,                     // Settings
-    confirm: Option<(String, u64)>,     // a CIA X was pressed on once, and until when a second X deletes it
+    pub view: bool,                     // Browse: the selected image is shown on the top screen
+    confirm: Option<(String, u64)>,     // what a first press asked about, and until when a second one confirms it
 }
 
-/// how long a second X has to come to delete the file
+/// how long a second press has to come to confirm (deleting, turning the protection off)
 const CONFIRM_MS: u64 = 4000;
 
 impl Menu {
@@ -85,6 +93,7 @@ impl Menu {
             tab: Tab::Recent,
             browse: Browser { dir: "/".into(), entries: Vec::new(), sel: 0, loaded: false, failed: false },
             row: 0,
+            view: false,
             confirm: None,
         }
     }
@@ -119,6 +128,7 @@ impl Server {
         if let Some(t) = switch {
             if t != tab {
                 self.menu.tab = t;
+                self.menu.view = false;
                 self.menu.browse.loaded = false; // listed again: files come and go over FTP
                 self.bottom_dirty = true;
             }
@@ -129,6 +139,15 @@ impl Server {
             Tab::Browse => self.browse_input(down, tap),
             Tab::Settings => self.settings_input(down, tap),
         }
+    }
+
+    /// the image shown on the top screen: Browse's selection while viewing
+    pub fn viewed_image(&self) -> Option<String> {
+        let b = &self.menu.browse;
+        if self.menu.tab != Tab::Browse || !self.menu.view {
+            return None;
+        }
+        b.entries.get(b.sel).filter(|e| !e.dir && is_image(&e.name)).map(|e| join(&b.dir, &e.name))
     }
 
     /// the CIA file selected in Recent or Browse, and its size
@@ -143,24 +162,52 @@ impl Server {
         }
     }
 
-    /// X on a CIA: the first press asks, a second one within CONFIRM_MS deletes it
-    fn ask_delete(&mut self, path: String) {
+    /// true when `what` was asked about within CONFIRM_MS (the second press),
+    /// else asks with `question`
+    fn confirm(&mut self, what: &str, question: String) -> bool {
         let now = sys::now_ms();
+        if self.menu.confirm.as_ref().is_some_and(|(w, until)| w == what && now < *until) {
+            self.menu.confirm = None;
+            return true;
+        }
+        self.cia_message(question);
+        self.menu.confirm = Some((what.to_string(), now + CONFIRM_MS));
+        false
+    }
+
+    /// X on a file or a folder: the first press asks, a second one within CONFIRM_MS deletes it
+    fn ask_delete(&mut self, path: String, dir: bool) {
         let name = base_name(&path).to_string();
         self.bottom_dirty = true;
-        if self.inst.as_ref().is_some_and(|i| i.path == path) || self.inst_queue.as_deref() == Some(path.as_str()) {
+        if self.prefs.protect {
+            if let Some(why) = protect::delete(&path) {
+                self.cia_message(why);
+                return;
+            }
+        }
+        let inside = |p: &str| p == path || (dir && p.starts_with(&format!("{}/", path.trim_end_matches('/'))));
+        if self.inst.as_ref().is_some_and(|i| inside(&i.path)) || self.inst_queue.as_deref().is_some_and(inside) {
             self.cia_message(format!("{name} is being installed"));
             return;
         }
-        let again = self.menu.confirm.as_ref().is_some_and(|(p, until)| *p == path && now < *until);
-        if !again {
-            self.cia_message(format!("Press X again to delete {name}"));
-            self.menu.confirm = Some((path, now + CONFIRM_MS));
+        if dir && self.fs_busy() {
+            self.cia_message("Busy: wait for the transfers to end".into());
             return;
         }
-        self.menu.confirm = None;
-        if sys::delete_file(&path) {
-            self.cia_remove(&path);
+        let question = if dir { format!("Press X again to delete {name} and all in it") } else { format!("Press X again to delete {name}") };
+        if !self.confirm(&path, question) {
+            return;
+        }
+        let ok = if dir {
+            // one call that can take a while: say so first
+            self.cia_message(format!("Deleting {name}..."));
+            self.draw();
+            sys::delete_dir_recursive(&path)
+        } else {
+            sys::delete_file(&path)
+        };
+        if ok {
+            self.cia_remove(&path); // the CIAs in it leave Recent
             self.menu.browse.loaded = false;
             self.cia_message(format!("Deleted {name}"));
         } else {
@@ -171,7 +218,7 @@ impl Server {
     fn recent_input(&mut self, down: u32, tap: Option<Tap>) {
         if down & sys::KEY_X != 0 {
             if let Some(cia) = self.cias.get(self.cia_sel) {
-                self.ask_delete(cia.path.clone());
+                self.ask_delete(cia.path.clone(), false);
             }
             return;
         }
@@ -210,6 +257,7 @@ impl Server {
     }
 
     fn open_dir(&mut self, dir: String, select: Option<String>) {
+        self.menu.view = false;
         let b = &mut self.menu.browse;
         b.dir = dir;
         b.sel = 0;
@@ -227,6 +275,8 @@ impl Server {
         let path = join(&b.dir, &e.name);
         if e.dir {
             self.open_dir(path, None);
+        } else if is_image(&path) {
+            self.menu.view = !self.menu.view;
         } else if is_cia(&path) {
             let reply = self.site_install(&path);
             let msg = match &reply[..3] {
@@ -264,6 +314,8 @@ impl Server {
             b.sel = b.sel.saturating_sub(8);
         } else if down & sys::KEY_RIGHT != 0 && n != 0 {
             b.sel = (b.sel + 8).min(n - 1);
+        } else if down & sys::KEY_B != 0 && self.menu.view {
+            self.menu.view = false;
         } else if down & sys::KEY_B != 0 {
             if b.dir != "/" {
                 let (up, name) = (parent(&b.dir), base_name(&b.dir).to_string());
@@ -272,13 +324,9 @@ impl Server {
         } else if down & sys::KEY_A != 0 {
             self.browse_activate();
         } else if down & sys::KEY_X != 0 {
-            match b.entries.get(b.sel) {
-                Some(e) if !e.dir && is_cia(&e.name) => {
-                    let path = join(&b.dir, &e.name);
-                    self.ask_delete(path);
-                }
-                Some(_) => self.cia_message("Only CIA files can be deleted here".into()),
-                None => {}
+            if let Some(e) = b.entries.get(b.sel) {
+                let (path, dir) = (join(&b.dir, &e.name), e.dir);
+                self.ask_delete(path, dir);
             }
         } else {
             return;
@@ -316,6 +364,15 @@ impl Server {
             }
             Row::CiaInfo => {
                 self.prefs.cia_info = !self.prefs.cia_info;
+                self.save_prefs();
+            }
+            Row::Protect => {
+                // off lets X delete what keeps the 3DS booting: asked first
+                if self.prefs.protect && !self.confirm("protect", "Press A again to turn the protection off".into()) {
+                    return;
+                }
+                self.prefs.protect = !self.prefs.protect;
+                self.cia_message(if self.prefs.protect { "Protection on" } else { "Protection off: X deletes anything" }.into());
                 self.save_prefs();
             }
             Row::ScreenIdle => {

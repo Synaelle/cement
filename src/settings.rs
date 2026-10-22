@@ -3,8 +3,10 @@
 // Settings kept on the SD card in sdmc:/3ds/cement/settings.ini, one
 // "key=value" per line: the accent colour (SITE COLOR, kept but not used for
 // now), the FTP login (SITE LOGIN, or Settings) and the other choices of the
-// Settings tab. The password is stored as plain text.
+// Settings tab. The password isn't stored: only a salted, repeated SHA-256 of
+// it (pass_hash), enough to check a login but not to read it back.
 
+use crate::hash::{hex, sha256};
 use crate::sys::{self, File};
 
 pub const DEFAULT_ACCENT: u32 = 0xb8283c;
@@ -19,6 +21,35 @@ pub fn parse_color(s: &str) -> Option<u32> {
         return None;
     }
     u32::from_str_radix(hex, 16).ok()
+}
+
+/// rounds of SHA-256: slows down guessing from a copied settings.ini (about
+/// 50 ms on the 3DS)
+const ROUNDS: u32 = 1000;
+
+fn stretch(salt: &str, pass: &str) -> String {
+    let mut h = sha256(format!("{salt}:{pass}").as_bytes());
+    for _ in 1..ROUNDS {
+        h = sha256(&h);
+    }
+    hex(&h)
+}
+
+/// "sha256:<rounds>:<salt>:<hash>" for a password, with a new salt
+pub fn hash_pass(pass: &str) -> String {
+    // a salt only has to differ between consoles and logins, not be secret
+    let seed = format!("{}:{}:{:p}", sys::now_ms(), pass.len(), &pass);
+    let salt = hex(&sha256(seed.as_bytes())[..8]);
+    format!("sha256:{ROUNDS}:{salt}:{}", stretch(&salt, pass))
+}
+
+/// whether `pass` is the password `stored` (from hash_pass) was made from
+pub fn check_pass(stored: &str, pass: &str) -> bool {
+    let mut parts = stored.splitn(4, ':');
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some("sha256"), Some(r), Some(salt), Some(hash)) if r == ROUNDS.to_string() => stretch(salt, pass) == hash,
+        _ => false,
+    }
 }
 
 /// a user name for the login: not empty, no spaces or control characters
@@ -67,7 +98,7 @@ fn set(changes: &[(&str, Option<&str>)]) -> bool {
 
 pub struct Settings {
     pub accent: u32,
-    pub login: Option<(String, String)>, // user and password; None: anonymous
+    pub login: Option<(String, String)>, // user and password hash; None: anonymous
     pub prefs: Prefs,
 }
 
@@ -78,11 +109,12 @@ pub struct Prefs {
     pub screen_idle: bool, // the screens turn off after an idle minute
     pub auto_off: u32,     // minutes without use before the console turns off, 0 = never
     pub cia_info: bool,    // the selected CIA's details on the top screen
+    pub protect: bool,     // Browse won't delete the important 3DS files (protect.rs)
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true }
+        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true, protect: true }
     }
 }
 
@@ -92,8 +124,14 @@ pub const AUTO_OFF: [u32; 5] = [0, 5, 15, 30, 60];
 pub fn load() -> Settings {
     let text = read();
     let accent = get(&text, "accent").and_then(|v| parse_color(&v)).unwrap_or(DEFAULT_ACCENT);
-    let login = match (get(&text, "user"), get(&text, "pass")) {
-        (Some(u), p) if valid_user(&u) => Some((u, p.unwrap_or_default())),
+    let login = match (get(&text, "user"), get(&text, "pass_hash"), get(&text, "pass")) {
+        (Some(u), Some(h), _) if valid_user(&u) => Some((u, h)),
+        (Some(u), None, p) if valid_user(&u) => {
+            // a plain password from before 2.3.0: hashed, and the plain one goes
+            let h = hash_pass(&p.unwrap_or_default());
+            save_login(Some((&u, &h)));
+            Some((u, h))
+        }
         _ => None,
     };
     let flag = |key: &str, default: bool| get(&text, key).map_or(default, |v| v.trim() != "0");
@@ -104,6 +142,7 @@ pub fn load() -> Settings {
         screen_idle: flag("screen_idle", d.screen_idle),
         auto_off: auto_off.unwrap_or(d.auto_off),
         cia_info: flag("cia_info", d.cia_info),
+        protect: flag("protect", d.protect),
     };
     Settings { accent, login, prefs }
 }
@@ -116,6 +155,7 @@ pub fn save_prefs(p: &Prefs) -> bool {
         ("screen_idle", Some(b(p.screen_idle))),
         ("auto_off", Some(&auto_off)),
         ("cia_info", Some(b(p.cia_info))),
+        ("protect", Some(b(p.protect))),
     ])
 }
 
@@ -123,10 +163,11 @@ pub fn save_accent(accent: u32) -> bool {
     set(&[("accent", Some(&format!("{accent:06x}")))])
 }
 
+/// the user name and the password hash (hash_pass)
 pub fn save_login(login: Option<(&str, &str)>) -> bool {
     match login {
-        Some((u, p)) => set(&[("user", Some(u)), ("pass", Some(p))]),
-        None => set(&[("user", None), ("pass", None)]),
+        Some((u, h)) => set(&[("user", Some(u)), ("pass_hash", Some(h)), ("pass", None)]),
+        None => set(&[("user", None), ("pass_hash", None), ("pass", None)]),
     }
 }
 
@@ -150,5 +191,14 @@ mod tests {
         assert_eq!(get(text, "pass").as_deref(), Some(" two words "));
         assert_eq!(get(text, "nope"), None);
         assert!(valid_user("syna") && !valid_user("") && !valid_user("a b"));
+    }
+
+    #[test]
+    fn passwords() {
+        let h = hash_pass(" two words ");
+        assert!(h.starts_with("sha256:1000:") && !h.contains("two"));
+        assert!(check_pass(&h, " two words "));
+        assert!(!check_pass(&h, "two words") && !check_pass(&h, ""));
+        assert!(!check_pass("plain", "plain"), "only hashes are accepted");
     }
 }

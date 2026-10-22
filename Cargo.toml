@@ -11,6 +11,10 @@ license = "GPL-3.0-or-later"
 [build-dependencies]
 fontdue = "0.9" # rasterises assets/fonts into glyph atlases (build.rs)
 
+[dependencies]
+png = "0.17" # images viewed from Browse (picture.rs)
+jpeg-decoder = { version = "0.3", default-features = false } # no rayon threads
+
 [target.'cfg(target_os = "horizon")'.dependencies]
 ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" } # pinned by Cargo.lock
 ctru-sys = { git = "https://github.com/rust3ds/ctru-rs" }

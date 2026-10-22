@@ -15,8 +15,11 @@
 // PC it is a test server that plays the 3DS (see sys/host.rs).
 
 mod disk;
+mod hash;
 mod install;
 mod menu;
+mod picture;
+mod protect;
 mod server;
 mod settings;
 mod sys;
@@ -132,7 +135,7 @@ pub struct Server {
     pub menu: menu::Menu,
     pub prefs: settings::Prefs,
     pub accent: u32,                     // accent set by Baguette (SITE COLOR), kept but not drawn for now
-    pub login: Option<(String, String)>, // FTP user and password; None: anonymous
+    pub login: Option<(String, String)>, // FTP user and password hash (settings::hash_pass); None: anonymous
     pub ui: ui::Ui,
 }
 
