@@ -1,6 +1,5 @@
 #---------------------------------------------------------------------------------
 # Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx.
-# Cement Text (the console text version) lives on the cement-text branch now.
 #
 # Needs: nightly Rust with rust-src (rustup toolchain install nightly -c rust-src),
 #        cargo-3ds (cargo install --locked cargo-3ds), devkitARM with libctru
