@@ -420,8 +420,14 @@ fn install(path: &str, total: u64, shared: &Shared) {
                         fail(&mut r, 0, "This title is for New 3DS only");
                         break;
                     }
-                    // like FBI, but only when AM needs it, and never when updating ourselves
-                    if sys::self_title() != Some((id, dest)) && must_delete(sys::am_title_version(dest, id), version) {
+                    // like FBI, but only when AM needs it; Cement can't delete itself, so
+                    // the same or an older version of it can't go over it
+                    let delete = must_delete(sys::am_title_version(dest, id), version);
+                    if delete && sys::self_title() == Some((id, dest)) {
+                        fail(&mut r, 0, "Use FBI to reinstall Cement");
+                        break;
+                    }
+                    if delete {
                         shared.preparing.store(true, Ordering::Relaxed);
                         sys::am_delete_title(dest, id);
                         sys::am_delete_ticket(id);

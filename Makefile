@@ -32,8 +32,8 @@ export BINDGEN_EXTRA_CLANG_ARGS ?= -isystem $(DEVKITARM)/lib/gcc/arm-none-eabi/$
 # (major.minor.micro, bumped by hand for a release), plus -<short commit>-dev
 # when there are uncommitted changes or for a fast build
 GIT          := $(shell command -v git 2>/dev/null || (test -x "/c/Program Files/Git/cmd/git.exe" && echo "/c/Program Files/Git/cmd/git.exe"))
-ifeq ($(strip $(APP_VERSION)),)
 BASE_VERSION := $(strip $(shell tr -d '\r' < VERSION 2>/dev/null))
+ifeq ($(strip $(APP_VERSION)),)
 COMMITS      := $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null))
 COMMIT       := $(strip $(shell "$(GIT)" rev-parse --short HEAD 2>/dev/null))
 # line endings and file modes differ between a Windows checkout and WSL: not changes
@@ -44,21 +44,20 @@ endif
 APP_VERSION  := $(if $(COMMITS),$(BASE_VERSION)$(if $(DIRTY),-$(COMMIT)-dev,),$(BASE_VERSION)-dev)
 endif
 
-# CIA title version = build number (the commit count, never shown). The HOME
-# menu caches icons per title ID and
-# title version, so it has to go up or updates keep showing the old icon, and
-# the 3DS refuses to install a lower one (D8E08027). makerom clears the minor
-# bits (4-9) of the version, which made it wrap every 16 builds: the count goes
-# in the major (count / 16) and micro (count % 16) bits instead, good for 1023.
-TITLE_COUNT   := $(or $(strip $(shell "$(GIT)" rev-list --count HEAD 2>/dev/null)),0)
-TITLE_VERSION := $(shell echo $$(( (($(TITLE_COUNT) >> 4) << 10) | ($(TITLE_COUNT) & 15) )))
+# CIA title version = the VERSION file's major.minor.micro, so FBI and the
+# system settings show the same version as Cement. Builds between releases
+# share it: the 3DS refuses to install one over the same or a newer version
+# (D8E08027) unless the installed copy is deleted first (FBI does that, Cement
+# can't for itself). makerom clears the minor bits of -ver, so
+# tools/set-cia-version.sh writes the version into the TMD after it.
 
 # $(call package,<file name>,<title>,<banner>,<icon>,<elf>): the .cia and the .3dsx
 define package
 	@mkdir -p $(BUILD)/$(1)
 	@$(BANNERTOOL) makebanner -i $(3) -a meta/audio.wav -o $(BUILD)/$(1)/banner.bnr
 	@$(BANNERTOOL) makesmdh -s "$(2)" -l "Fast FTP + CIA installer v$(APP_VERSION)" -p "Synaelle" -i $(4) -o $(BUILD)/$(1)/icon.icn
-	@$(MAKEROM) -f cia -o $(1).cia -target t -exefslogo -rsf meta/$(1).rsf -ver $(TITLE_VERSION) 		-elf $(5) -icon $(BUILD)/$(1)/icon.icn -banner $(BUILD)/$(1)/banner.bnr
+	@$(MAKEROM) -f cia -o $(1).cia -target t -exefslogo -rsf meta/$(1).rsf 		-elf $(5) -icon $(BUILD)/$(1)/icon.icn -banner $(BUILD)/$(1)/banner.bnr
+	@sh tools/set-cia-version.sh $(1).cia $(BASE_VERSION)
 	@cp $(5) $(1).elf
 	@echo built ... $(1).cia v$(APP_VERSION)
 	@3dsxtool $(1).elf $(1).3dsx --smdh=$(BUILD)/$(1)/icon.icn
