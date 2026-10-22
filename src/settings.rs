@@ -97,9 +97,35 @@ fn set(changes: &[(&str, Option<&str>)]) -> bool {
 }
 
 pub struct Settings {
+    pub first_launch: bool, // no look picked yet: Cement asks for one
     pub accent: u32,
     pub login: Option<(String, String)>, // user and password hash; None: anonymous
     pub prefs: Prefs,
+}
+
+/// how the screens look, picked at the first launch
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Look {
+    Cement, // graphite and Miku teal, Fredoka and Nunito
+    Ink,    // black and white, Ink Sans and IBM Plex Mono
+}
+
+pub const LOOKS: [Look; 2] = [Look::Cement, Look::Ink];
+
+impl Look {
+    pub fn name(self) -> &'static str {
+        match self {
+            Look::Cement => "Cement",
+            Look::Ink => "Ink",
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Look::Cement => "cement",
+            Look::Ink => "ink",
+        }
+    }
 }
 
 /// the switches of the Settings tab
@@ -110,11 +136,12 @@ pub struct Prefs {
     pub auto_off: u32,     // minutes without use before the console turns off, 0 = never
     pub cia_info: bool,    // the selected CIA's details on the top screen
     pub protect: bool,     // Browse won't delete the important 3DS files (protect.rs)
+    pub look: Look,
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true, protect: true }
+        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true, protect: true, look: Look::Cement }
     }
 }
 
@@ -143,8 +170,10 @@ pub fn load() -> Settings {
         auto_off: auto_off.unwrap_or(d.auto_off),
         cia_info: flag("cia_info", d.cia_info),
         protect: flag("protect", d.protect),
+        look: get(&text, "look").and_then(|v| LOOKS.into_iter().find(|l| l.key() == v.trim())).unwrap_or(d.look),
     };
-    Settings { accent, login, prefs }
+    let first_launch = get(&text, "look").is_none();
+    Settings { first_launch, accent, login, prefs }
 }
 
 pub fn save_prefs(p: &Prefs) -> bool {
@@ -156,6 +185,7 @@ pub fn save_prefs(p: &Prefs) -> bool {
         ("auto_off", Some(&auto_off)),
         ("cia_info", Some(b(p.cia_info))),
         ("protect", Some(b(p.protect))),
+        ("look", Some(p.look.key())),
     ])
 }
 

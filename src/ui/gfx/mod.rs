@@ -7,6 +7,7 @@
 mod bottom;
 mod canvas;
 mod font;
+mod ink;
 
 use canvas::{Canvas, Color};
 use font::*;
@@ -19,6 +20,7 @@ use crate::picture::{self, Picture};
 use crate::install::{CiaInfo, ICON, cia_info, version_text};
 use crate::server::{Mode, progress_of};
 use crate::sys;
+use crate::settings::Look;
 use crate::util::{base_name, format_size, ip_text};
 use crate::{PROTOCOL, Server, VERSION, battery_text};
 
@@ -309,8 +311,8 @@ fn install_kind(info: &CiaInfo) -> &'static str {
 const TICKET_H: f32 = 42.0;
 
 /// the image viewer: the picture centred on the background
-fn paint_picture(c: &mut Canvas, pic: &Picture, pal: &Palette) {
-    c.fill(pal.bg);
+fn paint_picture(c: &mut Canvas, pic: &Picture, bg: Color) {
+    c.fill(bg);
     let (x, y) = ((c.w - pic.w) / 2, (c.h - pic.h) / 2);
     c.blit(x as i32, y as i32, pic.w, pic.h, &pic.px);
 }
@@ -334,6 +336,7 @@ fn paint_note(c: &mut Canvas, title: &str, detail: &str, pal: &Palette) {
 /// what a Settings row does, for the top screen (two lines at most)
 fn help(row: Row) -> &'static str {
     match row {
+        Row::Look => "How Cement looks: Cement is round with Miku teal, Ink is plain black and white.",
         Row::Login => "The user name and password a PC needs to connect. With none, anyone on your Wi-Fi can connect.",
         Row::Ftp => "Off, no PC can connect and the connected ones are dropped. Installing and browsing here still work.",
         Row::CiaInfo => "Shows the selected CIA under the address: its icon, title, version and whether it's new or an update.",
@@ -401,13 +404,20 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
     }
     let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
     let top = (y + (TICKET_H - f.height - d.height) / 2.0).round();
-    let title = info.map_or(base_name(path), |i| i.title.as_str());
+    let (title, publisher, detail) = ticket_text(path, size, info);
     let title = f.fit(title, r - l);
     let end = c.text(f, l, top + f.ascent, &title, pal.text, 0.0);
-    if let Some(i) = info.filter(|i| !i.publisher.is_empty() && end + 6.0 < r - 20.0) {
-        let by = d.fit(&format!("by {}", i.publisher), r - end - 6.0);
+    if !publisher.is_empty() && end + 6.0 < r - 20.0 {
+        let by = d.fit(&format!("by {publisher}"), r - end - 6.0);
         c.text(d, end + 6.0, top + f.ascent, &by, pal.dim, 0.0);
     }
+    c.text(d, l, top + f.height + d.ascent, &d.fit(&detail, r - l), pal.dim, 0.0);
+}
+
+/// the ticket's title, publisher (or "") and detail line
+fn ticket_text<'a>(path: &'a str, size: u64, info: Option<&'a CiaInfo>) -> (&'a str, &'a str, String) {
+    let title = info.map_or(base_name(path), |i| i.title.as_str());
+    let publisher = info.map_or("", |i| i.publisher.as_str());
     let detail = match info {
         Some(i) => {
             let mut parts = Vec::new();
@@ -421,138 +431,12 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
         }
         None => format!("{} · not a CIA Cement can read", format_size(size)),
     };
-    c.text(d, l, top + f.height + d.ascent, &d.fit(&detail, r - l), pal.dim, 0.0);
+    (title, publisher, detail)
 }
 
 impl Server {
-    pub(super) fn draw_top(&mut self, t: &Top) {
-        self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
-        let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
-        if self.ui.info_stale(&sel) {
-            // read once per selection: a few KB from the SD card
-            self.ui.info = sel.map(|(path, size)| {
-                let info = cia_info(&path);
-                (path, size, info)
-            });
-        }
-        let view = self.viewed_image();
-        self.ui.drawn_for = (self.menu.tab, self.menu.row, view.clone());
-        let Some(mut scr) = self.ui.top.take() else { return };
-        if let Some(path) = view {
-            if self.ui.picture.as_ref().is_none_or(|(p, _)| *p != path) {
-                // decoding holds the loop up a moment: say so first
-                paint_note(&mut scr.c, &format!("Opening {}...", base_name(&path)), "", &self.ui.pal);
-                scr.present();
-                let pic = picture::load(&path);
-                self.ui.picture = Some((path, pic));
-                self.bottom_dirty = true; // its size goes in the Browse header
-            }
-            match &self.ui.picture {
-                Some((_, Ok(pic))) => paint_picture(&mut scr.c, pic, &self.ui.pal),
-                Some((path, Err(why))) => paint_note(&mut scr.c, &format!("Can't show {}", base_name(path)), why, &self.ui.pal),
-                None => {}
-            }
-            scr.present();
-            self.ui.top = Some(scr);
-            return;
-        }
-        self.ui.picture = None; // its memory back
-        self.paint_top(&mut scr.c, t);
-        scr.present();
-        self.ui.top = Some(scr);
-    }
-
-    pub(super) fn draw_bottom(&mut self, b: &Bottom) {
-        let now = sys::now_ms();
-        if !b.dirty && now.saturating_sub(self.ui.bottom_at) < INSTALL_FRAME_MS {
-            return;
-        }
-        self.ui.bottom_at = now;
-        self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
-        if b.dirty || self.ui.sd_free.is_none() {
-            self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
-        }
-        let Some(mut scr) = self.ui.bottom.take() else { return };
-        self.ui.hits = self.paint_bottom(&mut scr.c, b);
-        scr.present();
-        self.ui.bottom = Some(scr);
-    }
-
-    /// 400 x 240: title and battery, the address, the transfer card
-    fn paint_top(&self, c: &mut Canvas, t: &Top) {
-        let now = sys::now_ms();
-        let pal = &self.ui.pal;
-        c.fill(pal.bg);
-        c.rrect(245.0, 145.0, 210.0, 170.0, [(121.8, 78.2), (88.2, 93.5), (132.3, 76.5), (77.7, 91.8)], pal.blob);
-
-        // title row
-        let (left, right) = (16.0, 384.0);
-        let mut y = 14.0;
-        let f = &FREDOKA_BOLD_22;
-        let end = c.text(f, left, y + f.ascent, "cement", pal.text, 0.0);
-        let bat = t.bat;
-        let label = format!(
-            "{}{}",
-            battery_text(bat),
-            if bat.charging {
-                " charging"
-            } else if bat.plugged {
-                " plugged in"
-            } else {
-                ""
-            }
-        );
-        let p = &NUNITO_XBOLD_12;
-        let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
-        let py = y + (f.height - ph) / 2.0;
-        c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
-        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { pal.on_accent } else { pal.highlight }, 0.0);
-        // START left of the battery, leaving the room under the address free
-        let h = &NUNITO_BOLD_11;
-        let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);
-        let tx = right - pw - 10.0 - w;
-        let ty = (py + (ph - GLYPH) / 2.0).round();
-        let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
-        c.text(h, x, ty + ((GLYPH - h.height) / 2.0).round() + h.ascent, "exit", pal.dim, 0.0);
-        let room = tx - 8.0;
-        // the protocol level says which Baguette goes with this Cement (they version apart);
-        // a long -dev version is cut short before the hint
-        let v = &NUNITO_BOLD_11;
-        let version = v.fit(&format!("v{VERSION} · protocol {PROTOCOL}"), room - end - 6.0);
-        c.text(v, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
-        y += f.height + 9.0;
-
-        // address
-        let f = &NUNITO_BOLD_12;
-        c.text(f, left, y + f.ascent, "Connect to", pal.dim, 0.0);
-        let who = match &self.login {
-            Some((user, _)) => format!("login: {user}"),
-            None => "no login".to_string(),
-        };
-        c.text_right(f, right, y + f.ascent, &f.fit(&who, 170.0), pal.dim);
-        y += f.height + 2.0;
-        let f = &FREDOKA_SEMI_26;
-        let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
-        let mut x = c.text(f, left, y + f.ascent, &ip, pal.text, 1.0);
-        x = c.text(f, x, y + f.ascent, ":", pal.accent, 1.0);
-        c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
-        y += f.height + 2.0;
-        // under the address: a low battery warning, what the selected Settings
-        // row does, or the selected CIA
-        let ticket = self.prefs.cia_info.then_some(self.ui.info.as_ref()).flatten();
-        if t.low {
-            let w = &NUNITO_XBOLD_12;
-            for line in ["Battery low: no new transfers", "or installs until you charge"] {
-                c.text_right(w, right, y + 4.0 + w.ascent, line, pal.highlight);
-                y += w.height + 3.0;
-            }
-        } else if self.menu.tab == Tab::Settings {
-            draw_help(c, left, y + 4.0, right - left, help(ROWS[self.menu.row]), pal);
-        } else if let Some((path, size, info)) = ticket {
-            draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
-        }
-
-        // transfer card
+    /// what the transfer card says: the file moving, the batch, or the server's state
+    fn transfer_card(&self, t: &Top, now: u64) -> CardText {
         let batch = self.sess.iter().find(|s| s.ctrl.is_some() && s.batch_files != 0);
         let bp = batch.map(|s| progress_of(s, now));
         let mut card = CardText { title: String::new(), value: String::new(), frac: None, detail: String::new(), right: String::new() };
@@ -609,6 +493,153 @@ impl Server {
             }
             card.detail = parts.join(" · ");
         }
+        card
+    }
+
+    /// "87% charging"
+    fn battery_label(t: &Top) -> String {
+        let bat = t.bat;
+        let more = if bat.charging {
+            " charging"
+        } else if bat.plugged {
+            " plugged in"
+        } else {
+            ""
+        };
+        format!("{}{more}", battery_text(bat))
+    }
+
+    fn login_text(&self) -> String {
+        match &self.login {
+            Some((user, _)) => format!("login: {user}"),
+            None => "no login".to_string(),
+        }
+    }
+
+    pub(super) fn draw_top(&mut self, t: &Top) {
+        self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
+        let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
+        if self.ui.info_stale(&sel) {
+            // read once per selection: a few KB from the SD card
+            self.ui.info = sel.map(|(path, size)| {
+                let info = cia_info(&path);
+                (path, size, info)
+            });
+        }
+        let view = self.viewed_image();
+        self.ui.drawn_for = (self.menu.tab, self.menu.row, view.clone());
+        let Some(mut scr) = self.ui.top.take() else { return };
+        let ink = self.look() == Look::Ink;
+        let note = |c: &mut Canvas, title: &str, detail: &str, pal: &Palette| {
+            if ink { ink::paint_note(c, title, detail) } else { paint_note(c, title, detail, pal) }
+        };
+        if let Some(path) = view {
+            if self.ui.picture.as_ref().is_none_or(|(p, _)| *p != path) {
+                // decoding holds the loop up a moment: say so first
+                note(&mut scr.c, &format!("Opening {}...", base_name(&path)), "", &self.ui.pal);
+                scr.present();
+                let pic = picture::load(&path);
+                self.ui.picture = Some((path, pic));
+                self.bottom_dirty = true; // its size goes in the Browse header
+            }
+            match &self.ui.picture {
+                Some((_, Ok(pic))) => paint_picture(&mut scr.c, pic, if ink { ink::BG } else { self.ui.pal.bg }),
+                Some((path, Err(why))) => note(&mut scr.c, &format!("Can't show {}", base_name(path)), why, &self.ui.pal),
+                None => {}
+            }
+            scr.present();
+            self.ui.top = Some(scr);
+            return;
+        }
+        self.ui.picture = None; // its memory back
+        if ink {
+            self.paint_top_ink(&mut scr.c, t);
+        } else {
+            self.paint_top(&mut scr.c, t);
+        }
+        scr.present();
+        self.ui.top = Some(scr);
+    }
+
+    pub(super) fn draw_bottom(&mut self, b: &Bottom) {
+        let now = sys::now_ms();
+        if !b.dirty && now.saturating_sub(self.ui.bottom_at) < INSTALL_FRAME_MS {
+            return;
+        }
+        self.ui.bottom_at = now;
+        self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
+        if b.dirty || self.ui.sd_free.is_none() {
+            self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
+        }
+        let Some(mut scr) = self.ui.bottom.take() else { return };
+        self.ui.hits = self.paint_bottom(&mut scr.c, b);
+        scr.present();
+        self.ui.bottom = Some(scr);
+    }
+
+    /// 400 x 240: title and battery, the address, the transfer card
+    fn paint_top(&self, c: &mut Canvas, t: &Top) {
+        let now = sys::now_ms();
+        let pal = &self.ui.pal;
+        c.fill(pal.bg);
+        c.rrect(245.0, 145.0, 210.0, 170.0, [(121.8, 78.2), (88.2, 93.5), (132.3, 76.5), (77.7, 91.8)], pal.blob);
+
+        // title row
+        let (left, right) = (16.0, 384.0);
+        let mut y = 14.0;
+        let f = &FREDOKA_BOLD_22;
+        let end = c.text(f, left, y + f.ascent, "cement", pal.text, 0.0);
+        let label = Self::battery_label(t);
+        let p = &NUNITO_XBOLD_12;
+        let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
+        let py = y + (f.height - ph) / 2.0;
+        c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
+        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { pal.on_accent } else { pal.highlight }, 0.0);
+        // START left of the battery, leaving the room under the address free
+        let h = &NUNITO_BOLD_11;
+        let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);
+        let tx = right - pw - 10.0 - w;
+        let ty = (py + (ph - GLYPH) / 2.0).round();
+        let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
+        c.text(h, x, ty + ((GLYPH - h.height) / 2.0).round() + h.ascent, "exit", pal.dim, 0.0);
+        let room = tx - 8.0;
+        // the protocol level says which Baguette goes with this Cement (they version apart);
+        // a long -dev version is cut short before the hint
+        let v = &NUNITO_BOLD_11;
+        let version = v.fit(&format!("v{VERSION} · protocol {PROTOCOL}"), room - end - 6.0);
+        c.text(v, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
+        y += f.height + 9.0;
+
+        // address
+        let f = &NUNITO_BOLD_12;
+        c.text(f, left, y + f.ascent, "Connect to", pal.dim, 0.0);
+        c.text_right(f, right, y + f.ascent, &f.fit(&self.login_text(), 170.0), pal.dim);
+        y += f.height + 2.0;
+        let f = &FREDOKA_SEMI_26;
+        let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
+        let mut x = c.text(f, left, y + f.ascent, &ip, pal.text, 1.0);
+        x = c.text(f, x, y + f.ascent, ":", pal.accent, 1.0);
+        c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
+        y += f.height + 2.0;
+        // under the address: a low battery warning, what the selected Settings
+        // row does, or the selected CIA
+        let ticket = self.prefs.cia_info.then_some(self.ui.info.as_ref()).flatten();
+        if t.low {
+            let w = &NUNITO_XBOLD_12;
+            for line in ["Battery low: no new transfers", "or installs until you charge"] {
+                c.text_right(w, right, y + 4.0 + w.ascent, line, pal.highlight);
+                y += w.height + 3.0;
+            }
+        } else if self.menu.setup.is_some() {
+            draw_help(c, left, y + 4.0, right - left, help(Row::Look), pal);
+        } else if self.menu.tab == Tab::Settings {
+            draw_help(c, left, y + 4.0, right - left, help(ROWS[self.menu.row]), pal);
+        } else if let Some((path, size, info)) = ticket {
+            draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
+        }
+
+        // transfer card
+        let card = self.transfer_card(t, now);
         draw_card(c, left, 226.0 - card_height(), right - left, &card, pal);
     }
 }

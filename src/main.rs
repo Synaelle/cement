@@ -375,6 +375,9 @@ fn main() {
     let mut s = Box::new(Server::new());
     let saved = settings::load();
     (s.accent, s.login, s.prefs) = (saved.accent, saved.login, saved.prefs);
+    if saved.first_launch {
+        s.menu.setup = Some(0); // the bottom screen asks for a look first
+    }
     if !s.prefs.ftp {
         s.status = "FTP server off".into();
     }

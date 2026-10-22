@@ -19,6 +19,13 @@ const SIZES: &[(&str, &str, f32)] = &[
     ("NUNITO_BOLD_13", "nunito/Nunito-Bold.ttf", 13.0),
     ("NUNITO_BOLD_12", "nunito/Nunito-Bold.ttf", 12.0),
     ("NUNITO_BOLD_11", "nunito/Nunito-Bold.ttf", 11.0),
+    // the Ink look: Ink Sans (IBM Plex Sans, renamed) and IBM Plex Mono for the address
+    ("INK_SEMI_16", "inksans/InkSans-SemiBold.ttf", 16.0),
+    ("INK_SEMI_12", "inksans/InkSans-SemiBold.ttf", 12.0),
+    ("INK_MED_12", "inksans/InkSans-Medium.ttf", 12.0),
+    ("INK_REG_12", "inksans/InkSans-Regular.ttf", 12.0),
+    ("INK_REG_11", "inksans/InkSans-Regular.ttf", 11.0),
+    ("MONO_MED_22", "ibmplexmono/IBMPlexMono-Medium.ttf", 22.0),
 ];
 
 /// printable ASCII, Latin-1 and the ellipsis used to shorten long names

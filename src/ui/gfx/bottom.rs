@@ -8,6 +8,7 @@ use super::canvas::{Canvas, Color};
 use super::font::*;
 use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, bite_dot, card_height, draw_card, format_big, hint};
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
+use crate::settings::{LOOKS, Look};
 use crate::picture::is_image;
 use crate::ui::Bottom;
 use crate::ui::palette::Palette;
@@ -60,9 +61,34 @@ fn empty(c: &mut Canvas, top: f32, bottom: f32, line: &str, pal: &Palette) {
     c.text(f, mid - f.width(line, 0.0) / 2.0, top + (h - f.height) / 2.0 + f.ascent, &f.fit(line, RIGHT - LEFT - 16.0), pal.text, 0.0);
 }
 
+pub(super) enum RowValue {
+    Switch(bool),
+    Text(String),
+}
+
+pub(super) fn row_label(row: Row) -> &'static str {
+    match row {
+        Row::Look => "Look",
+        Row::Login => "FTP login",
+        Row::Ftp => "FTP server",
+        Row::CiaInfo => "CIA details on the top screen",
+        Row::Protect => "Protect important 3DS files",
+        Row::ScreenIdle => "Screens off when idle",
+        Row::AutoOff => "Turn the 3DS off when idle",
+    }
+}
+
+/// a look's line on the first launch
+pub(super) fn look_line(look: Look) -> &'static str {
+    match look {
+        Look::Cement => "Graphite and Miku teal, round and playful",
+        Look::Ink => "Black and white, plain type",
+    }
+}
+
 /// how many rows of height `h` (plus `gap`) fit between top and bottom, and
 /// the first one to show so that `sel` is visible
-fn window(top: f32, bottom: f32, h: f32, gap: f32, sel: usize) -> (usize, usize) {
+pub(super) fn window(top: f32, bottom: f32, h: f32, gap: f32, sel: usize) -> (usize, usize) {
     let rows = (((bottom - top + gap - 2.0) / (h + gap)).floor() as usize).max(1);
     (rows, if sel >= rows { sel - rows + 1 } else { 0 })
 }
@@ -70,9 +96,16 @@ fn window(top: f32, bottom: f32, h: f32, gap: f32, sel: usize) -> (usize, usize)
 impl Server {
     /// 320 x 240; returns where the tabs, rows and swatches are
     pub(super) fn paint_bottom(&self, c: &mut Canvas, b: &Bottom) -> Vec<Hit> {
+        if self.look() == Look::Ink {
+            return self.paint_bottom_ink(c, b);
+        }
         let pal = &self.ui.pal;
         let mut hits = Vec::new();
         c.fill(pal.bg);
+        if let Some(at) = self.menu.setup {
+            self.paint_setup(c, b, at, &mut hits);
+            return hits;
+        }
         self.tab_bar(c, &mut hits);
         match self.menu.tab {
             Tab::Recent => self.paint_recent(c, b, &mut hits),
@@ -121,28 +154,73 @@ impl Server {
             c.text(f, LEFT, bottom + f.ascent, &f.fit(&self.cia_msg, RIGHT - LEFT), color, 0.0);
             bottom -= 4.0;
         }
-        if self.menu.tab != Tab::Settings {
-            if let Some(inst) = &self.inst {
-                let done = *inst.shared.done.lock().unwrap();
-                let pct = if inst.total != 0 { done * 100 / inst.total } else { 0 };
-                let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
-                let card = CardText {
-                    title: format!("Installing {}", base_name(&inst.path)),
-                    value: if preparing { String::new() } else { format!("{pct}%") },
-                    frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
-                    detail: if preparing {
-                        "Preparing... removing the old copy".into()
-                    } else {
-                        format!("{} of {}", format_size(done), format_size(inst.total))
-                    },
-                    right: String::new(),
-                };
-                bottom -= card_height();
-                draw_card(c, LEFT, bottom, RIGHT - LEFT, &card, pal);
-                bottom -= 5.0;
-            }
+        if let Some(card) = self.install_card() {
+            bottom -= card_height();
+            draw_card(c, LEFT, bottom, RIGHT - LEFT, &card, pal);
+            bottom -= 5.0;
         }
         bottom
+    }
+
+    /// the install going on, outside Settings
+    pub(super) fn install_card(&self) -> Option<CardText> {
+        let inst = self.inst.as_ref().filter(|_| self.menu.tab != Tab::Settings)?;
+        let done = *inst.shared.done.lock().unwrap();
+        let pct = if inst.total != 0 { done * 100 / inst.total } else { 0 };
+        let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
+        Some(CardText {
+            title: format!("Installing {}", base_name(&inst.path)),
+            value: if preparing { String::new() } else { format!("{pct}%") },
+            frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
+            detail: if preparing {
+                "Preparing... removing the old copy".into()
+            } else {
+                format!("{} of {}", format_size(done), format_size(inst.total))
+            },
+            right: String::new(),
+        })
+    }
+
+    /// a Settings row's value: a switch, or a text
+    pub(super) fn row_value(&self, row: Row) -> RowValue {
+        match row {
+            Row::Look => RowValue::Text(self.prefs.look.name().to_string()),
+            Row::Ftp => RowValue::Switch(self.prefs.ftp),
+            Row::CiaInfo => RowValue::Switch(self.prefs.cia_info),
+            Row::Protect => RowValue::Switch(self.prefs.protect),
+            Row::ScreenIdle => RowValue::Switch(self.prefs.screen_idle),
+            Row::Login => RowValue::Text(self.login.as_ref().map_or("none", |l| l.0.as_str()).to_string()),
+            Row::AutoOff => RowValue::Text(match self.prefs.auto_off {
+                0 => "never".to_string(),
+                m => format!("after {m} min"),
+            }),
+        }
+    }
+
+    /// first launch: the two looks to pick from
+    fn paint_setup(&self, c: &mut Canvas, b: &Bottom, at: usize, hits: &mut Vec<Hit>) {
+        let pal = &self.ui.pal;
+        let bottom = self.bottom_stack(c, b, &[(Button::A, "use this look"), (Button::Dpad, "")]);
+        let (t, s) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
+        let mut y = 14.0;
+        c.text(t, LEFT, y + t.ascent, "Pick a look", pal.text, 0.0);
+        y += t.height;
+        c.text(s, LEFT, y + s.ascent, "You can change it later in Settings", pal.dim, 0.0);
+        y += s.height + 10.0;
+        let h = 40.0;
+        for (i, look) in LOOKS.iter().enumerate() {
+            if y + h > bottom {
+                break;
+            }
+            let sel = i == at;
+            row_box(c, y, h, sel, pal);
+            let f = if sel { &NUNITO_XBOLD_13 } else { &NUNITO_BOLD_13 };
+            let top = (y + (h - f.height - s.height) / 2.0).round();
+            c.text(f, LEFT + 10.0, top + f.ascent, look.name(), pal.text, 0.0);
+            c.text(s, LEFT + 10.0, top + f.height + s.ascent, look_line(*look), if sel { pal.soft } else { pal.dim }, 0.0);
+            hits.push(Hit { x0: LEFT, y0: y, x1: RIGHT, y1: y + h, tap: Tap::Item(i) });
+            y += h + 5.0;
+        }
     }
 
     /// the CIAs sent since Cement started, or found in the usual folders
@@ -257,36 +335,21 @@ impl Server {
     /// the login, the FTP server, the CIA details, the screens and the console turning off
     fn paint_settings(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
-        self.bottom_stack(c, b, &[(Button::A, "change"), (Button::Dpad, "")]);
-        let (h, gap) = (22.0, 3.0);
+        let bottom = self.bottom_stack(c, b, &[(Button::A, "change"), (Button::Dpad, "")]);
+        let (h, gap) = (21.0, 2.0);
+        let (rows, first) = window(CONTENT, bottom, h, gap, self.menu.row);
         let mut y = CONTENT;
-        for (i, &row) in ROWS.iter().enumerate() {
+        for (i, &row) in ROWS.iter().enumerate().skip(first).take(rows) {
             let sel = i == self.menu.row;
             row_box(c, y, h, sel, pal);
             let f = if sel { &NUNITO_XBOLD_12 } else { &NUNITO_BOLD_12 };
             let base = y + ((h - f.height) / 2.0).round() + f.ascent;
             let (l, r) = (LEFT + 9.0, RIGHT - 9.0);
             let cy = y + h / 2.0;
-            let label = match row {
-                Row::Login => "FTP login",
-                Row::Ftp => "FTP server",
-                Row::CiaInfo => "CIA details on the top screen",
-                Row::Protect => "Protect important 3DS files",
-                Row::ScreenIdle => "Screens off when idle",
-                Row::AutoOff => "Turn the 3DS off when idle",
-            };
-            c.text(f, l, base, label, pal.text, 0.0);
-            let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
-            match row {
-                Row::Ftp => toggle(c, r, cy, self.prefs.ftp, pal),
-                Row::CiaInfo => toggle(c, r, cy, self.prefs.cia_info, pal),
-                Row::Protect => toggle(c, r, cy, self.prefs.protect, pal),
-                Row::ScreenIdle => toggle(c, r, cy, self.prefs.screen_idle, pal),
-                Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
-                Row::AutoOff => match self.prefs.auto_off {
-                    0 => value(c, "never"),
-                    m => value(c, &format!("after {m} min")),
-                },
+            c.text(f, l, base, row_label(row), pal.text, 0.0);
+            match self.row_value(row) {
+                RowValue::Switch(on) => toggle(c, r, cy, on, pal),
+                RowValue::Text(text) => c.text_right(f, r, base, &text, if sel { pal.soft } else { pal.dim }),
             }
             hits.push(Hit { x0: LEFT, y0: y, x1: RIGHT, y1: y + h, tap: Tap::Item(i) });
             y += h + gap;

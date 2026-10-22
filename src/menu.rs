@@ -15,7 +15,7 @@
 
 use crate::picture::is_image;
 use crate::protect;
-use crate::settings::{self, AUTO_OFF};
+use crate::settings::{self, AUTO_OFF, LOOKS, Look};
 use crate::util::{base_name, is_cia};
 use crate::{Server, sys};
 
@@ -41,6 +41,7 @@ impl Tab {
 /// the Settings rows, top to bottom
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Row {
+    Look,
     Login,
     Ftp,
     CiaInfo,
@@ -49,7 +50,7 @@ pub enum Row {
     AutoOff,
 }
 
-pub const ROWS: [Row; 6] = [Row::Login, Row::Ftp, Row::CiaInfo, Row::Protect, Row::ScreenIdle, Row::AutoOff];
+pub const ROWS: [Row; 7] = [Row::Look, Row::Login, Row::Ftp, Row::CiaInfo, Row::Protect, Row::ScreenIdle, Row::AutoOff];
 
 /// what a touch landed on (the drawing records where each one is)
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -81,6 +82,7 @@ pub struct Menu {
     pub browse: Browser,
     pub row: usize,                     // Settings
     pub view: bool,                     // Browse: the selected image is shown on the top screen
+    pub setup: Option<usize>,           // first launch: the look highlighted (LOOKS), until A picks it
     pub held: bool,                     // the Up or Down being handled is a repeat of a held key
     hold: Option<(u32, u64, u64)>,      // Up or Down held: which, since when, the next repeat
     confirm: Option<(String, u64)>,     // what a first press asked about, and until when a second one confirms it
@@ -115,6 +117,7 @@ impl Menu {
             browse: Browser { dir: "/".into(), entries: Vec::new(), sel: 0, loaded: false, failed: false },
             row: 0,
             view: false,
+            setup: None,
             held: false,
             hold: None,
             confirm: None,
@@ -157,9 +160,45 @@ impl Server {
         (key, n)
     }
 
+    /// the look drawn: the highlighted one while it is being picked
+    pub fn look(&self) -> Look {
+        self.menu.setup.map_or(self.prefs.look, |i| LOOKS[i])
+    }
+
+    /// first launch: Up and Down preview a look on both screens, A (or a touch on it) picks it
+    fn setup_input(&mut self, down: u32, tap: Option<Tap>) {
+        let Some(at) = self.menu.setup else { return };
+        let n = LOOKS.len();
+        let pick = match tap {
+            Some(Tap::Item(i)) if i < n && i == at => true,
+            Some(Tap::Item(i)) if i < n => {
+                self.menu.setup = Some(i);
+                false
+            }
+            _ if down & (sys::KEY_UP | sys::KEY_DOWN) != 0 => {
+                self.menu.setup = Some(step(at, n, down & sys::KEY_UP != 0, self.menu.held));
+                false
+            }
+            _ => down & sys::KEY_A != 0,
+        };
+        if pick {
+            self.prefs.look = LOOKS[at];
+            self.menu.setup = None;
+            self.save_prefs();
+        }
+        self.bottom_dirty = true;
+        self.last_time = 0; // the top screen previews it now
+    }
+
     /// L, R, the D-pad, A, B and touches on the bottom screen
     pub fn menu_input(&mut self, down: u32) {
         let mut tap = sys::touch().filter(|_| down & sys::KEY_TOUCH != 0).and_then(|(x, y)| self.ui.hit(x, y));
+        if self.menu.setup.is_some() {
+            if down != 0 {
+                self.setup_input(down, tap);
+            }
+            return;
+        }
         let tab = self.menu.tab;
         let i = TABS.iter().position(|&t| t == tab).unwrap_or(0);
         let mut switch = None;
@@ -387,6 +426,13 @@ impl Server {
         self.last_time = 0; // the top screen may show it
     }
 
+    fn step_look(&mut self, step: isize) {
+        let n = LOOKS.len() as isize;
+        let at = LOOKS.iter().position(|&l| l == self.prefs.look).unwrap_or(0) as isize;
+        self.prefs.look = LOOKS[(at + step).rem_euclid(n) as usize];
+        self.save_prefs();
+    }
+
     fn step_auto_off(&mut self, step: isize) {
         let n = AUTO_OFF.len() as isize;
         let at = AUTO_OFF.iter().position(|&m| m == self.prefs.auto_off).unwrap_or(0) as isize;
@@ -397,6 +443,7 @@ impl Server {
     /// A (or a touch) on a Settings row
     fn settings_activate(&mut self, row: Row) {
         match row {
+            Row::Look => self.step_look(1),
             Row::Login => self.login_keyboard(),
             Row::Ftp => {
                 self.prefs.ftp = !self.prefs.ftp;
@@ -448,6 +495,7 @@ impl Server {
             let step = if down & sys::KEY_LEFT != 0 { -1 } else { 1 };
             match row {
                 Row::AutoOff => self.step_auto_off(step),
+                Row::Look => self.step_look(step),
                 _ => return,
             }
         } else if down & sys::KEY_A != 0 {
