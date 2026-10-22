@@ -337,7 +337,7 @@ fn help(row: Row) -> &'static str {
         Row::Login => "The user name and password a PC needs to connect. With none, anyone on your Wi-Fi can connect.",
         Row::Ftp => "Off, no PC can connect and the connected ones are dropped. Installing and browsing here still work.",
         Row::CiaInfo => "Shows the selected CIA under the address: its icon, title, version and whether it's new or an update.",
-        Row::Protect => "X can't delete /Nintendo 3DS, /boot.firm, /luma, /gm9 or /boot.3dsx. Luma's screenshots stay free.",
+        Row::Protect => "Can't delete /Nintendo 3DS, /boot.firm, /luma, /gm9 or /boot.3dsx. Luma's screenshots stay free.",
         Row::ScreenIdle => "Both screens go dark after a minute with no button or transfer. Any button lights them again.",
         Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
     }
