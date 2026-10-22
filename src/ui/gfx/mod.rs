@@ -380,9 +380,6 @@ impl Server {
         let mut y = 14.0;
         let f = &FREDOKA_BOLD_22;
         let end = c.text(f, left, y + f.ascent, "cement", pal.text, 0.0);
-        // the protocol level says which Baguette goes with this Cement (they version apart)
-        let version = format!("v{VERSION} · protocol {PROTOCOL}");
-        c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
         let bat = t.bat;
         let label = format!(
             "{}{}",
@@ -400,6 +397,22 @@ impl Server {
         let py = y + (f.height - ph) / 2.0;
         c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
         c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { pal.on_accent } else { pal.highlight }, 0.0);
+        // with the CIA details on, START goes up here to leave them the room
+        let mut room = right - pw - 8.0;
+        if self.prefs.cia_info {
+            let h = &NUNITO_BOLD_11;
+            let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);
+            let tx = right - pw - 10.0 - w;
+            let ty = (py + (ph - GLYPH) / 2.0).round();
+            let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
+            c.text(h, x, ty + ((GLYPH - h.height) / 2.0).round() + h.ascent, "exit", pal.dim, 0.0);
+            room = tx - 8.0;
+        }
+        // the protocol level says which Baguette goes with this Cement (they version apart);
+        // a long -dev version is cut short before the hint
+        let v = &NUNITO_BOLD_11;
+        let version = v.fit(&format!("v{VERSION} · protocol {PROTOCOL}"), room - end - 6.0);
+        c.text(v, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
         y += f.height + 9.0;
 
         // address
@@ -418,19 +431,12 @@ impl Server {
         c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
         // the buttons as small keycaps, then what they do, one per line; a low
-        // battery warning on the right of them, one line each too. With the CIA
-        // details on, START goes up to the title row to leave them the room.
+        // battery warning on the right of them, one line each too (START is in
+        // the title row with the CIA details on)
         let warning = ["Battery low: no new transfers", "or installs until you charge"];
         let f = &NUNITO_BOLD_11;
         let ticket = self.prefs.cia_info.then_some(self.ui.info.as_ref()).flatten();
         let start = if self.prefs.cia_info { None } else { Some((Button::Start, "exit")) };
-        if self.prefs.cia_info {
-            let w = glyph_size(Button::Start).0 + 4.0 + f.width("exit", 0.0);
-            let tx = right - pw - 10.0 - w;
-            let ty = (py + (ph - GLYPH) / 2.0).round();
-            let x = tx + glyph(c, tx, ty, Button::Start, pal.dim, pal.bg, pal) + 4.0;
-            c.text(f, x, ty + ((GLYPH - f.height) / 2.0).round() + f.ascent, "exit", pal.dim, 0.0);
-        }
         if let (Some((path, size, info)), false) = (ticket, t.low) {
             draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
         } else if start.is_some() || t.low {
