@@ -25,8 +25,11 @@ L and R switch the bottom screen's tabs:
 - **Recent**: the CIAs you sent, and those in `/`, `/cia`, `/cias` and `/fbi`
 - **Browse**: every folder of the SD card. A on an image (PNG, JPEG or BMP, like Luma's
   screenshots) shows it on the top screen
-- **Settings**: FTP login, FTP server on or off, CIA details on the top screen, file protection,
-  screens and auto off. The top screen tells what the selected one does
+- **Settings**: the look, FTP login, FTP server on or off, CIA details on the top screen, file
+  protection, screens and auto off. The top screen tells what the selected one does
+
+The first time it starts, Cement asks for a look: **Cement**, round with Miku teal, or **Ink**,
+plain black and white.
 
 The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.
 A installs it (and deletes the file once it's installed). X deletes the selected file or folder,
@@ -63,8 +66,10 @@ through.
 
 ## Credits
 
-Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One) and
-[Nunito](https://github.com/googlefonts/nunito) (SIL Open Font License). Button glyphs:
+Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One),
+[Nunito](https://github.com/googlefonts/nunito), [IBM Plex Mono](https://github.com/IBM/plex) and
+Ink Sans, made from [IBM Plex Sans](https://github.com/IBM/plex) and renamed as its license asks
+(all SIL Open Font License). Button glyphs:
 [Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0).
 
 ## License
