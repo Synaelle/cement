@@ -27,8 +27,8 @@ The bottom screen has three tabs (switch with L and R, or touch them):
 - **Recent**: the CIA files sent since Cement started, and those in `/`, `/cia`, `/cias` and
   `/fbi`. Press A to install one (the file is deleted once it's installed).
 - **Browse**: the folders of the SD card, to install a CIA from anywhere. B goes back up.
-- **Settings**: the colour (or let Baguette pick it), the FTP login, turning the FTP server off,
-  keeping the screens on, and turning the 3DS off after a while without use.
+- **Settings**: the FTP login, turning the FTP server off, keeping the screens on, and turning
+  the 3DS off after a while without use.
 
 **Cement Text**, the old console text version, is discontinued: 2.0.64 was its last release.
 
