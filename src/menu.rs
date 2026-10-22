@@ -104,8 +104,9 @@ pub fn step(sel: usize, n: usize, up: bool, held: bool) -> usize {
     }
 }
 
-/// how long a second press has to come to confirm (deleting, turning the protection off)
-const CONFIRM_MS: u64 = 4000;
+/// how long a second press has to come to confirm (deleting, turning the protection off):
+/// as long as the question stays on screen, so a press while it shows always confirms
+const CONFIRM_MS: u64 = crate::ui::MSG_MS;
 
 impl Menu {
     pub fn new() -> Menu {

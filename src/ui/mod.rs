@@ -17,8 +17,8 @@ pub fn good_news(msg: &str) -> bool {
     msg.starts_with("Installed") || msg.starts_with("Login") || msg.starts_with("Deleted") || msg == "Protection on"
 }
 
-/// how long an install message stays on the bottom screen
-const MSG_MS: u64 = 8000;
+/// how long a message stays on the bottom screen
+pub const MSG_MS: u64 = 8000;
 
 /// what the bottom screen shows besides the CIA list
 pub struct Bottom {
