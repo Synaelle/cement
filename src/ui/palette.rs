@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The screens' colours, all following the accent's hue the way Chomp's
+// The screens' colours, all following the accent's hue the way Baguette's
 // applyAccent (app/ui/app.js) does, so both apps match: the default accent
 // keeps the hand-picked palette, any other one puts each colour's lightness on
 // the accent's hue.
@@ -39,7 +39,7 @@ const DEFAULT: Palette = Palette {
     dim: 0xa8928e,
 };
 
-/// (hue in degrees, saturation, lightness), as Chomp's toHsl
+/// (hue in degrees, saturation, lightness), as Baguette's toHsl
 fn to_hsl(c: Color) -> (f64, f64, f64) {
     let (r, g, b) = (((c >> 16) & 255) as f64 / 255.0, ((c >> 8) & 255) as f64 / 255.0, (c & 255) as f64 / 255.0);
     let (max, min) = (r.max(g).max(b), r.min(g).min(b));
@@ -59,7 +59,7 @@ fn to_hsl(c: Color) -> (f64, f64, f64) {
     (h * 60.0, s, l)
 }
 
-/// CSS hsl() to RGB, after the rounding Chomp's hsl() string does (hue to
+/// CSS hsl() to RGB, after the rounding Baguette's hsl() string does (hue to
 /// 0.1 degree, saturation and lightness to 0.1 %)
 fn from_hsl(h: f64, s: f64, l: f64) -> Color {
     let tenth = |v: f64| (v * 10.0).round() / 10.0;

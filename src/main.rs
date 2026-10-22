@@ -41,8 +41,8 @@ pub const VERSION: &str = match option_env!("CEMENT_VERSION") {
 };
 
 /// Compatibility level with the PC apps, reported in SITE STATUS. Bump it (and
-/// REQUIRED_PROTOCOL in Chomp's src/ftp.h) only when the PC side needs this new
-/// 3DS build; Chomp warns about an outdated 3DS app only then.
+/// REQUIRED_PROTOCOL in Baguette) only when the PC side needs this new
+/// 3DS build; Baguette warns about an outdated 3DS app only then.
 pub const PROTOCOL: u32 = 3;
 
 const fn env_ms(v: Option<&str>, default: u64) -> u64 {
@@ -131,7 +131,7 @@ pub struct Server {
 
     pub menu: menu::Menu,
     pub prefs: settings::Prefs,
-    pub accent: u32,                     // drawn UI accent, set in Settings or by Chomp (SITE COLOR)
+    pub accent: u32,                     // drawn UI accent, set in Settings or by Baguette (SITE COLOR)
     pub login: Option<(String, String)>, // FTP user and password; None: anonymous
     pub ui: ui::Ui,
 }

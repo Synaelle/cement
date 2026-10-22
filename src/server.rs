@@ -985,7 +985,7 @@ impl Server {
         let cmd = cmd.as_str();
         let now = sys::now_ms();
         self.sess[i].last_cmd = now;
-        // a client that only polls (Chomp's status) isn't someone using the 3DS
+        // a client that only polls (Baguette's status) isn't someone using the 3DS
         let poll = cmd == "NOOP" || (cmd == "SITE" && arg.len() >= 6 && arg[..6].eq_ignore_ascii_case(b"STATUS"));
         if !poll {
             self.last_ftp = now;
@@ -1300,7 +1300,7 @@ impl Server {
                     let text = format!("200 #{:06x}\r\n", self.accent);
                     self.sess[i].reply(&text);
                 } else if settings::parse_color(arg).is_some() && !self.prefs.color_sync {
-                    // the colour is picked on the 3DS (Settings): Chomp's isn't applied
+                    // the colour is picked on the 3DS (Settings): Baguette's isn't applied
                     self.sess[i].reply("200 Accent kept: colour sync is off on the 3DS\r\n");
                 } else if let Some(c) = settings::parse_color(arg) {
                     if c != self.accent {

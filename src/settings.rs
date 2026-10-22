@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Settings kept on the SD card in sdmc:/3ds/cement/settings.ini, one
 // "key=value" per line: the accent colour (Settings, or SITE COLOR when synced
-// with Chomp), the FTP login (SITE LOGIN, or Settings / Y) and the other
+// with Baguette), the FTP login (SITE LOGIN, or Settings / Y) and the other
 // choices of the Settings tab. The password is stored as plain text.
 
 use crate::sys::{self, File};
@@ -74,7 +74,7 @@ pub struct Settings {
 /// the switches of the Settings tab
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Prefs {
-    pub color_sync: bool,  // Chomp's SITE COLOR sets the accent (else only the 3DS does)
+    pub color_sync: bool,  // Baguette's SITE COLOR sets the accent (else only the 3DS does)
     pub ftp: bool,         // the FTP server runs
     pub screen_idle: bool, // the screens turn off after an idle minute
     pub auto_off: u32,     // minutes without use before the console turns off, 0 = never

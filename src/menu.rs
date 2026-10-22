@@ -3,7 +3,7 @@
 // The bottom screen's tabs, switched with L and R or by touching them:
 // - Recent: the CIA files sent since Cement started, or found at startup
 // - Browse: the SD card's folders, to open them and install a CIA from them
-// - Settings: the colour (or sync with Chomp), the login, the FTP server, the
+// - Settings: the colour (or sync with Baguette), the login, the FTP server, the
 //   screens turning off, the console turning off when idle
 // The state and the buttons are handled here; ui/gfx draws them and says what
 // each touched spot is (Ui::hit).
@@ -31,7 +31,7 @@ impl Tab {
     }
 }
 
-/// Chomp's accent choices, offered in Settings
+/// Baguette's accent choices, offered in Settings
 pub const SWATCHES: [u32; 9] = [0xb8283c, 0x951d2e, 0xd0503a, 0xc27a1e, 0x3f9a5a, 0x1f8f8a, 0x2f6fd0, 0x7a4cc4, 0xb8388f];
 
 /// the Settings rows, top to bottom
@@ -251,7 +251,7 @@ impl Server {
     /// the colour row: `step` swatches along (manual colour only)
     fn step_colour(&mut self, step: isize) {
         if self.prefs.color_sync {
-            self.cia_message("The colour follows Chomp: turn the sync off to pick one".into());
+            self.cia_message("The colour follows Baguette: turn the sync off to pick one".into());
             return;
         }
         let n = SWATCHES.len() as isize;

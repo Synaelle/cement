@@ -294,7 +294,7 @@ impl Server {
         let mut y = 14.0;
         let f = &FREDOKA_BOLD_22;
         let end = c.text(f, left, y + f.ascent, "cement", pal.text, 0.0);
-        // the protocol level says which Chomp goes with this Cement (they version apart)
+        // the protocol level says which Baguette goes with this Cement (they version apart)
         let version = format!("v{VERSION} · protocol {PROTOCOL}");
         c.text(&NUNITO_BOLD_11, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
         let bat = t.bat;

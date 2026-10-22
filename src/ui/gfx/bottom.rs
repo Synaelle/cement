@@ -248,7 +248,7 @@ impl Server {
         }
     }
 
-    /// the colour (or the sync with Chomp), the login, the FTP server, the
+    /// the colour (or the sync with Baguette), the login, the FTP server, the
     /// screens turning off, the console turning off
     fn paint_settings(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
@@ -264,7 +264,7 @@ impl Server {
             let cy = y + h / 2.0;
             let label = match row {
                 Row::Colour => "Colour",
-                Row::Sync => "Colour from Chomp",
+                Row::Sync => "Colour from Baguette",
                 Row::Login => "FTP login",
                 Row::Ftp => "FTP server",
                 Row::ScreenIdle => "Screens off when idle",
@@ -275,7 +275,7 @@ impl Server {
             let bg = if sel { pal.selected } else { pal.card };
             match row {
                 Row::Colour => {
-                    // Chomp's swatches; faded while the colour follows Chomp
+                    // Baguette's swatches; faded while the colour follows Baguette
                     let (rad, step) = (6.0, 16.0);
                     let x_last = r - rad;
                     for (k, &sw) in SWATCHES.iter().enumerate() {
