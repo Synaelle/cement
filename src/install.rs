@@ -209,10 +209,8 @@ impl Server {
             return;
         }
         let n = self.cias.len();
-        if down & sys::KEY_UP != 0 {
-            self.cia_sel = (self.cia_sel + n - 1) % n;
-        } else if down & sys::KEY_DOWN != 0 {
-            self.cia_sel = (self.cia_sel + 1) % n;
+        if down & (sys::KEY_UP | sys::KEY_DOWN) != 0 {
+            self.cia_sel = crate::menu::step(self.cia_sel, n, down & sys::KEY_UP != 0, self.menu.held);
         } else if down & sys::KEY_A != 0 {
             self.start_install();
         } else {

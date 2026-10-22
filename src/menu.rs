@@ -81,7 +81,27 @@ pub struct Menu {
     pub browse: Browser,
     pub row: usize,                     // Settings
     pub view: bool,                     // Browse: the selected image is shown on the top screen
+    pub held: bool,                     // the Up or Down being handled is a repeat of a held key
+    hold: Option<(u32, u64, u64)>,      // Up or Down held: which, since when, the next repeat
     confirm: Option<(String, u64)>,     // what a first press asked about, and until when a second one confirms it
+}
+
+/// Up or Down held: the first repeat after HOLD_MS, then one every REPEAT_MS,
+/// every FAST_MS once held for FAST_AFTER_MS
+const HOLD_MS: u64 = 300;
+const REPEAT_MS: u64 = 90;
+const FAST_MS: u64 = 30;
+const FAST_AFTER_MS: u64 = 1000;
+
+/// the selection one row up or down: a press wraps around the list, a held
+/// key stops at its ends (holding doesn't run past them)
+pub fn step(sel: usize, n: usize, up: bool, held: bool) -> usize {
+    match (up, held) {
+        (true, false) => (sel + n - 1) % n,
+        (false, false) => (sel + 1) % n,
+        (true, true) => sel.saturating_sub(1),
+        (false, true) => (sel + 1).min(n - 1),
+    }
 }
 
 /// how long a second press has to come to confirm (deleting, turning the protection off)
@@ -94,6 +114,8 @@ impl Menu {
             browse: Browser { dir: "/".into(), entries: Vec::new(), sel: 0, loaded: false, failed: false },
             row: 0,
             view: false,
+            held: false,
+            hold: None,
             confirm: None,
         }
     }
@@ -111,6 +133,29 @@ fn join(dir: &str, name: &str) -> String {
 }
 
 impl Server {
+    /// Up and Down again while held, faster the longer: how many repeats are
+    /// due now (several when a loop round took longer than one)
+    pub fn held_repeats(&mut self, down: u32) -> (u32, u32) {
+        let now = sys::now_ms();
+        let arrows = down & (sys::KEY_UP | sys::KEY_DOWN);
+        if arrows != 0 {
+            self.menu.hold = Some((arrows, now, now + HOLD_MS));
+            return (0, 0);
+        }
+        let Some((key, since, mut next)) = self.menu.hold else { return (0, 0) };
+        if sys::keys_held() & key == 0 {
+            self.menu.hold = None;
+            return (0, 0);
+        }
+        let mut n = 0;
+        while now >= next && n < 8 {
+            next += if next - since >= FAST_AFTER_MS { FAST_MS } else { REPEAT_MS };
+            n += 1;
+        }
+        self.menu.hold = Some((key, since, next.max(now + 1)));
+        (key, n)
+    }
+
     /// L, R, the D-pad, A, B and touches on the bottom screen
     pub fn menu_input(&mut self, down: u32) {
         let mut tap = sys::touch().filter(|_| down & sys::KEY_TOUCH != 0).and_then(|(x, y)| self.ui.hit(x, y));
@@ -309,10 +354,8 @@ impl Server {
             return;
         }
         let b = &mut self.menu.browse;
-        if down & sys::KEY_UP != 0 && n != 0 {
-            b.sel = (b.sel + n - 1) % n;
-        } else if down & sys::KEY_DOWN != 0 && n != 0 {
-            b.sel = (b.sel + 1) % n;
+        if down & (sys::KEY_UP | sys::KEY_DOWN) != 0 && n != 0 {
+            b.sel = step(b.sel, n, down & sys::KEY_UP != 0, self.menu.held);
         } else if down & sys::KEY_LEFT != 0 && n != 0 {
             b.sel = b.sel.saturating_sub(8);
         } else if down & sys::KEY_RIGHT != 0 && n != 0 {
@@ -398,10 +441,8 @@ impl Server {
         }
         let n = ROWS.len();
         let row = ROWS[self.menu.row];
-        if down & sys::KEY_UP != 0 {
-            self.menu.row = (self.menu.row + n - 1) % n;
-        } else if down & sys::KEY_DOWN != 0 {
-            self.menu.row = (self.menu.row + 1) % n;
+        if down & (sys::KEY_UP | sys::KEY_DOWN) != 0 {
+            self.menu.row = step(self.menu.row, n, down & sys::KEY_UP != 0, self.menu.held);
         } else if down & (sys::KEY_LEFT | sys::KEY_RIGHT) != 0 {
             let step = if down & sys::KEY_LEFT != 0 { -1 } else { 1 };
             match row {
@@ -414,5 +455,19 @@ impl Server {
             return;
         }
         self.bottom_dirty = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steps() {
+        assert_eq!(step(0, 5, true, false), 4, "a press wraps to the end");
+        assert_eq!(step(4, 5, false, false), 0, "and back to the top");
+        assert_eq!(step(0, 5, true, true), 0, "held, it stops at the top");
+        assert_eq!(step(4, 5, false, true), 4, "and at the bottom");
+        assert_eq!(step(2, 5, false, true), 3);
     }
 }

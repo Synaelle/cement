@@ -284,6 +284,13 @@ impl Server {
             self.bottom_dirty = true;
         }
         self.menu_input(down);
+        // Up or Down held: the lists keep moving, faster the longer
+        let (key, repeats) = self.held_repeats(down);
+        self.menu.held = true;
+        for _ in 0..repeats {
+            self.menu_input(key);
+        }
+        self.menu.held = false;
 
         let now = sys::now_ms();
         if now >= self.next_net_check {

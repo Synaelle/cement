@@ -130,6 +130,11 @@ pub fn keys_down() -> u32 {
     }
 }
 
+/// the buttons held down at the last keys_down
+pub fn keys_held() -> u32 {
+    unsafe { c::hidKeysHeld() }
+}
+
 /// where the bottom screen was touched, when keys_down saw KEY_TOUCH
 pub fn touch() -> Option<(u16, u16)> {
     unsafe { TOUCH }

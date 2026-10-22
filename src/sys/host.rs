@@ -7,7 +7,8 @@
 //   CEMENT_INSTALLED="<title id hex>:<version>,..." lists the titles already installed
 //   (deleting one takes CEMENT_DELETE_MS, as it can on the console)
 // - keys come from the file named by CEMENT_KEYS ("A", "B", "X", "L", "R", "UP",
-//   "DOWN", "LEFT", "RIGHT", "SELECT", or "TOUCH <x> <y>" on the bottom screen)
+//   "DOWN", "LEFT", "RIGHT", "SELECT", "TOUCH <x> <y>" on the bottom screen, or
+//   "HOLD <key> <ms>": pressed, then held down that long)
 // - turning the console off (auto off) is logged as "[shim] shutdown"
 // - the software keyboard answers with the lines of the file named by
 //   CEMENT_SWKBD, one per call ("<cancel>" or no line left: Cancel)
@@ -79,6 +80,16 @@ pub fn sleep_ms(ms: u64) {
 }
 
 static TOUCH: std::sync::Mutex<Option<(u16, u16)>> = std::sync::Mutex::new(None);
+/// a key held down from a "HOLD <key> <ms>" line, and until when
+static HELD: std::sync::Mutex<Option<(u32, Instant)>> = std::sync::Mutex::new(None);
+
+/// the key a "HOLD" line holds, while it lasts
+pub fn keys_held() -> u32 {
+    match *HELD.lock().unwrap() {
+        Some((key, until)) if Instant::now() < until => key,
+        _ => 0,
+    }
+}
 
 /// where the bottom screen was touched ("TOUCH x y" in the keys file)
 pub fn touch() -> Option<(u16, u16)> {
@@ -97,8 +108,22 @@ pub fn keys_down() -> u32 {
         return 0; // still being written: read it next time
     }
     let _ = fs::remove_file(&file);
-    let key = text.trim();
+    let mut key = text.trim();
     *TOUCH.lock().unwrap() = None;
+    *HELD.lock().unwrap() = None;
+    let mut hold_ms = None;
+    if let Some(rest) = key.strip_prefix("HOLD ") {
+        // "HOLD DOWN 1500": pressed, then held that long
+        let (name, ms) = rest.rsplit_once(' ').unwrap_or((rest, "0"));
+        key = name;
+        hold_ms = ms.parse::<u64>().ok();
+    }
+    let held = |bit: u32| {
+        if let Some(ms) = hold_ms {
+            *HELD.lock().unwrap() = Some((bit, Instant::now() + std::time::Duration::from_millis(ms)));
+        }
+        bit
+    };
     if let Some(at) = key.strip_prefix("TOUCH") {
         let mut n = at.split_whitespace().map(|v| v.parse::<u16>().unwrap_or(0));
         *TOUCH.lock().unwrap() = Some((n.next().unwrap_or(0), n.next().unwrap_or(0)));
@@ -107,12 +132,12 @@ pub fn keys_down() -> u32 {
     // longest names first: "LEFT" before "L"
     for (name, key_bit) in [("SELECT", KEY_SELECT), ("RIGHT", KEY_RIGHT), ("LEFT", KEY_LEFT), ("UP", KEY_UP), ("DOWN", KEY_DOWN)] {
         if key.starts_with(name) {
-            return key_bit;
+            return held(key_bit);
         }
     }
     for (name, key_bit) in [("A", KEY_A), ("B", KEY_B), ("X", KEY_X), ("L", KEY_L), ("R", KEY_R)] {
         if key == name {
-            return key_bit;
+            return held(key_bit);
         }
     }
     0
