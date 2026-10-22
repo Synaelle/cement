@@ -1294,20 +1294,16 @@ impl Server {
                 self.sess[i].reply("200 OK\r\n");
             }
             "COLOR" => {
-                // SITE COLOR [#rrggbb]: the drawn screens' accent, kept on the SD card
+                // SITE COLOR [#rrggbb]: the accent, kept on the SD card. Part of the
+                // protocol, but the screens don't use it until the redesign is done
                 let arg = text.get(5..).unwrap_or("").trim();
                 if arg.is_empty() {
                     let text = format!("200 #{:06x}\r\n", self.accent);
                     self.sess[i].reply(&text);
-                } else if settings::parse_color(arg).is_some() && !self.prefs.color_sync {
-                    // the colour is picked on the 3DS (Settings): Baguette's isn't applied
-                    self.sess[i].reply("200 Accent kept: colour sync is off on the 3DS\r\n");
                 } else if let Some(c) = settings::parse_color(arg) {
                     if c != self.accent {
                         self.accent = c;
                         settings::save_accent(c);
-                        self.bottom_dirty = true; // both screens redraw in the new colour
-                        self.last_time = 0;
                     }
                     self.sess[i].reply("200 Accent set\r\n");
                 } else {
@@ -1392,7 +1388,7 @@ impl Server {
             crate::battery_low(bat) as i32,
             self.accent,
             self.login.is_some() as i32,
-            self.prefs.color_sync as i32,
+            1, // color_sync: Baguette's colour is always the one kept
             VERSION
         );
         for (j, s) in self.sess.iter().enumerate() {

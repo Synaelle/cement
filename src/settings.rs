@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Settings kept on the SD card in sdmc:/3ds/cement/settings.ini, one
-// "key=value" per line: the accent colour (Settings, or SITE COLOR when synced
-// with Baguette), the FTP login (SITE LOGIN, or Settings / Y) and the other
-// choices of the Settings tab. The password is stored as plain text.
+// "key=value" per line: the accent colour (SITE COLOR, kept but not used for
+// now), the FTP login (SITE LOGIN, or Settings) and the other choices of the
+// Settings tab. The password is stored as plain text.
 
 use crate::sys::{self, File};
 
@@ -74,7 +74,6 @@ pub struct Settings {
 /// the switches of the Settings tab
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Prefs {
-    pub color_sync: bool,  // Baguette's SITE COLOR sets the accent (else only the 3DS does)
     pub ftp: bool,         // the FTP server runs
     pub screen_idle: bool, // the screens turn off after an idle minute
     pub auto_off: u32,     // minutes without use before the console turns off, 0 = never
@@ -82,7 +81,7 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { color_sync: true, ftp: true, screen_idle: true, auto_off: 0 }
+        Prefs { ftp: true, screen_idle: true, auto_off: 0 }
     }
 }
 
@@ -100,7 +99,6 @@ pub fn load() -> Settings {
     let d = Prefs::default();
     let auto_off = get(&text, "auto_off").and_then(|v| v.trim().parse().ok()).filter(|m| AUTO_OFF.contains(m));
     let prefs = Prefs {
-        color_sync: flag("color_sync", d.color_sync),
         ftp: flag("ftp", d.ftp),
         screen_idle: flag("screen_idle", d.screen_idle),
         auto_off: auto_off.unwrap_or(d.auto_off),
@@ -112,7 +110,6 @@ pub fn save_prefs(p: &Prefs) -> bool {
     let b = |v: bool| if v { "1" } else { "0" };
     let auto_off = p.auto_off.to_string();
     set(&[
-        ("color_sync", Some(b(p.color_sync))),
         ("ftp", Some(b(p.ftp))),
         ("screen_idle", Some(b(p.screen_idle))),
         ("auto_off", Some(&auto_off)),

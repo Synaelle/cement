@@ -3,8 +3,8 @@
 // The bottom screen's tabs, switched with L and R or by touching them:
 // - Recent: the CIA files sent since Cement started, or found at startup
 // - Browse: the SD card's folders, to open them and install a CIA from them
-// - Settings: the colour (or sync with Baguette), the login, the FTP server, the
-//   screens turning off, the console turning off when idle
+// - Settings: the login, the FTP server, the screens turning off, the console
+//   turning off when idle (picking the colour is off until the redesign is done)
 // The state and the buttons are handled here; ui/gfx draws them and says what
 // each touched spot is (Ui::hit).
 
@@ -31,28 +31,22 @@ impl Tab {
     }
 }
 
-/// Baguette's accent choices, offered in Settings
-pub const SWATCHES: [u32; 9] = [0xb8283c, 0x951d2e, 0xd0503a, 0xc27a1e, 0x3f9a5a, 0x1f8f8a, 0x2f6fd0, 0x7a4cc4, 0xb8388f];
-
 /// the Settings rows, top to bottom
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Row {
-    Colour,
-    Sync,
     Login,
     Ftp,
     ScreenIdle,
     AutoOff,
 }
 
-pub const ROWS: [Row; 6] = [Row::Colour, Row::Sync, Row::Login, Row::Ftp, Row::ScreenIdle, Row::AutoOff];
+pub const ROWS: [Row; 4] = [Row::Login, Row::Ftp, Row::ScreenIdle, Row::AutoOff];
 
 /// what a touch landed on (the drawing records where each one is)
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tap {
     Tab(Tab),
     Item(usize), // a row of the current tab's list
-    Swatch(usize),
 }
 
 pub struct Entry {
@@ -239,26 +233,6 @@ impl Server {
         self.last_time = 0; // the top screen may show it
     }
 
-    fn set_accent(&mut self, accent: u32) {
-        if accent != self.accent {
-            self.accent = accent;
-            settings::save_accent(accent);
-        }
-        self.bottom_dirty = true;
-        self.last_time = 0;
-    }
-
-    /// the colour row: `step` swatches along (manual colour only)
-    fn step_colour(&mut self, step: isize) {
-        if self.prefs.color_sync {
-            self.cia_message("The colour follows Baguette: turn the sync off to pick one".into());
-            return;
-        }
-        let n = SWATCHES.len() as isize;
-        let at = SWATCHES.iter().position(|&c| c == self.accent).map_or(if step > 0 { -1 } else { 0 }, |i| i as isize);
-        self.set_accent(SWATCHES[(at + step).rem_euclid(n) as usize]);
-    }
-
     fn step_auto_off(&mut self, step: isize) {
         let n = AUTO_OFF.len() as isize;
         let at = AUTO_OFF.iter().position(|&m| m == self.prefs.auto_off).unwrap_or(0) as isize;
@@ -269,11 +243,6 @@ impl Server {
     /// A (or a touch) on a Settings row
     fn settings_activate(&mut self, row: Row) {
         match row {
-            Row::Colour => self.step_colour(1),
-            Row::Sync => {
-                self.prefs.color_sync = !self.prefs.color_sync;
-                self.save_prefs();
-            }
             Row::Login => self.login_keyboard(),
             Row::Ftp => {
                 self.prefs.ftp = !self.prefs.ftp;
@@ -302,15 +271,6 @@ impl Server {
                 self.bottom_dirty = true;
                 return;
             }
-            Some(Tap::Swatch(k)) if k < SWATCHES.len() => {
-                self.menu.row = 0;
-                if self.prefs.color_sync {
-                    self.step_colour(0); // says why it can't change
-                } else {
-                    self.set_accent(SWATCHES[k]);
-                }
-                return;
-            }
             _ => {}
         }
         let n = ROWS.len();
@@ -322,7 +282,6 @@ impl Server {
         } else if down & (sys::KEY_LEFT | sys::KEY_RIGHT) != 0 {
             let step = if down & sys::KEY_LEFT != 0 { -1 } else { 1 };
             match row {
-                Row::Colour => self.step_colour(step),
                 Row::AutoOff => self.step_auto_off(step),
                 _ => return,
             }

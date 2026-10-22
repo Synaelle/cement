@@ -11,6 +11,7 @@ mod font;
 use canvas::{Canvas, Color};
 use font::*;
 use super::palette::Palette;
+use crate::settings::DEFAULT_ACCENT;
 
 use super::{Bottom, Top};
 use crate::server::{Mode, progress_of};
@@ -259,7 +260,7 @@ fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: C
 
 impl Server {
     pub(super) fn draw_top(&mut self, t: &Top) {
-        self.ui.follow(self.accent);
+        self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
         let Some(mut scr) = self.ui.top.take() else { return };
         self.paint_top(&mut scr.c, t);
         scr.present();
@@ -272,7 +273,7 @@ impl Server {
             return;
         }
         self.ui.bottom_at = now;
-        self.ui.follow(self.accent);
+        self.ui.follow(DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
         if b.dirty || self.ui.sd_free.is_none() {
             self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
         }
@@ -328,7 +329,7 @@ impl Server {
         let f = &FREDOKA_SEMI_26;
         let ip = if self.net.ip != 0 { ip_text(self.net.ip) } else { "-".into() };
         let mut x = c.text(f, left, y + f.ascent, &ip, pal.text, 1.0);
-        x = c.text(f, x, y + f.ascent, " : ", pal.accent, 1.0);
+        x = c.text(f, x, y + f.ascent, ":", pal.accent, 1.0);
         c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
         let f = &NUNITO_BOLD_11;

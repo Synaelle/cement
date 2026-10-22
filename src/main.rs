@@ -131,7 +131,7 @@ pub struct Server {
 
     pub menu: menu::Menu,
     pub prefs: settings::Prefs,
-    pub accent: u32,                     // drawn UI accent, set in Settings or by Baguette (SITE COLOR)
+    pub accent: u32,                     // accent set by Baguette (SITE COLOR), kept but not drawn for now
     pub login: Option<(String, String)>, // FTP user and password; None: anonymous
     pub ui: ui::Ui,
 }

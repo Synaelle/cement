@@ -7,7 +7,7 @@
 use super::canvas::{Canvas, Color};
 use super::font::*;
 use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, bite_dot, card_height, draw_card, format_big, hint};
-use crate::menu::{ROWS, Row, SWATCHES, TABS, Tab, Tap};
+use crate::menu::{ROWS, Row, TABS, Tab, Tap};
 use crate::ui::Bottom;
 use crate::ui::palette::Palette;
 use crate::util::{base_name, format_size, is_cia};
@@ -25,14 +25,6 @@ pub struct Hit {
 const LEFT: f32 = 13.0;
 const RIGHT: f32 = 307.0;
 const CONTENT: f32 = 36.0; // below the tab bar
-
-fn mix(a: Color, b: Color, t: f32) -> Color {
-    let ch = |s: u32| {
-        let (x, y) = (((a >> s) & 255) as f32, ((b >> s) & 255) as f32);
-        ((x + (y - x) * t).round() as u32) << s
-    };
-    ch(16) | ch(8) | ch(0)
-}
 
 /// a small folder: a body with a tab on its top left
 fn folder(c: &mut Canvas, x: f32, y: f32, color: Color) {
@@ -248,8 +240,7 @@ impl Server {
         }
     }
 
-    /// the colour (or the sync with Baguette), the login, the FTP server, the
-    /// screens turning off, the console turning off
+    /// the login, the FTP server, the screens turning off, the console turning off
     fn paint_settings(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
         self.bottom_stack(c, b, &[(Button::A, "change"), (Button::Dpad, "")]);
@@ -263,8 +254,6 @@ impl Server {
             let (l, r) = (LEFT + 9.0, RIGHT - 9.0);
             let cy = y + h / 2.0;
             let label = match row {
-                Row::Colour => "Colour",
-                Row::Sync => "Colour from Baguette",
                 Row::Login => "FTP login",
                 Row::Ftp => "FTP server",
                 Row::ScreenIdle => "Screens off when idle",
@@ -272,24 +261,7 @@ impl Server {
             };
             c.text(f, l, base, label, pal.text, 0.0);
             let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
-            let bg = if sel { pal.selected } else { pal.card };
             match row {
-                Row::Colour => {
-                    // Baguette's swatches; faded while the colour follows Baguette
-                    let (rad, step) = (6.0, 16.0);
-                    let x_last = r - rad;
-                    for (k, &sw) in SWATCHES.iter().enumerate() {
-                        let cx = x_last - (SWATCHES.len() - 1 - k) as f32 * step;
-                        let color = if self.prefs.color_sync { mix(sw, bg, 0.6) } else { sw };
-                        if sw == self.accent {
-                            c.circle(cx, cy, rad + 2.0, if self.prefs.color_sync { pal.dim } else { pal.text });
-                            c.circle(cx, cy, rad + 1.0, bg);
-                        }
-                        c.circle(cx, cy, rad, color);
-                        hits.push(Hit { x0: cx - step / 2.0, y0: y, x1: cx + step / 2.0, y1: y + h, tap: Tap::Swatch(k) });
-                    }
-                }
-                Row::Sync => toggle(c, r, cy, self.prefs.color_sync, pal),
                 Row::Ftp => toggle(c, r, cy, self.prefs.ftp, pal),
                 Row::ScreenIdle => toggle(c, r, cy, self.prefs.screen_idle, pal),
                 Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
