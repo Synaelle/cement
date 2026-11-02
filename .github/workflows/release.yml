@@ -19,7 +19,6 @@ jobs:
     permissions:
       contents: write
     env:
-      NIGHTLY: nightly-2026-10-17
       CARGO_3DS: 0.1.5
       MAKEROM_URL: https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
       MAKEROM_SHA256: 287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e
@@ -38,8 +37,8 @@ jobs:
 
       - name: Install Rust and cargo-3ds
         run: |
-          rustup toolchain install "$NIGHTLY" --profile minimal -c rust-src
-          rustup default "$NIGHTLY"
+          # the Makefile builds with "cargo +nightly"
+          rustup toolchain install nightly --profile minimal -c rust-src
           cargo install --locked cargo-3ds --version "$CARGO_3DS"
 
       - name: Install libclang, makerom and bannertool
