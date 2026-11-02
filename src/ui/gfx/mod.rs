@@ -105,8 +105,8 @@ impl Ui {
             bottom_at: 0,
             sd_free: None,
             hits: Vec::new(),
-            pal: Palette::for_accent(Theme::Miku, DEFAULT_ACCENT),
-            pal_for: (Theme::Miku, DEFAULT_ACCENT),
+            pal: Palette::for_accent(Theme::Red, DEFAULT_ACCENT),
+            pal_for: (Theme::Red, DEFAULT_ACCENT),
             info: None,
             drawn_for: (Tab::Recent, 0, None),
             picture: None,
@@ -342,7 +342,7 @@ fn help(row: Row) -> &'static str {
         Row::ScreenIdle => "Both screens go dark after a minute with no button or transfer. Any button lights them again.",
         Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
         Row::Update => "Looks for a newer Cement on GitHub when it starts, with the Wi-Fi on. A turns it on or off.",
-        Row::Look => "How the screens look: Miku is graphite and teal, Red is the first look. A or left and right change it.",
+        Row::Look => "How the screens look: Red is Cement's own, Miku is graphite and teal. A or left and right change it.",
     }
 }
 

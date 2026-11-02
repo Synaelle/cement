@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The screens' colours, picked in Settings: graphite and Miku teal, or the
-// first look's warm black and red. Any accent other than the default (SITE
+// The screens' colours, picked in Settings: Cement's warm black and red, or
+// graphite and Miku teal. Any accent other than the default (SITE
 // COLOR) puts each colour's lightness on the accent's hue, the way Baguette
 // does (kept for when the accent is picked again).
 
@@ -28,11 +28,11 @@ pub struct Palette {
 /// the looks the Settings tab offers
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Theme {
+    Red,  // Cement's own: warm black and red
     Miku, // graphite and Miku teal
-    Red,  // the first look: warm black and red
 }
 
-pub const THEMES: [Theme; 2] = [Theme::Miku, Theme::Red];
+pub const THEMES: [Theme; 2] = [Theme::Red, Theme::Miku];
 
 impl Theme {
     pub fn name(self) -> &'static str {
@@ -74,7 +74,7 @@ const MIKU: Palette = Palette {
     dim: 0x9a9fa8,
 };
 
-/// the first look: warm black and red, Baguette's colours
+/// warm black and red, Baguette's colours too
 const RED: Palette = Palette {
     accent: DEFAULT_ACCENT,
     on_accent: 0xffffff,

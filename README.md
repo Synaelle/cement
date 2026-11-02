@@ -24,7 +24,7 @@ L and R switch the bottom screen's tabs:
 - **Browse**: every folder of the SD card. A on an image (PNG, JPEG or BMP, like Luma's
   screenshots) shows it on the top screen
 - **Settings**: FTP login, FTP server on or off, CIA details on the top screen, file protection,
-  screens, auto off, the look (Miku teal or the first red one) and updates. A newer Cement shows
+  screens, auto off, the look (red, or Miku teal) and updates. A newer Cement shows
   up there and A installs it. The top screen tells what the selected one does
 
 The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.

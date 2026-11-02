@@ -117,7 +117,7 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true, protect: true, update: true, theme: Theme::Miku }
+        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true, protect: true, update: true, theme: Theme::Red }
     }
 }
 
