@@ -1,8 +1,8 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Settings kept on the SD card in sdmc:/3ds/cement/settings.ini, one
-// "key=value" per line: the accent colour (SITE COLOR, kept but not used for
-// now), the FTP login (SITE LOGIN, or Settings) and the other choices of the
+// "key=value" per line: the accent colour and when it was picked (Settings or
+// SITE COLOR), the FTP login (SITE LOGIN, or Settings) and the other choices of the
 // Settings tab. The password isn't stored: only a salted, repeated SHA-256 of
 // it (pass_hash), enough to check a login but not to read it back.
 
@@ -99,6 +99,7 @@ fn set(changes: &[(&str, Option<&str>)]) -> bool {
 
 pub struct Settings {
     pub accent: u32,
+    pub accent_time: u64, // when the accent was picked, seconds since 1970 on the local clock; 0 = never
     pub login: Option<(String, String)>, // user and password hash; None: anonymous
     pub prefs: Prefs,
 }
@@ -127,6 +128,7 @@ pub const AUTO_OFF: [u32; 5] = [0, 5, 15, 30, 60];
 pub fn load() -> Settings {
     let text = read();
     let accent = get(&text, "accent").and_then(|v| parse_color(&v)).unwrap_or(DEFAULT_ACCENT);
+    let accent_time = get(&text, "accent_time").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
     let login = match (get(&text, "user"), get(&text, "pass_hash"), get(&text, "pass")) {
         (Some(u), Some(h), _) if valid_user(&u) => Some((u, h)),
         (Some(u), None, p) if valid_user(&u) => {
@@ -149,7 +151,7 @@ pub fn load() -> Settings {
         update: flag("update", d.update),
         theme: get(&text, "look").and_then(|v| THEMES.into_iter().find(|t| t.key() == v.trim())).unwrap_or(d.theme),
     };
-    Settings { accent, login, prefs }
+    Settings { accent, accent_time, login, prefs }
 }
 
 pub fn save_prefs(p: &Prefs) -> bool {
@@ -166,8 +168,8 @@ pub fn save_prefs(p: &Prefs) -> bool {
     ])
 }
 
-pub fn save_accent(accent: u32) -> bool {
-    set(&[("accent", Some(&format!("{accent:06x}")))])
+pub fn save_accent(accent: u32, time: u64) -> bool {
+    set(&[("accent", Some(&format!("{accent:06x}"))), ("accent_time", Some(&time.to_string()))])
 }
 
 /// the user name and the password hash (hash_pass)

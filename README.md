@@ -24,8 +24,8 @@ L and R switch the bottom screen's tabs:
 - **Browse**: every folder of the SD card. A on an image (PNG, JPEG or BMP, like Luma's
   screenshots) shows it on the top screen
 - **Settings**: FTP login, FTP server on or off, CIA details on the top screen, file protection,
-  screens, auto off, the look (red, or Miku teal) and updates. A newer Cement shows
-  up there and A installs it. The top screen tells what the selected one does
+  screens, auto off, the look (red, or Miku teal), the red look's colour and updates. A newer
+  Cement shows up there and A installs it. The top screen tells what the selected one does
 
 The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.
 A installs it (and deletes the file once it's installed). X deletes the selected file or folder,
@@ -39,7 +39,8 @@ salted hash of it.
 
 [Baguette](https://github.com/Synaelle/baguette) is the PC app made for Cement. It shows
 transfer progress and the 3DS battery, installs CIAs from the PC and sends many small files much
-faster. Cement works fine with any other FTP client too.
+faster. The colour picked in either app shows in both, and the last one picked wins. Cement works
+fine with any other FTP client too.
 
 ## Build
 

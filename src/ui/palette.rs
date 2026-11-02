@@ -1,9 +1,10 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The screens' colours, picked in Settings: Cement's warm black and red, or
-// graphite and Miku teal. Any accent other than the default (SITE
-// COLOR) puts each colour's lightness on the accent's hue, the way Baguette
-// does (kept for when the accent is picked again).
+// graphite and Miku teal. The red look follows the accent (Settings' Colour
+// row, or SITE COLOR from Baguette), the same way Baguette does: each colour
+// takes the accent's hue, and a lightness that keeps its luminance, so text
+// stays as easy to read as on the default red. Miku keeps its own colours.
 
 use crate::settings::DEFAULT_ACCENT;
 
@@ -24,6 +25,19 @@ pub struct Palette {
     pub text: Color,
     pub dim: Color,
 }
+
+/// the colours the Settings tab steps through, the same as Baguette's, each as
+/// light as the default red (Custom is any other colour Baguette set)
+pub const PRESETS: [(&str, Color); 8] = [
+    ("Red", DEFAULT_ACCENT),
+    ("Orange", 0x9b4a22),
+    ("Amber", 0x895615),
+    ("Green", 0x2d6e40),
+    ("Teal", 0x186d69),
+    ("Blue", 0x2960b3),
+    ("Violet", 0x7546c2),
+    ("Pink", 0xa63381),
+];
 
 /// the looks the Settings tab offers
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -110,11 +124,9 @@ fn to_hsl(c: Color) -> (f64, f64, f64) {
     (h * 60.0, s, l)
 }
 
-/// CSS hsl() to RGB, after the rounding Baguette's hsl() string does (hue to
-/// 0.1 degree, saturation and lightness to 0.1 %)
+/// HSL (hue in degrees, saturation and lightness 0 to 1) to RGB
 fn from_hsl(h: f64, s: f64, l: f64) -> Color {
-    let tenth = |v: f64| (v * 10.0).round() / 10.0;
-    let (h, s, l) = (tenth(h).rem_euclid(360.0), tenth(s * 100.0) / 100.0, tenth(l * 100.0) / 100.0);
+    let h = h.rem_euclid(360.0);
     let a = s * l.min(1.0 - l);
     let f = |n: f64| {
         let k = (n + h / 30.0) % 12.0;
@@ -124,23 +136,47 @@ fn from_hsl(h: f64, s: f64, l: f64) -> Color {
     f(0.0) << 16 | f(8.0) << 8 | f(4.0)
 }
 
+/// WCAG relative luminance
+fn luminance(c: Color) -> f64 {
+    let lin = |v: u32| {
+        let v = (v & 255) as f64 / 255.0;
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * lin(c >> 16) + 0.7152 * lin(c >> 8) + 0.0722 * lin(c)
+}
+
+/// the colour of hue h and saturation s whose luminance is `target` (lightness found by bisection)
+fn with_luminance(h: f64, s: f64, target: f64) -> Color {
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..40 {
+        let mid = (lo + hi) / 2.0;
+        if luminance(from_hsl(h, s, mid)) < target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    from_hsl(h, s, (lo + hi) / 2.0)
+}
+
 impl Palette {
-    /// the theme's palette, or with another accent than the default, its lightness on the accent's hue
+    /// the look's palette; the red one on another accent than the default
+    /// takes the accent's hue, as light (in luminance) as the default's colours
     pub fn for_accent(theme: Theme, accent: Color) -> Palette {
         let d = theme.palette();
-        if accent == DEFAULT_ACCENT {
+        if theme == Theme::Miku || accent == DEFAULT_ACCENT {
             return d;
         }
         let (h, sat, _) = to_hsl(accent);
-        let base = to_hsl(d.accent).1; // the theme's own accent saturation
+        let base = to_hsl(DEFAULT_ACCENT).1;
         let follow = |c: Color| {
-            let (_, s0, l0) = to_hsl(c);
-            // the theme's lightness on the accent's hue; a greyer accent gives greyer surfaces
-            from_hsl(h, s0 * (sat / base).min(1.0), l0)
+            let (_, s0, _) = to_hsl(c);
+            // a greyer accent gives greyer surfaces
+            with_luminance(h, s0 * (sat / base).min(1.0), luminance(c))
         };
         Palette {
-            accent,
-            on_accent: 0xffffff,
+            accent: with_luminance(h, sat, luminance(d.accent)),
+            on_accent: d.on_accent,
             highlight: follow(d.highlight),
             soft: follow(d.soft),
             bg: follow(d.bg),
@@ -170,6 +206,21 @@ mod tests {
         }
         for t in THEMES {
             assert!(Palette::for_accent(t, DEFAULT_ACCENT) == t.palette());
+        }
+    }
+
+    #[test]
+    fn accents_keep_the_contrast() {
+        // every preset's colours are as light as the default red's, and Miku ignores the accent
+        let red = Palette::for_accent(Theme::Red, DEFAULT_ACCENT);
+        for (name, c) in PRESETS {
+            let p = Palette::for_accent(Theme::Red, c);
+            let pairs = [(p.accent, red.accent), (p.text, red.text), (p.dim, red.dim), (p.bg, red.bg), (p.card, red.card), (p.highlight, red.highlight)];
+            for (got, want) in pairs {
+                let (a, b) = (luminance(got), luminance(want));
+                assert!((a - b).abs() <= 0.01 + 0.03 * b, "{name}: {got:06x} vs {want:06x}");
+            }
+            assert!(Palette::for_accent(Theme::Miku, c) == Palette::for_accent(Theme::Miku, DEFAULT_ACCENT));
         }
     }
 }

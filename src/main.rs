@@ -138,7 +138,8 @@ pub struct Server {
 
     pub menu: menu::Menu,
     pub prefs: settings::Prefs,
-    pub accent: u32,                     // accent set by Baguette (SITE COLOR), kept but not drawn for now
+    pub accent: u32,                     // the red look's colour (Settings or SITE COLOR)
+    pub accent_time: u64,                // when it was picked (local clock, seconds since 1970); 0 = never
     pub login: Option<(String, String)>, // FTP user and password hash (settings::hash_pass); None: anonymous
     pub ui: ui::Ui,
 }
@@ -178,6 +179,7 @@ impl Server {
             menu: menu::Menu::new(),
             prefs: settings::Prefs::default(),
             accent: 0,
+            accent_time: 0,
             login: None,
             ui: ui::Ui::new(),
         }
@@ -380,7 +382,7 @@ fn main() {
     // only ever used through this pointer: the APT hook needs it too
     let mut s = Box::new(Server::new());
     let saved = settings::load();
-    (s.accent, s.login, s.prefs) = (saved.accent, saved.login, saved.prefs);
+    (s.accent, s.accent_time, s.login, s.prefs) = (saved.accent, saved.accent_time, saved.login, saved.prefs);
     if !s.prefs.ftp {
         s.status = "FTP server off".into();
     }

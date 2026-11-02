@@ -17,7 +17,7 @@
 use crate::picture::is_image;
 use crate::protect;
 use crate::settings::{self, AUTO_OFF};
-use crate::ui::palette::THEMES;
+use crate::ui::palette::{PRESETS, THEMES};
 use crate::util::{base_name, is_cia};
 use crate::{Server, sys};
 
@@ -50,10 +50,21 @@ pub enum Row {
     ScreenIdle,
     AutoOff,
     Look,
+    Colour,
     Update,
 }
 
-pub const ROWS: [Row; 8] = [Row::Login, Row::Ftp, Row::CiaInfo, Row::Protect, Row::ScreenIdle, Row::AutoOff, Row::Look, Row::Update];
+pub const ROWS: [Row; 9] = [
+    Row::Login,
+    Row::Ftp,
+    Row::CiaInfo,
+    Row::Protect,
+    Row::ScreenIdle,
+    Row::AutoOff,
+    Row::Look,
+    Row::Colour,
+    Row::Update,
+];
 
 /// what a touch landed on (the drawing records where each one is)
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -398,6 +409,25 @@ impl Server {
         self.save_prefs();
     }
 
+    /// the red look's colour, from Settings or SITE COLOR, with when it was picked
+    pub fn set_accent(&mut self, accent: u32, time: u64) {
+        (self.accent, self.accent_time) = (accent, time);
+        settings::save_accent(accent, time);
+        self.bottom_dirty = true;
+        self.last_time = 0; // the top screen redraws in it
+    }
+
+    /// the next or previous preset; a custom colour goes to the first or the last
+    fn step_colour(&mut self, step: isize) {
+        let n = PRESETS.len() as isize;
+        let at = match PRESETS.iter().position(|&(_, c)| c == self.accent) {
+            Some(at) => (at as isize + step).rem_euclid(n),
+            None if step > 0 => 0,
+            None => n - 1,
+        };
+        self.set_accent(PRESETS[at as usize].1, sys::unix_time().unwrap_or(0));
+    }
+
     fn step_theme(&mut self, step: isize) {
         let n = THEMES.len() as isize;
         let at = THEMES.iter().position(|&t| t == self.prefs.theme).unwrap_or(0) as isize;
@@ -440,6 +470,7 @@ impl Server {
             Row::AutoOff => self.step_auto_off(1),
             Row::Update => self.update_activate(),
             Row::Look => self.step_theme(1),
+            Row::Colour => self.step_colour(1),
         }
     }
 
@@ -463,6 +494,7 @@ impl Server {
                 Row::AutoOff => self.step_auto_off(step),
                 Row::Update => self.update_toggle(),
                 Row::Look => self.step_theme(step),
+                Row::Colour => self.step_colour(step),
                 _ => return,
             }
         } else if down & sys::KEY_A != 0 {

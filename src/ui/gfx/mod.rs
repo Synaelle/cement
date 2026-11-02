@@ -343,6 +343,7 @@ fn help(row: Row) -> &'static str {
         Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
         Row::Update => "Looks for a newer Cement on GitHub when it starts, with the Wi-Fi on. A turns it on or off.",
         Row::Look => "How the screens look: Red is Cement's own, Miku is graphite and teal. A or left and right change it.",
+        Row::Colour => "The red look's colour, kept in sync with Baguette. Left and right pick another one.",
     }
 }
 
@@ -429,7 +430,7 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
 
 impl Server {
     pub(super) fn draw_top(&mut self, t: &Top) {
-        self.ui.follow(self.prefs.theme, DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
+        self.ui.follow(self.prefs.theme, self.accent);
         let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
         if self.ui.info_stale(&sel) {
             // read once per selection: a few KB from the SD card
@@ -471,7 +472,7 @@ impl Server {
             return;
         }
         self.ui.bottom_at = now;
-        self.ui.follow(self.prefs.theme, DEFAULT_ACCENT); // the colour from SITE COLOR is kept, not used for now
+        self.ui.follow(self.prefs.theme, self.accent);
         if b.dirty || self.ui.sd_free.is_none() {
             self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
         }

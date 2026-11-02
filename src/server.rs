@@ -1294,20 +1294,25 @@ impl Server {
                 self.sess[i].reply("200 OK\r\n");
             }
             "COLOR" => {
-                // SITE COLOR [#rrggbb]: the accent, kept on the SD card. Part of the
-                // protocol, but the screens don't use it until the redesign is done
-                let arg = text.get(5..).unwrap_or("").trim();
-                if arg.is_empty() {
-                    let text = format!("200 #{:06x}\r\n", self.accent);
-                    self.sess[i].reply(&text);
-                } else if let Some(c) = settings::parse_color(arg) {
-                    if c != self.accent {
-                        self.accent = c;
-                        settings::save_accent(c);
+                // SITE COLOR [#rrggbb [secs]]: the red look's colour and when it was
+                // picked (local clock, now when not given), kept on the SD card.
+                // Baguette compares the times and sends the newer colour, so it's
+                // always taken
+                let mut args = text.get(5..).unwrap_or("").split_whitespace();
+                let (c, t) = (args.next(), args.next());
+                let color = c.and_then(settings::parse_color);
+                let time = t.map(|t| t.parse::<u64>().ok());
+                match (c, color, time, args.next()) {
+                    (None, ..) => {
+                        let text = format!("200 #{:06x} {}\r\n", self.accent, self.accent_time);
+                        self.sess[i].reply(&text);
                     }
-                    self.sess[i].reply("200 Accent set\r\n");
-                } else {
-                    self.sess[i].reply("501 SITE COLOR #rrggbb\r\n");
+                    (Some(_), Some(color), None | Some(Some(_)), None) => {
+                        let time = time.flatten().unwrap_or_else(|| sys::unix_time().unwrap_or(0));
+                        self.set_accent(color, time);
+                        self.sess[i].reply("200 Accent set\r\n");
+                    }
+                    _ => self.sess[i].reply("501 SITE COLOR #rrggbb [secs]\r\n"),
                 }
             }
             "INSTALL" => {
@@ -1373,7 +1378,7 @@ impl Server {
         let idle = if busy || now < self.last_activity { 0 } else { now - self.last_activity };
         let mut out = String::from("211-Status\r\n");
         out += &format!(
-            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} login={} color_sync={} version={}\r\n",
+            " busy={} idle_ms={} installing={} connections={} protocol={} sd_free={} sd_total={} battery={} battery_bars={} charging={} plugged={} battery_low={} accent={:06x} accent_time={} login={} color_sync={} version={}\r\n",
             busy as i32,
             idle,
             self.installing() as i32,
@@ -1387,8 +1392,9 @@ impl Server {
             bat.plugged as i32,
             crate::battery_low(bat) as i32,
             self.accent,
+            self.accent_time,
             self.login.is_some() as i32,
-            1, // color_sync: Baguette's colour is always the one kept
+            1, // color_sync: the colour syncs both ways, the newer accent_time wins
             VERSION
         );
         for (j, s) in self.sess.iter().enumerate() {

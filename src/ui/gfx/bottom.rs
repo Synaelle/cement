@@ -10,7 +10,7 @@ use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, bite_dot, card_height, dr
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
 use crate::picture::is_image;
 use crate::ui::Bottom;
-use crate::ui::palette::Palette;
+use crate::ui::palette::{PRESETS, Palette, Theme};
 use crate::update::{self, Stage};
 use crate::util::{base_name, format_size, is_cia};
 use crate::Server;
@@ -290,7 +290,7 @@ impl Server {
         let action = if ROWS[self.menu.row] == Row::Update && found { "update" } else { "change" };
         let bottom = self.bottom_stack(c, b, &[(Button::A, action), (Button::Dpad, "")]);
         // all of them fit, unless the update's card is up: then they scroll
-        let (h, gap) = (18.0, 2.0);
+        let (h, gap) = (17.0, 1.0);
         let (rows, first) = window(CONTENT, bottom, h, gap, self.menu.row);
         let mut y = CONTENT;
         for (i, &row) in ROWS.iter().enumerate().skip(first).take(rows) {
@@ -309,6 +309,7 @@ impl Server {
                 Row::AutoOff => "Turn the 3DS off when idle",
                 Row::Update => "Updates",
                 Row::Look => "Look",
+                Row::Colour => "Colour",
             };
             c.text(f, l, base, label, pal.text, 0.0);
             let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
@@ -319,6 +320,14 @@ impl Server {
                 Row::ScreenIdle => toggle(c, r, cy, self.prefs.screen_idle, pal),
                 Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
                 Row::Look => value(c, self.prefs.theme.name()),
+                Row::Colour => {
+                    // its name and a dot of it (the accent as drawn, so as light as the red one)
+                    let name = PRESETS.iter().find(|&&(_, c)| c == self.accent).map_or("Custom", |&(n, _)| n);
+                    let w = f.width(name, 0.0);
+                    value(c, name);
+                    let dot = Palette::for_accent(Theme::Red, self.accent).accent;
+                    c.circle(r - w - 10.0, cy, 4.5, dot);
+                }
                 Row::AutoOff => match self.prefs.auto_off {
                     0 => value(c, "never"),
                     m => value(c, &format!("after {m} min")),
