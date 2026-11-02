@@ -1,0 +1,57 @@
+[package]
+name = "cement-server"
+version = "0.0.0" # the real version comes from the build (CEMENT_VERSION)
+edition = "2024"
+publish = false
+license = "AGPL-3.0-or-later"
+
+# Built for the 3DS with `cargo 3ds build --release` (see the Makefile); built
+# for a PC (`cargo build --release`) it is a test server that plays the 3DS.
+
+[build-dependencies]
+fontdue = "0.9" # rasterises assets/fonts into glyph atlases (build.rs)
+
+[dependencies]
+png = "0.18" # images viewed from Browse (picture.rs)
+jpeg-decoder = { version = "0.3", default-features = false } # no rayon threads
+# the update check and download over HTTPS (http.rs): ring for the crypto, Mozilla's roots
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] } # TLS 1.3 only, as GitHub serves
+webpki-roots = "1"
+
+[target.'cfg(target_os = "horizon")'.dependencies]
+ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" } # pinned by Cargo.lock
+ctru-sys = { git = "https://github.com/rust3ds/ctru-rs" }
+
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_Storage_FileSystem",
+] }
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"
+
+# the TLS stack of updates is used once per start: built for size (it would be
+# most of the CIA's growth otherwise)
+[profile.release.package.rustls]
+opt-level = "z"
+[profile.release.package.rustls-webpki]
+opt-level = "z"
+[profile.release.package.ring]
+opt-level = "z"
+
+# ./build.sh fast: quick builds to try a change, the same optimisation and
+# panics as a release but no LTO and parallel codegen (a slightly bigger,
+# slower app, always versioned -<commit>-dev)
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

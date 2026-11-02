@@ -1,0 +1,60 @@
+Cement is licensed under the GNU Affero General Public License, version 3 or
+later (see LICENSE). It includes or is built with the following, under their
+own licenses.
+
+-------------------------------------------------------------------------------
+FBI and buildtools
+
+The CIA install code in src/install.rs follows FBI
+(https://github.com/Steveice10/FBI), and meta/Cement.rsf is based on the
+template from buildtools (https://github.com/Steveice10/buildtools).
+
+Both are under the MIT license:
+
+Copyright (C) 2015-2019 Steveice10
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+-------------------------------------------------------------------------------
+Fredoka and Nunito fonts
+
+The drawn screens use Fredoka (Copyright 2016 The Fredoka Project Authors,
+https://github.com/hafontia/Fredoka-One) and Nunito (Copyright 2014 The Nunito
+Project Authors, https://github.com/googlefonts/nunito), from Google Fonts
+(https://github.com/google/fonts). Both are under the SIL Open Font License 1.1,
+see assets/fonts/fredoka/OFL.txt and assets/fonts/nunito/OFL.txt. The files in
+assets/fonts are fixed-weight instances of the variable fonts (made with
+fontTools), and the build turns a few sizes of them into glyph bitmaps that are
+built into the 3DS app.
+
+-------------------------------------------------------------------------------
+Button glyphs
+
+The A, B, X, L, R and D-pad glyphs on the drawn screens come from Input Prompts by
+Kenney (https://kenney.nl/assets/input-prompts), released under Creative
+Commons Zero (CC0 1.0). The SVG files used and Kenney's license text are in
+assets/buttons. The build rasterises and tints them for the 3DS app.
+
+-------------------------------------------------------------------------------
+Built into the 3DS app (Cement.cia, Cement.3dsx)
+
+- libctru (https://github.com/devkitPro/libctru): zlib license
+- ctru-rs and ctru-sys (https://github.com/rust3ds/ctru-rs): zlib license
+- pthread-3ds and shim-3ds (https://github.com/rust3ds): MIT or Apache-2.0
+- the Rust standard library (https://github.com/rust-lang/rust): MIT or Apache-2.0
+- Rust crates libc, bitflags, cfg-if, macaddr, spin, static_assertions:
+  MIT, or MIT or Apache-2.0
+- rustls (https://github.com/rustls/rustls): Apache-2.0, ISC or MIT, with
+  rustls-webpki and untrusted (ISC), rustls-pki-types, getrandom, once_cell,
+  subtle and zeroize (MIT or Apache-2.0)
+- ring (https://github.com/briansmith/ring): ISC-style, with parts from
+  BoringSSL under Apache-2.0 and ISC, see its LICENSE files
+- webpki-roots (https://github.com/rustls/webpki-roots), Mozilla's root
+  certificates: CDLA-Permissive-2.0
+- newlib, the C library of devkitARM (https://sourceware.org/newlib/):
+  BSD-style licenses, see its COPYING.NEWLIB
+- libgcc: GPL-3.0 with the GCC Runtime Library Exception

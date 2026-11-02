@@ -1,0 +1,6 @@
+target/
+build/
+*.elf
+*.cia
+*.3dsx
+.atelier/

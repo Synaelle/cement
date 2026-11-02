@@ -1,0 +1,78 @@
+name: release
+
+# A pushed v* tag builds Cement.cia and Cement.3dsx and puts them in a draft
+# release named after the version, for the notes to be written by hand.
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      NIGHTLY: nightly-2026-10-17
+      CARGO_3DS: 0.1.5
+      MAKEROM_URL: https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
+      MAKEROM_SHA256: 287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e
+      BANNERTOOL_URL: https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip
+      BANNERTOOL_SHA256: 69768596f836acb3e3aeaa66e47c6ba560dde813c6dfcd33c8afc25fe29b7524
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against VERSION
+        run: |
+          version=$(tr -d '\r\n' < VERSION)
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "tag $GITHUB_REF_NAME but VERSION is $version" >&2; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install Rust and cargo-3ds
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal -c rust-src
+          rustup default "$NIGHTLY"
+          cargo install --locked cargo-3ds --version "$CARGO_3DS"
+
+      - name: Install libclang, makerom and bannertool
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libclang-dev
+          tools="$RUNNER_TEMP/tools"
+          mkdir -p "$tools/bin"
+          curl -fsSLo "$tools/makerom.zip" "$MAKEROM_URL"
+          curl -fsSLo "$tools/bannertool.zip" "$BANNERTOOL_URL"
+          echo "$MAKEROM_SHA256  $tools/makerom.zip" | sha256sum -c
+          echo "$BANNERTOOL_SHA256  $tools/bannertool.zip" | sha256sum -c
+          unzip -q -j "$tools/makerom.zip" makerom -d "$tools/bin"
+          unzip -q -j "$tools/bannertool.zip" linux-x86_64/bannertool -d "$tools/bin"
+          chmod +x "$tools/bin/makerom" "$tools/bin/bannertool"
+          echo "$tools/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: ./build.sh | tee "$RUNNER_TEMP/build.log"
+
+      - name: Check the version
+        run: |
+          # the version shown (no -dev suffix) and the CIA's title version, both from VERSION
+          grep -qx "built \.\.\. Cement.cia v$VERSION" "$RUNNER_TEMP/build.log" || { echo "the build isn't v$VERSION" >&2; exit 1; }
+          u32() { od -An -tu4 -j "$1" -N4 Cement.cia | tr -d ' \n'; }
+          align() { echo $(( ($1 + 63) / 64 * 64 )); }
+          tmd=$(( $(align "$(u32 0)") + $(align "$(u32 8)") + $(align "$(u32 12)") ))
+          set -- $(od -An -tu1 -j $((tmd + 0x140 + 0x9C)) -N2 Cement.cia)
+          v=$(( ($1 << 8) | $2 ))
+          title="$((v >> 10)).$(((v >> 4) & 63)).$((v & 15))"
+          [ "$title" = "$VERSION" ] || { echo "CIA title version $title, not $VERSION" >&2; exit 1; }
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" Cement.cia Cement.3dsx --draft --title "$VERSION" --notes "" --verify-tag
