@@ -1,7 +1,8 @@
 name: release
 
-# A pushed v* tag builds Cement.cia and Cement.3dsx and puts them in a draft
-# release named after the version, for the notes to be written by hand.
+# A pushed v* tag first opens a draft release named after the version (the
+# notes are written by hand while it builds), then builds Cement.cia and
+# Cement.3dsx into it, and makes it public once both are on it.
 on:
   push:
     tags: ["v*"]
@@ -12,13 +13,49 @@ defaults:
   run:
     shell: bash
 
+env:
+  GH_REPO: ${{ github.repository }}
+
 jobs:
-  release:
+  draft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against VERSION
+        id: version
+        run: |
+          version=$(tr -d '\r\n' < VERSION)
+          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "tag $GITHUB_REF_NAME but VERSION is $version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # a release made by hand for this tag keeps its notes
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "the release for $GITHUB_REF_NAME exists already"
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "$VERSION" --notes "" --verify-tag
+          fi
+
+  build:
+    needs: draft
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write
     env:
+      VERSION: ${{ needs.draft.outputs.version }}
       CARGO_3DS: 0.1.5
       MAKEROM_URL: https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
       MAKEROM_SHA256: 287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e
@@ -28,12 +65,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Check the tag against VERSION
-        run: |
-          version=$(tr -d '\r\n' < VERSION)
-          [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "tag $GITHUB_REF_NAME but VERSION is $version" >&2; exit 1; }
-          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Install Rust and cargo-3ds
         run: |
@@ -71,7 +102,24 @@ jobs:
           title="$((v >> 10)).$(((v >> 4) & 63)).$((v & 15))"
           [ "$title" = "$VERSION" ] || { echo "CIA title version $title, not $VERSION" >&2; exit 1; }
 
-      - name: Draft the release
+      - name: Upload to the draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" Cement.cia Cement.3dsx --draft --title "$VERSION" --notes "" --verify-tag
+        run: gh release upload "$GITHUB_REF_NAME" Cement.cia Cement.3dsx --clobber
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish once both files are on it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          for f in Cement.cia Cement.3dsx; do
+            grep -qx "$f" <<< "$assets" || { echo "$f is missing from the release" >&2; exit 1; }
+          done
+          gh release edit "$GITHUB_REF_NAME" --draft=false
