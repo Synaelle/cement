@@ -32,6 +32,15 @@ fontTools), and the build turns a few sizes of them into glyph bitmaps that are
 built into the 3DS app.
 
 -------------------------------------------------------------------------------
+Hanken Grotesk font
+
+The Ficelle look uses Hanken Grotesk (Copyright 2021 The Hanken Grotesk Project
+Authors, https://github.com/marcologous/hanken-grotesk), under the SIL Open
+Font License 1.1, see assets/fonts/hanken/OFL.txt. The files in
+assets/fonts/hanken are 400 and 600 weight instances of the variable font
+(made with fontTools), turned into glyph bitmaps by the build like the others.
+
+-------------------------------------------------------------------------------
 Button glyphs
 
 The A, B, X, L, R and D-pad glyphs on the drawn screens come from Input Prompts by

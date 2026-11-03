@@ -61,6 +61,21 @@ fn empty(c: &mut Canvas, top: f32, bottom: f32, line: &str, pal: &Palette) {
     c.text(f, mid - f.width(line, 0.0) / 2.0, top + (h - f.height) / 2.0 + f.ascent, &f.fit(line, RIGHT - LEFT - 16.0), pal.text, 0.0);
 }
 
+/// a Settings row's name
+pub(super) fn row_label(row: Row) -> &'static str {
+    match row {
+        Row::Login => "FTP login",
+        Row::Ftp => "FTP server",
+        Row::CiaInfo => "CIA details on the top screen",
+        Row::Protect => "Protect important 3DS files",
+        Row::ScreenIdle => "Screens off when idle",
+        Row::AutoOff => "Turn the 3DS off when idle",
+        Row::Update => "Updates",
+        Row::Look => "Look",
+        Row::Colour => "Colour",
+    }
+}
+
 /// how many rows of height `h` (plus `gap`) fit between top and bottom, and
 /// the first one to show so that `sel` is visible
 fn window(top: f32, bottom: f32, h: f32, gap: f32, sel: usize) -> (usize, usize) {
@@ -122,6 +137,16 @@ impl Server {
             c.text(f, LEFT, bottom + f.ascent, &f.fit(&self.cia_msg, RIGHT - LEFT), color, 0.0);
             bottom -= 4.0;
         }
+        for card in self.stack_cards() {
+            bottom -= card_height();
+            draw_card(c, LEFT, bottom, RIGHT - LEFT, &card, pal);
+            bottom -= 5.0;
+        }
+        bottom
+    }
+
+    /// the cards over the hints, lowest first: an update downloading, then a CIA installing
+    pub(super) fn stack_cards(&self) -> Vec<CardText> {
         // the update's progress shows in Settings too, where it was started
         let tag = self.update.latest.as_deref().unwrap_or("");
         let card = if let Some((done, total)) = self.update.progress() {
@@ -144,11 +169,7 @@ impl Server {
         } else {
             None
         };
-        if let Some(card) = card {
-            bottom -= card_height();
-            draw_card(c, LEFT, bottom, RIGHT - LEFT, &card, pal);
-            bottom -= 5.0;
-        }
+        let mut cards: Vec<CardText> = card.into_iter().collect();
         let is_update = self.inst.as_ref().is_some_and(|i| i.path == update::FILE);
         if self.menu.tab != Tab::Settings || is_update {
             if let Some(inst) = &self.inst {
@@ -166,12 +187,43 @@ impl Server {
                     },
                     right: String::new(),
                 };
-                bottom -= card_height();
-                draw_card(c, LEFT, bottom, RIGHT - LEFT, &card, pal);
-                bottom -= 5.0;
+                cards.push(card);
             }
         }
-        bottom
+        cards
+    }
+
+    /// Recent's hints
+    pub(super) fn recent_hints(&self, b: &Bottom) -> Vec<(Button, &'static str)> {
+        let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
+        let mut hints = vec![(Button::A, first), (Button::Dpad, "")];
+        if !self.cias.is_empty() {
+            hints.push((Button::X, "delete"));
+        }
+        hints
+    }
+
+    /// Browse's hints, after what A does on the selected entry
+    pub(super) fn browse_hints(&self) -> Vec<(Button, &'static str)> {
+        let br = &self.menu.browse;
+        let action = match br.entries.get(br.sel) {
+            Some(e) if !e.dir && is_cia(&e.name) => "install",
+            Some(e) if !e.dir && is_image(&e.name) => {
+                if self.menu.view { "close" } else { "view" }
+            }
+            _ => "open",
+        };
+        let mut hints = vec![(Button::A, action)];
+        if self.menu.view {
+            hints.push((Button::B, "close"));
+        } else if br.dir != "/" {
+            hints.push((Button::B, "back"));
+        }
+        hints.push((Button::Dpad, ""));
+        if !br.entries.is_empty() {
+            hints.push((Button::X, "delete"));
+        }
+        hints
     }
 
     /// the CIAs sent since Cement started, or found in the usual folders
@@ -184,12 +236,7 @@ impl Server {
         c.text_right(s, RIGHT, CONTENT + s.ascent, &free, pal.dim);
         let top = CONTENT + s.height + 4.0;
 
-        let first = if b.busy && !self.installing() { "waits for transfers" } else { "install" };
-        let mut hints = vec![(Button::A, first), (Button::Dpad, "")];
-        if !self.cias.is_empty() {
-            hints.push((Button::X, "delete"));
-        }
-        let bottom = self.bottom_stack(c, b, &hints);
+        let bottom = self.bottom_stack(c, b, &self.recent_hints(b));
         if self.cias.is_empty() && self.inst.is_none() {
             empty(c, top, bottom, "No CIAs yet: upload one over FTP", pal);
             return;
@@ -232,24 +279,7 @@ impl Server {
         c.text_right(s, RIGHT, CONTENT + (p.height - s.height) / 2.0 + s.ascent, &count, pal.dim);
         let top = CONTENT + p.height + 3.0;
 
-        let action = match br.entries.get(br.sel) {
-            Some(e) if !e.dir && is_cia(&e.name) => "install",
-            Some(e) if !e.dir && is_image(&e.name) => {
-                if self.menu.view { "close" } else { "view" }
-            }
-            _ => "open",
-        };
-        let mut hints = vec![(Button::A, action)];
-        if self.menu.view {
-            hints.push((Button::B, "close"));
-        } else if br.dir != "/" {
-            hints.push((Button::B, "back"));
-        }
-        hints.push((Button::Dpad, ""));
-        if !br.entries.is_empty() {
-            hints.push((Button::X, "delete"));
-        }
-        let bottom = self.bottom_stack(c, b, &hints);
+        let bottom = self.bottom_stack(c, b, &self.browse_hints());
         if br.failed {
             empty(c, top, bottom, "This folder can't be opened", pal);
             return;
@@ -300,18 +330,7 @@ impl Server {
             let base = y + ((h - f.height) / 2.0).round() + f.ascent;
             let (l, r) = (LEFT + 9.0, RIGHT - 9.0);
             let cy = y + h / 2.0;
-            let label = match row {
-                Row::Login => "FTP login",
-                Row::Ftp => "FTP server",
-                Row::CiaInfo => "CIA details on the top screen",
-                Row::Protect => "Protect important 3DS files",
-                Row::ScreenIdle => "Screens off when idle",
-                Row::AutoOff => "Turn the 3DS off when idle",
-                Row::Update => "Updates",
-                Row::Look => "Look",
-                Row::Colour => "Colour",
-            };
-            c.text(f, l, base, label, pal.text, 0.0);
+            c.text(f, l, base, row_label(row), pal.text, 0.0);
             let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
             match row {
                 Row::Ftp => toggle(c, r, cy, self.prefs.ftp, pal),

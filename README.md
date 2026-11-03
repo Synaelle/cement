@@ -24,8 +24,9 @@ L and R switch the bottom screen's tabs:
 - **Browse**: every folder of the SD card. A on an image (PNG, JPEG or BMP, like Luma's
   screenshots) shows it on the top screen
 - **Settings**: FTP login, FTP server on or off, CIA details on the top screen, file protection,
-  screens, auto off, the look (red, or Miku teal), the red look's colour and updates. A newer
-  Cement shows up there and A installs it. The top screen tells what the selected one does
+  screens, auto off, the look (red, Miku teal or the sharp Ficelle), the red look's colour and
+  updates. A newer Cement shows up there and A installs it. The top screen tells what the selected
+  one does
 
 The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.
 A installs it (and deletes the file once it's installed). X deletes the selected file or folder,
@@ -63,9 +64,10 @@ through.
 
 ## Credits
 
-Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One) and
-[Nunito](https://github.com/googlefonts/nunito) (SIL Open Font License). Button glyphs:
-[Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0).
+Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One),
+[Nunito](https://github.com/googlefonts/nunito) and
+[Hanken Grotesk](https://github.com/marcologous/hanken-grotesk) (SIL Open Font License). Button
+glyphs: [Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0).
 
 ## License
 

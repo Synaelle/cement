@@ -19,6 +19,15 @@ const SIZES: &[(&str, &str, f32)] = &[
     ("NUNITO_BOLD_13", "nunito/Nunito-Bold.ttf", 13.0),
     ("NUNITO_BOLD_12", "nunito/Nunito-Bold.ttf", 12.0),
     ("NUNITO_BOLD_11", "nunito/Nunito-Bold.ttf", 11.0),
+    // the Ficelle look: Hanken Grotesk at 400 and 600, 11 px at the smallest
+    ("HANKEN_SEMI_30", "hanken/HankenGrotesk-SemiBold.ttf", 30.0),
+    ("HANKEN_SEMI_18", "hanken/HankenGrotesk-SemiBold.ttf", 18.0),
+    ("HANKEN_SEMI_13", "hanken/HankenGrotesk-SemiBold.ttf", 13.0),
+    ("HANKEN_SEMI_12", "hanken/HankenGrotesk-SemiBold.ttf", 12.0),
+    ("HANKEN_SEMI_11", "hanken/HankenGrotesk-SemiBold.ttf", 11.0),
+    ("HANKEN_REG_13", "hanken/HankenGrotesk-Regular.ttf", 13.0),
+    ("HANKEN_REG_12", "hanken/HankenGrotesk-Regular.ttf", 12.0),
+    ("HANKEN_REG_11", "hanken/HankenGrotesk-Regular.ttf", 11.0),
 ];
 
 /// printable ASCII, Latin-1 and the ellipsis used to shorten long names
@@ -218,7 +227,9 @@ fn main() {
                 m.advance_width.round() as i32 * 64 // whole pixels, as hinted fonts do
             )
             .unwrap();
-            bitmap.extend(cov.into_iter().map(crisp));
+            // Hanken Grotesk is drawn thinner and sharper: steepening it makes it heavy and blotchy
+            let hanken = file.starts_with("hanken/");
+            bitmap.extend(cov.into_iter().map(|a| if hanken { a } else { crisp(a) }));
         }
 
         let mut kern = String::new();

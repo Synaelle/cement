@@ -44,14 +44,16 @@ pub const PRESETS: [(&str, Color); 8] = [
 pub enum Theme {
     Red,  // Cement's own: near-black and red
     Miku, // graphite and Miku teal
+    Ficelle, // the red look's colours, sharp, in Hanken Grotesk
 }
 
-pub const THEMES: [Theme; 2] = [Theme::Red, Theme::Miku];
+pub const THEMES: [Theme; 3] = [Theme::Red, Theme::Miku, Theme::Ficelle];
 
 impl Theme {
     pub fn name(self) -> &'static str {
         match self {
             Theme::Miku => "Miku",
+            Theme::Ficelle => "Ficelle",
             Theme::Red => "Red",
         }
     }
@@ -60,6 +62,7 @@ impl Theme {
     pub fn key(self) -> &'static str {
         match self {
             Theme::Miku => "miku",
+            Theme::Ficelle => "ficelle",
             Theme::Red => "red",
         }
     }
@@ -67,6 +70,7 @@ impl Theme {
     fn palette(self) -> Palette {
         match self {
             Theme::Miku => MIKU,
+            Theme::Ficelle => RED,
             Theme::Red => RED,
         }
     }

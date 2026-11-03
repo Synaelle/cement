@@ -6,6 +6,7 @@
 
 mod bottom;
 mod canvas;
+mod ficelle;
 mod font;
 
 use canvas::{Canvas, Color};
@@ -342,7 +343,7 @@ fn help(row: Row) -> &'static str {
         Row::ScreenIdle => "Both screens go dark after a minute with no button or transfer. Any button lights them again.",
         Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
         Row::Update => "Looks for a newer Cement on GitHub when it starts, with the Wi-Fi on. A turns it on or off.",
-        Row::Look => "How the screens look: Red is Cement's own, Miku is graphite and teal. A or left and right change it.",
+        Row::Look => "How the screens look: Red is Cement's own, Miku is graphite and teal, Ficelle is sharp and quiet. A or left and right change it.",
         Row::Colour => "The red look's colour, kept in sync with Baguette. Left and right pick another one.",
     }
 }
@@ -412,7 +413,12 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
         let by = d.fit(&format!("by {}", i.publisher), r - end - 6.0);
         c.text(d, end + 6.0, top + f.ascent, &by, pal.dim, 0.0);
     }
-    let detail = match info {
+    c.text(d, l, top + f.height + d.ascent, &d.fit(&ticket_detail(size, info), r - l), pal.dim, 0.0);
+}
+
+/// the ticket's second line: version, size, where it installs and its title ID
+fn ticket_detail(size: u64, info: Option<&CiaInfo>) -> String {
+    match info {
         Some(i) => {
             let mut parts = Vec::new();
             if let Some(v) = i.version {
@@ -424,8 +430,7 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
             parts.join(" · ")
         }
         None => format!("{} · not a CIA Cement can read", format_size(size)),
-    };
-    c.text(d, l, top + f.height + d.ascent, &d.fit(&detail, r - l), pal.dim, 0.0);
+    }
 }
 
 impl Server {
@@ -442,6 +447,8 @@ impl Server {
         let view = self.viewed_image();
         self.ui.drawn_for = (self.menu.tab, self.menu.row, view.clone());
         let Some(mut scr) = self.ui.top.take() else { return };
+        let sharp = self.prefs.theme == Theme::Ficelle;
+        let paint_note = if sharp { ficelle::paint_note } else { paint_note };
         if let Some(path) = view {
             if self.ui.picture.as_ref().is_none_or(|(p, _)| *p != path) {
                 // decoding holds the loop up a moment: say so first
@@ -461,7 +468,11 @@ impl Server {
             return;
         }
         self.ui.picture = None; // its memory back
-        self.paint_top(&mut scr.c, t);
+        if sharp {
+            self.paint_top_ficelle(&mut scr.c, t);
+        } else {
+            self.paint_top(&mut scr.c, t);
+        }
         scr.present();
         self.ui.top = Some(scr);
     }
@@ -477,7 +488,7 @@ impl Server {
             self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
         }
         let Some(mut scr) = self.ui.bottom.take() else { return };
-        self.ui.hits = self.paint_bottom(&mut scr.c, b);
+        self.ui.hits = if self.prefs.theme == Theme::Ficelle { self.paint_bottom_ficelle(&mut scr.c, b) } else { self.paint_bottom(&mut scr.c, b) };
         scr.present();
         self.ui.bottom = Some(scr);
     }
@@ -491,6 +502,67 @@ impl Server {
             (Stage::Idle, None) => help(Row::Update).into(),
             (_, tag) => format!("Downloading and installing Cement {}. Keep the 3DS on until it's done.", tag.unwrap_or("")),
         }
+    }
+
+    /// what the transfer card says: the file moving, the batch, or the server's state
+    fn transfer_card(&self, t: &Top, now: u64) -> CardText {
+    let batch = self.sess.iter().find(|s| s.ctrl.is_some() && s.batch_files != 0);
+    let bp = batch.map(|s| progress_of(s, now));
+    let mut card = CardText { title: String::new(), value: String::new(), frac: None, detail: String::new(), right: String::new() };
+    let mut parts = Vec::new();
+    if let Some(s) = batch {
+        let (done, total) = (s.batch_files_done, s.batch_files);
+        parts.push(if s.batch_kind == "delete" {
+            format!("{done} of {total} files")
+        } else {
+            format!("file {} of {total}", (done + 1).min(total))
+        });
+    }
+    if let Some(i) = t.active {
+        let s = &self.sess[i];
+        let p = progress_of(s, now);
+        let verb = if s.mode == Mode::Stor { "Receiving" } else { "Sending" };
+        card.title = format!("{verb} {}", s.name);
+        card.value = format!("{}/s", format_size(self.rate));
+        if p.size != 0 {
+            card.frac = Some(p.done as f32 / p.size as f32);
+        }
+        if batch.is_none() {
+            parts.push(if p.size != 0 {
+                format!("{} of {}", format_size(p.done), format_size(p.size))
+            } else {
+                format_size(p.done)
+            });
+            card.right = time_left(p.eta);
+        }
+    } else if let Some(s) = batch {
+        card.title = match s.batch_kind.as_str() {
+            "delete" => "Deleting files",
+            "down" => "Sending files",
+            _ => "Receiving files",
+        }
+        .into();
+        if s.batch_kind == "delete" {
+            card.frac = Some(s.batch_files_done as f32 / s.batch_files.max(1) as f32);
+        }
+    } else {
+        let up = self.net.up && self.net.listen.is_some();
+        card.title = if up && t.clients != 0 { pcs(t.clients) } else { self.status.clone() };
+        card.detail = if self.prefs.ftp { "No transfer right now" } else { "Turn it back on in Settings, on the bottom screen" }.into();
+    }
+    if let (Some(s), Some(bp)) = (batch, &bp) {
+        if s.batch_kind != "delete" && bp.batch_bytes != 0 && t.active.is_none() {
+            card.frac = Some(bp.batch_done as f32 / bp.batch_bytes as f32);
+        }
+        card.right = time_left(bp.batch_eta);
+    }
+    if t.active.is_some() || batch.is_some() {
+        if t.clients != 0 {
+            parts.push(pcs(t.clients));
+        }
+        card.detail = parts.join(" · ");
+    }
+        card
     }
 
     /// 400 x 240: title and battery, the address, the transfer card
@@ -570,62 +642,7 @@ impl Server {
         }
 
         // transfer card
-        let batch = self.sess.iter().find(|s| s.ctrl.is_some() && s.batch_files != 0);
-        let bp = batch.map(|s| progress_of(s, now));
-        let mut card = CardText { title: String::new(), value: String::new(), frac: None, detail: String::new(), right: String::new() };
-        let mut parts = Vec::new();
-        if let Some(s) = batch {
-            let (done, total) = (s.batch_files_done, s.batch_files);
-            parts.push(if s.batch_kind == "delete" {
-                format!("{done} of {total} files")
-            } else {
-                format!("file {} of {total}", (done + 1).min(total))
-            });
-        }
-        if let Some(i) = t.active {
-            let s = &self.sess[i];
-            let p = progress_of(s, now);
-            let verb = if s.mode == Mode::Stor { "Receiving" } else { "Sending" };
-            card.title = format!("{verb} {}", s.name);
-            card.value = format!("{}/s", format_size(self.rate));
-            if p.size != 0 {
-                card.frac = Some(p.done as f32 / p.size as f32);
-            }
-            if batch.is_none() {
-                parts.push(if p.size != 0 {
-                    format!("{} of {}", format_size(p.done), format_size(p.size))
-                } else {
-                    format_size(p.done)
-                });
-                card.right = time_left(p.eta);
-            }
-        } else if let Some(s) = batch {
-            card.title = match s.batch_kind.as_str() {
-                "delete" => "Deleting files",
-                "down" => "Sending files",
-                _ => "Receiving files",
-            }
-            .into();
-            if s.batch_kind == "delete" {
-                card.frac = Some(s.batch_files_done as f32 / s.batch_files.max(1) as f32);
-            }
-        } else {
-            let up = self.net.up && self.net.listen.is_some();
-            card.title = if up && t.clients != 0 { pcs(t.clients) } else { self.status.clone() };
-            card.detail = if self.prefs.ftp { "No transfer right now" } else { "Turn it back on in Settings, on the bottom screen" }.into();
-        }
-        if let (Some(s), Some(bp)) = (batch, &bp) {
-            if s.batch_kind != "delete" && bp.batch_bytes != 0 && t.active.is_none() {
-                card.frac = Some(bp.batch_done as f32 / bp.batch_bytes as f32);
-            }
-            card.right = time_left(bp.batch_eta);
-        }
-        if t.active.is_some() || batch.is_some() {
-            if t.clients != 0 {
-                parts.push(pcs(t.clients));
-            }
-            card.detail = parts.join(" · ");
-        }
+        let card = self.transfer_card(t, now);
         draw_card(c, left, 226.0 - card_height(), right - left, &card, pal);
     }
 }
