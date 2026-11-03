@@ -25,7 +25,7 @@ use crate::{PROTOCOL, Server, VERSION, battery_text};
 
 // fixed whatever the accent: the switches' knob, install success and error
 const WHITE: Color = 0xffffff;
-const GOOD: Color = 0x8ccf9a;
+const GOOD: Color = 0x8db07a;
 const BAD: Color = 0xe5484d;
 
 /// the bottom screen stays lit (until the idle timer), with an empty state

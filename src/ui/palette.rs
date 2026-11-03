@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Synaelle
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The screens' colours, picked in Settings: Cement's warm black and red, or
+// The screens' colours, picked in Settings: Cement's near-black and red, or
 // graphite and Miku teal. The red look follows the accent (Settings' Colour
 // row, or SITE COLOR from Baguette), the same way Baguette does: each colour
 // takes the accent's hue, and a lightness that keeps its luminance, so text
@@ -30,19 +30,19 @@ pub struct Palette {
 /// light as the default red (Custom is any other colour Baguette set)
 pub const PRESETS: [(&str, Color); 8] = [
     ("Red", DEFAULT_ACCENT),
-    ("Orange", 0x9b4a22),
-    ("Amber", 0x895615),
-    ("Green", 0x2d6e40),
-    ("Teal", 0x186d69),
-    ("Blue", 0x2960b3),
-    ("Violet", 0x7546c2),
-    ("Pink", 0xa63381),
+    ("Orange", 0xce622d),
+    ("Amber", 0xb6721c),
+    ("Green", 0x2b9349),
+    ("Teal", 0x20908a),
+    ("Blue", 0x4981d5),
+    ("Violet", 0x946dd5),
+    ("Pink", 0xcd53a6),
 ];
 
 /// the looks the Settings tab offers
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Theme {
-    Red,  // Cement's own: warm black and red
+    Red,  // Cement's own: near-black and red
     Miku, // graphite and Miku teal
 }
 
@@ -88,20 +88,20 @@ const MIKU: Palette = Palette {
     dim: 0x9a9fa8,
 };
 
-/// warm black and red, Baguette's colours too
+/// near-black and red, from the Ficelle palette (Baguette uses it too)
 const RED: Palette = Palette {
     accent: DEFAULT_ACCENT,
-    on_accent: 0xffffff,
-    highlight: 0xd8676a,
-    soft: 0xe9a9a3,
-    bg: 0x0e0a0a,
-    blob: 0x1a1112,
-    card: 0x1d1414,
-    track: 0x2a1516,
-    selected: 0x3d1418,
-    border: 0x4d1d21,
-    text: 0xf2e7e4,
-    dim: 0xa8928e,
+    on_accent: 0x140b09, // dark: white on this red is too faint
+    highlight: DEFAULT_ACCENT,
+    soft: 0xe6dfd8,
+    bg: 0x0e0d0d,
+    blob: 0x161414,
+    card: 0x161414,
+    track: 0x1f1c1b,
+    selected: 0x3a1915,
+    border: 0x2e2a28,
+    text: 0xe6dfd8,
+    dim: 0x9a918a,
 };
 
 /// (hue in degrees, saturation, lightness), as Baguette's toHsl
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn default_round_trips() {
         // the default colours come back unchanged on their own hue
-        for c in [0x3cc8bd, 0x8ee6de, 0x24262b, 0x17302f, 0x2e3238, 0xf1f2f4, 0xd8676a, 0xe9a9a3, 0x2a1516, 0x3d1418, 0x4d1d21, 0xf2e7e4] {
+        for c in [0x3cc8bd, 0x8ee6de, 0x24262b, 0x17302f, 0x2e3238, 0xf1f2f4, 0xe44c3e, 0xe6dfd8, 0x1f1c1b, 0x3a1915, 0x2e2a28, 0x9a918a] {
             let (h, s, l) = to_hsl(c);
             let back = from_hsl(h, s, l);
             let diff = |s: u32| ((back >> s) & 255).abs_diff((c >> s) & 255);

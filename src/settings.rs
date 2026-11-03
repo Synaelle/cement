@@ -10,7 +10,9 @@ use crate::hash::{hex, sha256};
 use crate::sys::{self, File};
 use crate::ui::palette::{THEMES, Theme};
 
-pub const DEFAULT_ACCENT: u32 = 0xb8283c;
+pub const DEFAULT_ACCENT: u32 = 0xe44c3e;
+/// the old default red: read as today's, so it moves to the new one
+const OLD_DEFAULT: u32 = 0xb8283c;
 
 const DIR: &str = "/3ds/cement";
 const FILE: &str = "/3ds/cement/settings.ini";
@@ -127,7 +129,7 @@ pub const AUTO_OFF: [u32; 5] = [0, 5, 15, 30, 60];
 
 pub fn load() -> Settings {
     let text = read();
-    let accent = get(&text, "accent").and_then(|v| parse_color(&v)).unwrap_or(DEFAULT_ACCENT);
+    let accent = get(&text, "accent").and_then(|v| parse_color(&v)).filter(|&c| c != OLD_DEFAULT).unwrap_or(DEFAULT_ACCENT);
     let accent_time = get(&text, "accent_time").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
     let login = match (get(&text, "user"), get(&text, "pass_hash"), get(&text, "pass")) {
         (Some(u), Some(h), _) if valid_user(&u) => Some((u, h)),
