@@ -141,6 +141,21 @@ impl Xfer {
         }
     }
 
+    /// ready for a new transfer: every buffer free again, nothing done
+    fn reset(&mut self, up: bool) {
+        for slot in &mut self.slots {
+            *slot = match std::mem::replace(slot, Slot::Empty) {
+                Slot::Fill { buf, .. } | Slot::Done { buf, .. } | Slot::Free(buf) => Slot::Free(buf),
+                other => other,
+            };
+        }
+        self.cur = 0;
+        self.send_pos = 0;
+        self.done = 0;
+        self.err = false;
+        self.up = up;
+    }
+
     fn free_buffers(&mut self) {
         self.drain();
         for slot in &mut self.slots {
@@ -478,7 +493,65 @@ impl Server {
 
     /// one iteration of the network loop
     pub fn serve(&mut self) {
-        let now = sys::now_ms();
+        let (mut fds, kinds, disk_wait) = self.poll_set(sys::now_ms());
+        let rc = net::poll(&mut fds, if disk_wait { 1 } else { 30 });
+        if rc < 0 {
+            // the network went away underneath us
+            self.net_down();
+            return;
+        }
+        if rc == 0 {
+            return;
+        }
+
+        for (p, kind) in fds.iter().zip(&kinds) {
+            if p.revents == 0 {
+                continue;
+            }
+            match *kind {
+                Kind::Listen => self.accept_client(),
+                Kind::Ctrl(i) => {
+                    if self.sess[i].ctrl == Some(p.fd) {
+                        self.read_commands(i);
+                    }
+                }
+                Kind::Pasv(i) => {
+                    if self.sess[i].pasv == Some(p.fd) {
+                        self.accept_data(i, p.fd);
+                    }
+                }
+                Kind::Data(i) => {
+                    let s = &self.sess[i];
+                    if s.data != Some(p.fd) || s.ctrl.is_none() {
+                        continue;
+                    }
+                    if !s.started {
+                        self.start_data(i);
+                    }
+                    match self.sess[i].mode {
+                        Mode::Stor => self.pump_stor(i),
+                        Mode::Retr => self.pump_retr(i),
+                        Mode::None => {}
+                        _ => self.pump_list(i),
+                    }
+                }
+                Kind::Pending(j) => {
+                    if let Some((fd, _)) = self.net.pending[j] {
+                        let mut junk = [0u8; 256];
+                        if fd == p.fd && !matches!(net::recv(fd, &mut junk), Io::Done(_)) {
+                            net::close(fd);
+                            self.net.pending[j] = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// the sockets to wait on and what each one is, dropping idle and dead
+    /// connections on the way; true when a transfer waits for the disk thread
+    /// (then the wait is short)
+    fn poll_set(&mut self, now: u64) -> (Vec<PollFd>, Vec<Kind>, bool) {
         let mut fds: Vec<PollFd> = Vec::with_capacity(1 + MAX_SESSIONS * 2 + MAX_PENDING);
         let mut kinds: Vec<Kind> = Vec::with_capacity(fds.capacity());
         let mut disk_wait = false;
@@ -545,72 +618,23 @@ impl Server {
                 }
             }
         }
+        (fds, kinds, disk_wait)
+    }
 
-        let rc = net::poll(&mut fds, if disk_wait { 1 } else { 30 });
-        if rc < 0 {
-            // the network went away underneath us
-            self.net_down();
+    /// a data connection on the passive port, taken only from the client's own
+    /// address: anyone else could take the next port and the data with it
+    fn accept_data(&mut self, i: usize, listen: Sock) {
+        let s = &mut self.sess[i];
+        let Some((fd, peer)) = net::accept(listen) else { return };
+        if peer != s.peer {
+            net::close(fd);
             return;
         }
-        if rc == 0 {
-            return;
-        }
-
-        for (p, kind) in fds.iter().zip(&kinds) {
-            if p.revents == 0 {
-                continue;
-            }
-            match *kind {
-                Kind::Listen => self.accept_client(),
-                Kind::Ctrl(i) => {
-                    if self.sess[i].ctrl == Some(p.fd) {
-                        self.read_commands(i);
-                    }
-                }
-                Kind::Pasv(i) => {
-                    let s = &mut self.sess[i];
-                    if s.pasv == Some(p.fd) {
-                        // only from the client's own address: anyone else could
-                        // take the next port and the data with it
-                        if let Some((fd, peer)) = net::accept(p.fd) {
-                            if peer != s.peer {
-                                net::close(fd);
-                                continue;
-                            }
-                            close_now(&mut s.pasv);
-                            close_now(&mut s.data);
-                            s.data = Some(fd);
-                            net::set_nonblocking(fd);
-                            net::set_buffers(fd, SOCK_BUFSIZE);
-                        }
-                    }
-                }
-                Kind::Data(i) => {
-                    let s = &self.sess[i];
-                    if s.data != Some(p.fd) || s.ctrl.is_none() {
-                        continue;
-                    }
-                    if !s.started {
-                        self.start_data(i);
-                    }
-                    match self.sess[i].mode {
-                        Mode::Stor => self.pump_stor(i),
-                        Mode::Retr => self.pump_retr(i),
-                        Mode::None => {}
-                        _ => self.pump_list(i),
-                    }
-                }
-                Kind::Pending(j) => {
-                    if let Some((fd, _)) = self.net.pending[j] {
-                        let mut junk = [0u8; 256];
-                        if fd == p.fd && !matches!(net::recv(fd, &mut junk), Io::Done(_)) {
-                            net::close(fd);
-                            self.net.pending[j] = None;
-                        }
-                    }
-                }
-            }
-        }
+        close_now(&mut s.pasv);
+        close_now(&mut s.data);
+        s.data = Some(fd);
+        net::set_nonblocking(fd);
+        net::set_buffers(fd, SOCK_BUFSIZE);
     }
 
     fn read_commands(&mut self, i: usize) {
@@ -732,17 +756,7 @@ impl Server {
         }
         let s = &mut self.sess[i];
         let x = &mut s.x;
-        for slot in &mut x.slots {
-            *slot = match std::mem::replace(slot, Slot::Empty) {
-                Slot::Fill { buf, .. } | Slot::Done { buf, .. } | Slot::Free(buf) => Slot::Free(buf),
-                other => other,
-            };
-        }
-        x.cur = 0;
-        x.send_pos = 0;
-        x.done = 0;
-        x.err = false;
-        x.up = up;
+        x.reset(up);
 
         if up {
             let Some(file) = File::open_write(path) else {
@@ -1032,8 +1046,41 @@ impl Server {
             self.sess[i].rest = 0;
             return;
         }
-        let cwd = self.sess[i].cwd.clone();
-        let resolve = |a: &[u8]| resolve_path(&cwd, a);
+        match cmd {
+            "USER" | "PASS" => self.login_command(i, cmd, arg, now),
+            "PWD" | "XPWD" | "CWD" | "CDUP" | "XCUP" | "MLST" | "SIZE" | "MDTM" | "AVBL" => self.navigation_command(i, cmd, arg),
+            "PASV" | "EPSV" | "PORT" | "EPRT" | "LIST" | "NLST" | "MLSD" | "RETR" | "STOR" | "APPE" | "ABOR" => self.transfer_command(i, cmd, arg),
+            "DELE" | "RMD" | "XRMD" | "MKD" | "XMKD" | "RNFR" | "RNTO" => self.file_command(i, cmd, arg),
+            "SYST" => self.sess[i].reply("215 UNIX Type: L8\r\n"),
+            "FEAT" => self.sess[i].reply(
+                "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n MDTM\r\n AVBL\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n211 End\r\n",
+            ),
+            "OPTS" | "TYPE" | "MODE" | "STRU" | "NOOP" => self.sess[i].reply("200 OK\r\n"),
+            "ALLO" => {
+                let s = &mut self.sess[i];
+                s.allo = util::parse_ull(arg); // size of the next STOR, for progress/ETA
+                s.reply("200 OK\r\n");
+            }
+            "SITE" => self.site(i, arg),
+            "REST" => {
+                let s = &mut self.sess[i];
+                s.rest = util::parse_ull(arg);
+                let text = format!("350 Restarting at {}\r\n", s.rest);
+                s.reply(&text);
+                return; // keep rest for the next command
+            }
+            "QUIT" => {
+                let s = &mut self.sess[i];
+                s.reply("221 Bye\r\n");
+                s.close();
+            }
+            _ => self.sess[i].reply("502 Not implemented\r\n"),
+        }
+        self.sess[i].rest = 0;
+    }
+
+    /// USER and PASS
+    fn login_command(&mut self, i: usize, cmd: &str, arg: &[u8], now: u64) {
         match cmd {
             "USER" => {
                 let user = String::from_utf8_lossy(arg).into_owned();
@@ -1082,17 +1129,15 @@ impl Server {
                     }
                 }
             }
-            "SYST" => self.sess[i].reply("215 UNIX Type: L8\r\n"),
-            "FEAT" => self.sess[i].reply(
-                "211-Features:\r\n MLST type*;size*;\r\n MLSD\r\n SIZE\r\n MDTM\r\n AVBL\r\n REST STREAM\r\n UTF8\r\n EPSV\r\n211 End\r\n",
-            ),
-            "OPTS" | "TYPE" | "MODE" | "STRU" | "NOOP" => self.sess[i].reply("200 OK\r\n"),
-            "ALLO" => {
-                let s = &mut self.sess[i];
-                s.allo = util::parse_ull(arg); // size of the next STOR, for progress/ETA
-                s.reply("200 OK\r\n");
-            }
-            "SITE" => self.site(i, arg),
+            _ => self.sess[i].reply("502 Not implemented\r\n"),
+        }
+    }
+
+    /// the working folder and what is in it, without the data connection
+    fn navigation_command(&mut self, i: usize, cmd: &str, arg: &[u8]) {
+        let cwd = self.sess[i].cwd.clone();
+        let resolve = |a: &[u8]| resolve_path(&cwd, a);
+        match cmd {
             "PWD" | "XPWD" => {
                 let s = &mut self.sess[i];
                 let text = format!("257 \"{}\"\r\n", s.cwd);
@@ -1107,51 +1152,6 @@ impl Server {
                         s.reply("250 OK\r\n");
                     }
                     _ => s.reply("550 No such directory\r\n"),
-                }
-            }
-            "PASV" => self.open_pasv(i, false),
-            "EPSV" => self.open_pasv(i, true),
-            "PORT" | "EPRT" => self.sess[i].reply("502 Use PASV\r\n"),
-            "REST" => {
-                let s = &mut self.sess[i];
-                s.rest = util::parse_ull(arg);
-                let text = format!("350 Restarting at {}\r\n", s.rest);
-                s.reply(&text);
-                return; // keep rest for the next command
-            }
-            "LIST" | "NLST" | "MLSD" => {
-                let mode = match cmd {
-                    "LIST" => Mode::List,
-                    "NLST" => Mode::Nlst,
-                    _ => Mode::Mlsd,
-                };
-                let mut a = arg;
-                while a.first() == Some(&b'-') {
-                    // skip "-a", "-la" ...
-                    let end = a.iter().position(|&c| c == b' ').unwrap_or(a.len());
-                    a = &a[end..];
-                    while a.first() == Some(&b' ') {
-                        a = &a[1..];
-                    }
-                }
-                let path = resolve(a);
-                let s = &mut self.sess[i];
-                if s.pasv.is_none() && s.data.is_none() {
-                    s.reply("425 Use PASV first\r\n");
-                } else {
-                    let mut entries = Vec::new();
-                    let listed =
-                        path.is_some_and(|p| sys::list_dir(&p, &mut |name, dir, size| entries.push((name.to_string(), dir, size))));
-                    if !listed {
-                        s.end_transfer();
-                        s.reply("550 No such directory\r\n");
-                    } else {
-                        for (name, dir, size) in entries {
-                            s.list_entry(mode, &name, dir, size);
-                        }
-                        s.mode = mode;
-                        s.reply("150 Listing\r\n");
-                    }
                 }
             }
             "MLST" => {
@@ -1188,18 +1188,65 @@ impl Server {
                 };
                 self.sess[i].reply(&text);
             }
+            _ => self.sess[i].reply("502 Not implemented\r\n"),
+        }
+    }
+
+    /// the data connection and what goes over it
+    fn transfer_command(&mut self, i: usize, cmd: &str, arg: &[u8]) {
+        let cwd = self.sess[i].cwd.clone();
+        let resolve = |a: &[u8]| resolve_path(&cwd, a);
+        match cmd {
+            "PASV" => self.open_pasv(i, false),
+            "EPSV" => self.open_pasv(i, true),
+            "PORT" | "EPRT" => self.sess[i].reply("502 Use PASV\r\n"),
+            "LIST" | "NLST" | "MLSD" => {
+                let mode = match cmd {
+                    "LIST" => Mode::List,
+                    "NLST" => Mode::Nlst,
+                    _ => Mode::Mlsd,
+                };
+                let mut a = arg;
+                while a.first() == Some(&b'-') {
+                    // skip "-a", "-la" ...
+                    let end = a.iter().position(|&c| c == b' ').unwrap_or(a.len());
+                    a = &a[end..];
+                    while a.first() == Some(&b' ') {
+                        a = &a[1..];
+                    }
+                }
+                let path = resolve(a);
+                let s = &mut self.sess[i];
+                if s.pasv.is_none() && s.data.is_none() {
+                    s.reply("425 Use PASV first\r\n");
+                } else {
+                    let mut entries = Vec::new();
+                    let listed =
+                        path.is_some_and(|p| sys::list_dir(&p, &mut |name, dir, size| entries.push((name.to_string(), dir, size))));
+                    if !listed {
+                        s.end_transfer();
+                        s.reply("550 No such directory\r\n");
+                    } else {
+                        for (name, dir, size) in entries {
+                            s.list_entry(mode, &name, dir, size);
+                        }
+                        s.mode = mode;
+                        s.reply("150 Listing\r\n");
+                    }
+                }
+            }
             "RETR" | "STOR" | "APPE" => {
                 let mode = if cmd == "RETR" { Mode::Retr } else { Mode::Stor };
                 let path = resolve(arg);
-                let bat = self.battery();
+                let low = self.battery_refusal();
                 let s = &mut self.sess[i];
                 if s.pasv.is_none() && s.data.is_none() {
                     s.reply("425 Use PASV first\r\n");
                 } else if let (Some(dir), "STOR") = (s.bundle.take(), cmd) {
                     // SITE BUNDLE: the name is ignored, the stream is unpacked into dir
-                    if crate::battery_low(bat) {
+                    if let Some(text) = low {
                         s.end_transfer();
-                        s.reply(&format!("450 3DS battery too low ({}): plug in the charger\r\n", crate::battery_text(bat)));
+                        s.reply(&text);
                     } else if self.prepare_bundle(i, &dir) {
                         let s = &mut self.sess[i];
                         s.mode = Mode::Stor;
@@ -1207,9 +1254,9 @@ impl Server {
                         s.reply("150 Opening data connection\r\n");
                     }
                 } else if let Some(path) = path {
-                    if crate::battery_low(bat) {
+                    if let Some(text) = low {
                         s.end_transfer();
-                        s.reply(&format!("450 3DS battery too low ({}): plug in the charger\r\n", crate::battery_text(bat)));
+                        s.reply(&text);
                     } else if self.prepare_file(i, &path, mode, cmd == "APPE") {
                         let s = &mut self.sess[i];
                         s.mode = mode;
@@ -1220,6 +1267,24 @@ impl Server {
                     s.reply("553 Bad file name\r\n");
                 }
             }
+            "ABOR" => {
+                let s = &mut self.sess[i];
+                if s.mode != Mode::None {
+                    close_now(&mut s.data);
+                    s.end_transfer();
+                    s.reply("426 Aborted\r\n");
+                }
+                s.reply("226 Abort OK\r\n");
+            }
+            _ => self.sess[i].reply("502 Not implemented\r\n"),
+        }
+    }
+
+    /// deleting, creating and renaming on the SD card
+    fn file_command(&mut self, i: usize, cmd: &str, arg: &[u8]) {
+        let cwd = self.sess[i].cwd.clone();
+        let resolve = |a: &[u8]| resolve_path(&cwd, a);
+        match cmd {
             "DELE" => match resolve(arg) {
                 Some(p) if sys::delete_file(&p) => {
                     self.cia_remove(&p);
@@ -1265,23 +1330,8 @@ impl Server {
                     _ => self.sess[i].reply("550 Rename failed\r\n"),
                 }
             }
-            "ABOR" => {
-                let s = &mut self.sess[i];
-                if s.mode != Mode::None {
-                    close_now(&mut s.data);
-                    s.end_transfer();
-                    s.reply("426 Aborted\r\n");
-                }
-                s.reply("226 Abort OK\r\n");
-            }
-            "QUIT" => {
-                let s = &mut self.sess[i];
-                s.reply("221 Bye\r\n");
-                s.close();
-            }
             _ => self.sess[i].reply("502 Not implemented\r\n"),
         }
-        self.sess[i].rest = 0;
     }
 
     fn site(&mut self, i: usize, arg: &[u8]) {
@@ -1292,56 +1342,8 @@ impl Server {
                 let text = self.site_status(i);
                 self.sess[i].reply(&text);
             }
-            "BATCH" => {
-                // SITE BATCH <files> <bytes> [up|down|delete]; "SITE BATCH 0 0" ends it
-                let rest = text.get(5..).unwrap_or("");
-                let mut tok = rest.split_whitespace();
-                fn num(t: Option<&str>) -> Option<&str> {
-                    t.filter(|t| t.starts_with(|c: char| c.is_ascii_digit() || c == '+'))
-                }
-                let (mut files, mut bytes, mut kind) = (0u64, 0u64, "up".to_string());
-                if let Some(t) = num(tok.next()) {
-                    files = util::parse_ull(t.as_bytes());
-                    if let Some(t) = num(tok.next()) {
-                        bytes = util::parse_ull(t.as_bytes());
-                        if let Some(t) = tok.next() {
-                            kind = t.chars().take(7).collect();
-                        }
-                    }
-                }
-                let now = sys::now_ms();
-                let s = &mut self.sess[i];
-                s.batch_files = files as u32;
-                s.batch_bytes = bytes;
-                s.batch_files_done = 0;
-                s.batch_bytes_done = 0;
-                s.batch_start = now;
-                s.batch_kind = kind;
-                self.last_activity = now;
-                self.sess[i].reply("200 OK\r\n");
-            }
-            "COLOR" => {
-                // SITE COLOR [#rrggbb [secs]]: the red look's colour and when it was
-                // picked (local clock, now when not given), kept on the SD card.
-                // Baguette compares the times and sends the newer colour, so it's
-                // always taken
-                let mut args = text.get(5..).unwrap_or("").split_whitespace();
-                let (c, t) = (args.next(), args.next());
-                let color = c.and_then(settings::parse_color);
-                let time = t.map(|t| t.parse::<u64>().ok());
-                match (c, color, time, args.next()) {
-                    (None, ..) => {
-                        let text = format!("200 #{:06x} {}\r\n", self.accent, self.accent_time);
-                        self.sess[i].reply(&text);
-                    }
-                    (Some(_), Some(color), None | Some(Some(_)), None) => {
-                        let time = time.flatten().unwrap_or_else(|| sys::unix_time().unwrap_or(0));
-                        self.set_accent(color, time);
-                        self.sess[i].reply("200 Accent set\r\n");
-                    }
-                    _ => self.sess[i].reply("501 SITE COLOR #rrggbb [secs]\r\n"),
-                }
-            }
+            "BATCH" => self.site_batch(i, &text),
+            "COLOR" => self.site_color(i, &text),
             "INSTALL" => {
                 // SITE INSTALL <path>: as pressing A on that CIA, except that system titles
                 // are refused and a reinstall or downgrade waits for A on the console
@@ -1384,6 +1386,58 @@ impl Server {
                 }
             }
             _ => self.sess[i].reply("502 SITE STATUS, BATCH, COLOR, INSTALL, LOGIN or BUNDLE\r\n"),
+        }
+    }
+
+    /// SITE BATCH <files> <bytes> [up|down|delete]; "SITE BATCH 0 0" ends it
+    fn site_batch(&mut self, i: usize, text: &str) {
+        let rest = text.get(5..).unwrap_or("");
+        let mut tok = rest.split_whitespace();
+        fn num(t: Option<&str>) -> Option<&str> {
+            t.filter(|t| t.starts_with(|c: char| c.is_ascii_digit() || c == '+'))
+        }
+        let (mut files, mut bytes, mut kind) = (0u64, 0u64, "up".to_string());
+        if let Some(t) = num(tok.next()) {
+            files = util::parse_ull(t.as_bytes());
+            if let Some(t) = num(tok.next()) {
+                bytes = util::parse_ull(t.as_bytes());
+                if let Some(t) = tok.next() {
+                    kind = t.chars().take(7).collect();
+                }
+            }
+        }
+        let now = sys::now_ms();
+        let s = &mut self.sess[i];
+        s.batch_files = files as u32;
+        s.batch_bytes = bytes;
+        s.batch_files_done = 0;
+        s.batch_bytes_done = 0;
+        s.batch_start = now;
+        s.batch_kind = kind;
+        self.last_activity = now;
+        self.sess[i].reply("200 OK\r\n");
+    }
+
+    /// SITE COLOR [#rrggbb [secs]]: the red look's colour and when it was
+    /// picked (local clock, now when not given), kept on the SD card.
+    /// Baguette compares the times and sends the newer colour, so it's
+    /// always taken
+    fn site_color(&mut self, i: usize, text: &str) {
+        let mut args = text.get(5..).unwrap_or("").split_whitespace();
+        let (c, t) = (args.next(), args.next());
+        let color = c.and_then(settings::parse_color);
+        let time = t.map(|t| t.parse::<u64>().ok());
+        match (c, color, time, args.next()) {
+            (None, ..) => {
+                let text = format!("200 #{:06x} {}\r\n", self.accent, self.accent_time);
+                self.sess[i].reply(&text);
+            }
+            (Some(_), Some(color), None | Some(Some(_)), None) => {
+                let time = time.flatten().unwrap_or_else(|| sys::unix_time().unwrap_or(0));
+                self.set_accent(color, time);
+                self.sess[i].reply("200 Accent set\r\n");
+            }
+            _ => self.sess[i].reply("501 SITE COLOR #rrggbb [secs]\r\n"),
         }
     }
 
@@ -1501,17 +1555,7 @@ impl Server {
         }
         let s = &mut self.sess[i];
         let x = &mut s.x;
-        for slot in &mut x.slots {
-            *slot = match std::mem::replace(slot, Slot::Empty) {
-                Slot::Fill { buf, .. } | Slot::Done { buf, .. } | Slot::Free(buf) => Slot::Free(buf),
-                other => other,
-            };
-        }
-        x.cur = 0;
-        x.send_pos = 0;
-        x.done = 0;
-        x.err = false;
-        x.up = true;
+        x.reset(true);
         x.file = None;
         x.untar = Some(Arc::new(Mutex::new(Untar::new(dir))));
         x.pos = 0;
@@ -1520,6 +1564,13 @@ impl Server {
         s.allo = 0;
         s.bundle_base = s.batch_files_done;
         true
+    }
+
+    /// the reply refusing a transfer while the battery is low
+    fn battery_refusal(&mut self) -> Option<String> {
+        let bat = self.battery();
+        crate::battery_low(bat)
+            .then(|| format!("450 3DS battery too low ({}): plug in the charger\r\n", crate::battery_text(bat)))
     }
 
     /// installs wait for transfers and deletions: they share the SD card
