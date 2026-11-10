@@ -68,8 +68,10 @@ jobs:
 
       - name: Install Rust and cargo-3ds
         run: |
-          # the Makefile builds with "cargo +nightly"
-          rustup toolchain install nightly --profile minimal -c rust-src
+          # the nightly the Makefile builds with
+          nightly=$(sed -n 's/^NIGHTLY[[:space:]]*:=[[:space:]]*//p' Makefile)
+          [ -n "$nightly" ] || { echo "no NIGHTLY in the Makefile" >&2; exit 1; }
+          rustup toolchain install "$nightly" --profile minimal -c rust-src
           cargo install --locked cargo-3ds --version "$CARGO_3DS"
 
       - name: Install libclang, makerom and bannertool

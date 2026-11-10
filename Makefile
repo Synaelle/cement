@@ -2,7 +2,7 @@
 # Cement 3DS server (Rust). "make" builds Cement.cia and Cement.3dsx,
 # "make PROFILE=fast" a quicker build to try changes (see Cargo.toml).
 #
-# Needs: nightly Rust with rust-src (rustup toolchain install nightly -c rust-src),
+# Needs: the nightly Rust below with rust-src (rustup toolchain install <NIGHTLY> -c rust-src),
 #        cargo-3ds (cargo install --locked cargo-3ds), devkitARM with libctru
 #        (DEVKITPRO and DEVKITARM set), libclang for ctru-sys's bindgen
 #        (LIBCLANG_PATH if it isn't found), makerom and bannertool.
@@ -16,8 +16,12 @@ BUILD		:=	build
 PROFILE		?=	release
 ELF		:=	target/armv6k-nintendo-3ds/$(PROFILE)/cement-server.elf
 
+# the nightly the 3DS build is made with, the same here and in the release
+# workflow, so a tag builds the same app whenever it is built
+NIGHTLY		:=	nightly-2026-11-09
+
 # tools (override on the command line if they live elsewhere)
-CARGO		?=	cargo +nightly
+CARGO		?=	cargo +$(NIGHTLY)
 MAKEROM		?=	makerom
 BANNERTOOL	?=	bannertool
 

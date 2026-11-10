@@ -48,8 +48,8 @@ fine with any other FTP client too.
 On Linux or WSL, with devkitPro (or Docker), `makerom`, `bannertool` and libclang:
 
 ```sh
-rustup toolchain install nightly -c rust-src
-cargo install --locked cargo-3ds
+rustup toolchain install nightly-2026-11-09 -c rust-src
+cargo install --locked cargo-3ds --version 0.1.5
 ./build.sh
 ```
 

@@ -1,10 +1,10 @@
 #!/bin/sh
 # Builds Cement.cia and Cement.3dsx on Linux (or WSL).
 #
-# Needs: nightly Rust with rust-src, cargo-3ds and libclang, makerom and
-#        bannertool (on PATH, or MAKEROM=/path BANNERTOOL=/path), and either
-#        devkitPro installed (DEVKITARM set) or Docker, which then uses the
-#        official devkitpro/devkitarm image.
+# Needs: the Makefile's nightly Rust with rust-src, cargo-3ds and libclang,
+#        makerom and bannertool (on PATH, or MAKEROM=/path BANNERTOOL=/path),
+#        and either devkitPro installed (DEVKITARM set) or Docker, which then
+#        uses the official devkitpro/devkitarm image at the digest below.
 #
 # usage: ./build.sh        a release build
 #        ./build.sh fast   a quicker build to try changes, no LTO (always -<commit>-dev)
@@ -34,26 +34,29 @@ fi
 echo "version $APP_VERSION"
 
 [ -n "$MAKEROM" ] && [ -n "$BANNERTOOL" ] || { echo "makerom and bannertool are needed for the CIA" >&2; exit 1; }
+# the devkitarm image release builds use: a newer one is a deliberate change here
+IMAGE=devkitpro/devkitarm@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5
 if [ -z "${DEVKITARM:-}" ]; then
 	# no devkitPro installed: copy it once out of the official Docker image
 	# (running the build inside the image fails: its libc is older than
 	# what the Linux makerom release needs)
 	cache=${XDG_CACHE_HOME:-$HOME/.cache}/cement/devkitpro
-	if [ ! -x "$cache/tools/bin/3dsxtool" ] || [ ! -d "$cache/devkitARM" ]; then
+	if [ ! -x "$cache/tools/bin/3dsxtool" ] || [ ! -d "$cache/devkitARM" ] || [ "$(cat "$cache/.image" 2>/dev/null)" != "$IMAGE" ]; then
 		command -v docker >/dev/null || { echo "install devkitPro (set DEVKITARM) or Docker for the 3DS build" >&2; exit 1; }
-		echo "copying devkitARM out of the devkitpro/devkitarm image to $cache"
+		echo "copying devkitARM out of $IMAGE to $cache"
 		mkdir -p "$(dirname "$cache")"
 		rm -rf "$cache" "$cache.part"
-		id=$(docker create devkitpro/devkitarm)
+		id=$(docker create "$IMAGE")
 		mkdir -p "$cache.part" # complete copies only; streamed as tar because
 		docker cp "$id:/opt/devkitpro/." - | tar -x -C "$cache.part" # one symlink points outside
 		docker rm "$id" >/dev/null
+		echo "$IMAGE" > "$cache.part/.image"
 		mv "$cache.part" "$cache"
 	fi
 	export DEVKITPRO="$cache" DEVKITARM="$cache/devkitARM"
 	export PATH="$DEVKITPRO/tools/bin:$PATH"
 fi
-command -v cargo-3ds >/dev/null || { echo "install nightly Rust with rust-src and cargo-3ds (see the README)" >&2; exit 1; }
+command -v cargo-3ds >/dev/null || { echo "install the nightly Rust with rust-src and cargo-3ds (see the README)" >&2; exit 1; }
 if [ -z "${LIBCLANG_PATH:-}" ]; then
 	# ctru-sys generates its libctru bindings with libclang; take the newest LLVM
 	for d in /usr/lib/llvm-*/lib; do [ -d "$d" ] && LIBCLANG_PATH=$d; done
