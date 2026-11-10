@@ -28,6 +28,14 @@ pub struct Shared {
     err: Mutex<&'static str>,
 }
 
+/// how a request to install a file went
+pub enum InstallStart {
+    Started,
+    Queued, // starts when the transfers end
+    Asked,  // waits for A on the console
+    Refused(u16, &'static str), // the FTP reply code and why
+}
+
 /// the last finished install, for SITE STATUS (until the next one starts)
 pub struct InstallResult {
     pub n: u32, // counts finished installs from 1
@@ -89,20 +97,20 @@ impl Server {
         }
     }
 
-    /// SITE INSTALL (`remote`) or A on a Browse file; the FTP reply. Over the
+    /// SITE INSTALL (`remote`) or A on a Browse file. Over the
     /// network, titles that go to the system memory are refused: FBI installs
     /// them, in the hands of whoever holds the console.
-    pub fn request_install(&mut self, path: &str, remote: bool) -> &'static str {
+    pub fn request_install(&mut self, path: &str, remote: bool) -> InstallStart {
         if self.inst.is_some() || self.inst_queue.is_some() {
-            return "450 Busy: another install is running\r\n";
+            return InstallStart::Refused(450, "Busy: another install is running");
         }
         let size = if is_cia(path) { sys::file_size(path) } else { None };
-        let Some(size) = size else { return "550 No such CIA\r\n" };
+        let Some(size) = size else { return InstallStart::Refused(550, "No such CIA") };
         if battery_low(self.battery()) {
-            return "451 Battery too low: plug in the charger\r\n";
+            return InstallStart::Refused(451, "Battery too low: plug in the charger");
         }
         if remote && install_plan(path).is_some_and(|p| p.nand) {
-            return "550 System, DSiWare and FIRM titles install from FBI on the 3DS\r\n";
+            return InstallStart::Refused(550, "System, DSiWare and FIRM titles install from FBI on the 3DS");
         }
         if !self.cias.iter().any(|c| c.path == path) {
             self.cia_add(path, size);
@@ -111,16 +119,16 @@ impl Server {
         self.last_wake = sys::now_ms(); // wakes the screens
         self.bottom_dirty = true;
         if self.fs_busy() {
-            self.inst_queue = Some(path.to_string()); // starts when the transfers end
-            return "200 Install queued\r\n";
+            self.inst_queue = Some(path.to_string());
+            return InstallStart::Queued;
         }
         self.start_install(!remote);
         if self.inst.is_some() {
-            "200 Install started\r\n"
+            InstallStart::Started
         } else if self.asked_install(path) {
-            "200 Press A on the 3DS to confirm\r\n"
+            InstallStart::Asked
         } else {
-            "451 Install could not start\r\n"
+            InstallStart::Refused(451, "Install could not start")
         }
     }
 
@@ -146,10 +154,18 @@ impl Server {
         self.asked(&install_key(path))
     }
 
+    /// a warning, a question or a failure on the bottom screen
     pub fn cia_message(&mut self, msg: String) {
         self.cia_msg = msg;
+        self.cia_msg_good = false;
         self.cia_msg_time = sys::now_ms();
         self.bottom_dirty = true;
+    }
+
+    /// good news on the bottom screen: something done, or under way
+    pub fn cia_news(&mut self, msg: String) {
+        self.cia_message(msg);
+        self.cia_msg_good = true;
     }
 
     /// installs the selected Recent CIA; `by_hand` when A was pressed on it
@@ -238,7 +254,7 @@ impl Server {
         self.menu.browse.loaded = false; // the installed file is gone, or the list is the same
         if rc >= 0 {
             self.cia_remove(&inst.path);
-            self.cia_message(format!("Installed {}", util::clip(base_name(&inst.path), 30)));
+            self.cia_news(format!("Installed {}", util::clip(base_name(&inst.path), 30)));
         } else {
             let err = *inst.shared.err.lock().unwrap();
             self.cia_message(format!("{} ({:08X})", util::clip(err, 30), rc as u32));

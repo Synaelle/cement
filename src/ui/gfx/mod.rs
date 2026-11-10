@@ -18,7 +18,7 @@ use super::{Bottom, Top};
 use crate::menu::{ROWS, Row, Tab};
 use crate::picture::{self, Picture};
 use crate::install::{CiaInfo, ICON, cia_info, version_text};
-use crate::server::{Mode, progress_of};
+use crate::server::{BatchKind, Mode, progress_of};
 use crate::sys;
 use crate::update::Stage;
 use crate::util::{base_name, format_size, ip_text};
@@ -512,7 +512,7 @@ impl Server {
     let mut parts = Vec::new();
     if let Some(s) = batch {
         let (done, total) = (s.batch_files_done, s.batch_files);
-        parts.push(if s.batch_kind == "delete" {
+        parts.push(if s.batch_kind == BatchKind::Delete {
             format!("{done} of {total} files")
         } else {
             format!("file {} of {total}", (done + 1).min(total))
@@ -536,13 +536,13 @@ impl Server {
             card.right = time_left(p.eta);
         }
     } else if let Some(s) = batch {
-        card.title = match s.batch_kind.as_str() {
-            "delete" => "Deleting files",
-            "down" => "Sending files",
-            _ => "Receiving files",
+        card.title = match s.batch_kind {
+            BatchKind::Delete => "Deleting files",
+            BatchKind::Down => "Sending files",
+            BatchKind::Up => "Receiving files",
         }
         .into();
-        if s.batch_kind == "delete" {
+        if s.batch_kind == BatchKind::Delete {
             card.frac = Some(s.batch_files_done as f32 / s.batch_files.max(1) as f32);
         }
     } else {
@@ -551,7 +551,7 @@ impl Server {
         card.detail = if self.prefs.ftp { "No transfer right now" } else { "Turn it back on in Settings, on the bottom screen" }.into();
     }
     if let (Some(s), Some(bp)) = (batch, &bp) {
-        if s.batch_kind != "delete" && bp.batch_bytes != 0 && t.active.is_none() {
+        if s.batch_kind != BatchKind::Delete && bp.batch_bytes != 0 && t.active.is_none() {
             card.frac = Some(bp.batch_done as f32 / bp.batch_bytes as f32);
         }
         card.right = time_left(bp.batch_eta);

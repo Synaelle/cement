@@ -220,7 +220,7 @@ impl Server {
         if b.show_msg {
             let f = &NUNITO_XBOLD_12;
             bottom -= f.height;
-            let color = if crate::ui::good_news(&self.cia_msg) { GOOD } else { BAD };
+            let color = if self.cia_msg_good { GOOD } else { BAD };
             c.text(f, LEFT, bottom + f.ascent, &f.fit(&self.cia_msg, RIGHT - LEFT), color, 0.0);
             bottom -= 4.0;
         }

@@ -130,6 +130,7 @@ pub struct Server {
     pub cia_sel: usize,
     pub inst: Option<Install>,
     pub cia_msg: String,
+    pub cia_msg_good: bool, // drawn as good news, else as a warning
     pub cia_msg_time: u64,
     pub inst_queue: Option<String>, // SITE INSTALL waiting for the transfers to end
     pub install_count: u32,
@@ -172,6 +173,7 @@ impl Server {
             cia_sel: 0,
             inst: None,
             cia_msg: String::new(),
+            cia_msg_good: false,
             cia_msg_time: 0,
             inst_queue: None,
             install_count: 0,
@@ -289,9 +291,7 @@ impl Server {
             if !self.installing() {
                 return false;
             }
-            self.cia_msg = "Wait for the install to finish".into();
-            self.cia_msg_time = sys::now_ms();
-            self.bottom_dirty = true;
+            self.cia_message("Wait for the install to finish".into());
         }
         self.menu_input(down);
         // Up or Down held: the lists keep moving, faster the longer
@@ -334,20 +334,21 @@ impl Server {
             None => None,
             Some(user) if user.trim().is_empty() => {
                 self.set_login(None);
-                Some("Login cleared: anyone can connect".to_string())
+                Some(("Login cleared: anyone can connect".to_string(), true))
             }
-            Some(user) if !settings::valid_user(user.trim()) => Some("A user name can't have spaces".to_string()),
+            Some(user) if !settings::valid_user(user.trim()) => Some(("A user name can't have spaces".to_string(), false)),
             Some(user) => {
                 let user = user.trim().to_string();
                 sys::keyboard(&format!("Password for {user}"), "", true, 64).map(|pass| {
                     self.set_login(Some((user.clone(), pass)));
-                    format!("Login set for {user}")
+                    (format!("Login set for {user}"), true)
                 })
             }
         };
-        if let Some(msg) = msg {
-            self.cia_msg = msg;
-            self.cia_msg_time = sys::now_ms();
+        match msg {
+            Some((msg, true)) => self.cia_news(msg),
+            Some((msg, false)) => self.cia_message(msg),
+            None => {}
         }
         // the keyboard drew over both screens
         self.ui.invalidate();

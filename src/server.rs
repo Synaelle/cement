@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use crate::disk::{self, Buf, CHUNK, Disk, NBUF};
+use crate::install::InstallStart;
 use crate::sys::net::{self, Io, POLL_IN, POLL_OUT, PollFd, Sock};
 use crate::sys::{self, File};
 use crate::untar::Untar;
@@ -201,7 +202,7 @@ pub struct Session {
     xfer_start: u64, // when the data started flowing
 
     // whole job announced with SITE BATCH <files> <bytes> <kind>: busy between files, ETA
-    pub batch_kind: String, // "up", "down" or "delete"
+    pub batch_kind: BatchKind,
     pub batch_files: u32,
     pub batch_files_done: u32,
     batch_bytes: u64,
@@ -239,7 +240,7 @@ impl Session {
             xfer_base: 0,
             xfer_total: 0,
             xfer_start: 0,
-            batch_kind: String::new(),
+            batch_kind: BatchKind::Up,
             batch_files: 0,
             batch_files_done: 0,
             batch_bytes: 0,
@@ -381,11 +382,38 @@ pub fn progress_of(s: &Session, now: u64) -> Progress {
         let bps = if ms >= 500 { p.batch_done * 1000 / ms } else { 0 };
         if p.batch_bytes >= p.batch_done && bps != 0 {
             p.batch_eta = ((p.batch_bytes - p.batch_done) / bps) as i64;
-        } else if s.batch_kind == "delete" && s.batch_files_done != 0 && ms >= 500 {
+        } else if s.batch_kind == BatchKind::Delete && s.batch_files_done != 0 && ms >= 500 {
             p.batch_eta = ((s.batch_files - s.batch_files_done) as u64 * ms / s.batch_files_done as u64 / 1000) as i64;
         }
     }
     p
+}
+
+/// what a SITE BATCH job does, as SITE STATUS reports it
+#[derive(Clone, Copy, PartialEq)]
+pub enum BatchKind {
+    Up,
+    Down,
+    Delete,
+}
+
+impl BatchKind {
+    /// "up" when not one of the three
+    fn parse(word: &str) -> BatchKind {
+        match word {
+            "down" => BatchKind::Down,
+            "delete" => BatchKind::Delete,
+            _ => BatchKind::Up,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            BatchKind::Up => "up",
+            BatchKind::Down => "down",
+            BatchKind::Delete => "delete",
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1047,7 +1075,7 @@ impl Server {
             let s = &mut self.sess[i];
             if matches!(cmd, "DELE" | "RMD" | "XRMD")
                 && s.batch_files != 0
-                && s.batch_kind == "delete"
+                && s.batch_kind == BatchKind::Delete
                 && s.batch_files_done < s.batch_files
             {
                 s.batch_files_done += 1;
@@ -1365,11 +1393,17 @@ impl Server {
                 // SITE INSTALL <path>: as pressing A on that CIA, except that system titles
                 // are refused and a reinstall or downgrade waits for A on the console
                 let arg = text.get(7..).unwrap_or("").trim_start();
-                let reply = match util::resolve_path(&self.sess[i].cwd, arg.as_bytes()) {
+                let start = match util::resolve_path(&self.sess[i].cwd, arg.as_bytes()) {
                     Some(path) if !arg.is_empty() => self.request_install(&path, true),
-                    _ => "550 No such CIA\r\n",
+                    _ => InstallStart::Refused(550, "No such CIA"),
                 };
-                self.sess[i].reply(reply);
+                let reply = match start {
+                    InstallStart::Started => "200 Install started\r\n".to_string(),
+                    InstallStart::Queued => "200 Install queued\r\n".to_string(),
+                    InstallStart::Asked => "200 Press A on the 3DS to confirm\r\n".to_string(),
+                    InstallStart::Refused(code, why) => format!("{code} {why}\r\n"),
+                };
+                self.sess[i].reply(&reply);
             }
             "LOGIN" => {
                 // SITE LOGIN <user> <password>: the password is the rest of the line;
@@ -1413,13 +1447,13 @@ impl Server {
         fn num(t: Option<&str>) -> Option<&str> {
             t.filter(|t| t.starts_with(|c: char| c.is_ascii_digit() || c == '+'))
         }
-        let (mut files, mut bytes, mut kind) = (0u64, 0u64, "up".to_string());
+        let (mut files, mut bytes, mut kind) = (0u64, 0u64, BatchKind::Up);
         if let Some(t) = num(tok.next()) {
             files = util::parse_ull(t.as_bytes());
             if let Some(t) = num(tok.next()) {
                 bytes = util::parse_ull(t.as_bytes());
                 if let Some(t) = tok.next() {
-                    kind = t.chars().take(7).collect();
+                    kind = BatchKind::parse(t);
                 }
             }
         }
@@ -1504,7 +1538,7 @@ impl Server {
             let batch = if s.batch_files != 0 {
                 format!(
                     " batch={} batch_files_done={} batch_files={} batch_bytes_done={} batch_bytes={} batch_eta={}",
-                    s.batch_kind, s.batch_files_done, s.batch_files, p.batch_done, p.batch_bytes, p.batch_eta
+                    s.batch_kind.name(), s.batch_files_done, s.batch_files, p.batch_done, p.batch_bytes, p.batch_eta
                 )
             } else {
                 String::new()

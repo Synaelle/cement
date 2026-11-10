@@ -410,7 +410,7 @@ impl Server {
         if b.show_msg {
             let m = &HANKEN_SEMI_12;
             bottom -= m.height;
-            let color = if crate::ui::good_news(&self.cia_msg) { GOOD } else { BAD };
+            let color = if self.cia_msg_good { GOOD } else { BAD };
             c.text(m, 12.0, bottom + m.ascent, &m.fit(&self.cia_msg, 296.0), color, 0.0);
             bottom -= 4.0;
         }

@@ -11,12 +11,6 @@ pub mod palette;
 mod gfx;
 pub use gfx::{BOTTOM_ALWAYS_ON, Ui};
 
-/// install, update, login and delete messages: shown in green, the others (errors,
-/// questions) in red
-pub fn good_news(msg: &str) -> bool {
-    msg.starts_with("Installed") || msg.starts_with("Updated") || msg.starts_with("Login") || msg.starts_with("Deleted") || msg == "Protection on"
-}
-
 /// how long a message stays on the bottom screen
 pub const MSG_MS: u64 = 8000;
 

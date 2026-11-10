@@ -14,6 +14,7 @@
 // The state and the buttons are handled here; ui/gfx draws them and says what
 // each touched spot is (Ui::hit).
 
+use crate::install::InstallStart;
 use crate::picture::is_image;
 use crate::protect;
 use crate::settings::{self, AUTO_OFF};
@@ -273,7 +274,7 @@ impl Server {
         }
         let ok = if dir {
             // one call that can take a while: say so first
-            self.cia_message(format!("Deleting {name}..."));
+            self.cia_news(format!("Deleting {name}..."));
             self.draw();
             sys::delete_dir_recursive(&path)
         } else {
@@ -282,7 +283,7 @@ impl Server {
         if ok {
             self.cia_remove(&path); // the CIAs in it leave Recent
             self.menu.browse.loaded = false;
-            self.cia_message(format!("Deleted {name}"));
+            self.cia_news(format!("Deleted {name}"));
         } else {
             self.cia_message(format!("{name} couldn't be deleted"));
         }
@@ -351,14 +352,10 @@ impl Server {
         } else if is_image(&path) {
             self.menu.view = !self.menu.view;
         } else if is_cia(&path) {
-            let reply = self.request_install(&path, false);
-            let msg = match &reply[..3] {
-                "200" if reply.contains("queued") => Some("The install starts when the transfers end".to_string()),
-                "200" => None,
-                _ => Some(reply[4..].trim_end().to_string()),
-            };
-            if let Some(msg) = msg {
-                self.cia_message(msg);
+            match self.request_install(&path, false) {
+                InstallStart::Queued => self.cia_message("The install starts when the transfers end".into()),
+                InstallStart::Refused(_, why) => self.cia_message(why.into()),
+                InstallStart::Started | InstallStart::Asked => {}
             }
         } else {
             self.cia_message(format!("{} isn't a CIA file", base_name(&path)));
@@ -469,7 +466,11 @@ impl Server {
                     return;
                 }
                 self.prefs.protect = !self.prefs.protect;
-                self.cia_message(if self.prefs.protect { "Protection on" } else { "Protection off: X deletes anything" }.into());
+                if self.prefs.protect {
+                    self.cia_news("Protection on".into());
+                } else {
+                    self.cia_message("Protection off: X deletes anything".into());
+                }
                 self.save_prefs();
             }
             Row::ScreenIdle => {

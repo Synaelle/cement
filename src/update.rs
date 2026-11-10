@@ -301,7 +301,7 @@ impl Server {
         if ok {
             self.update.stage = Stage::Done;
             self.update.latest = None;
-            self.cia_message("Updated: restart Cement".into());
+            self.cia_news("Updated: restart Cement".into());
         } else {
             self.update.stage = Stage::Idle;
             sys::delete_file(FILE); // the install keeps a file that failed
