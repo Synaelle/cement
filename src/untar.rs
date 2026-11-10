@@ -307,3 +307,20 @@ impl Untar {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn targets() {
+        let t = Untar::new("/3ds/game");
+        assert_eq!(t.target("a.txt").as_deref(), Some("/3ds/game/a.txt"));
+        assert_eq!(t.target("./data//b/").as_deref(), Some("/3ds/game/data/b"));
+        for bad in ["", ".", "./", "/etc/x", "../x", "a/../../x", "a/../b", "a\\b", ".."] {
+            assert_eq!(t.target(bad), None, "{bad:?} stays out");
+        }
+        assert_eq!(t.target(&"x".repeat(1100)), None, "too long for the SD card");
+        assert_eq!(Untar::new("/").target("a/b").as_deref(), Some("/a/b"));
+    }
+}

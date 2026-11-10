@@ -117,6 +117,12 @@ mod tests {
         assert_eq!(resolve_path("/a", b"../../..").as_deref(), Some("/"));
         assert_eq!(resolve_path("/", b"/x//./y/").as_deref(), Some("/x/y"));
         assert_eq!(resolve_path("/", b"..\\x"), None);
+        assert_eq!(resolve_path("/a/b", b"/c").as_deref(), Some("/c"), "absolute: the folder doesn't matter");
+        assert_eq!(resolve_path("/a", b"..").as_deref(), Some("/"));
+        assert_eq!(resolve_path("/", b"\xff"), None, "not UTF-8");
+        let long = "x".repeat(PATH_SIZE);
+        assert_eq!(resolve_path("/", long.as_bytes()), None);
+        assert_eq!(resolve_path("/", long[..PATH_SIZE - 2].as_bytes()).map(|p| p.len()), Some(PATH_SIZE - 1));
     }
 
     #[test]
