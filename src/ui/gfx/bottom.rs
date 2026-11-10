@@ -76,11 +76,98 @@ pub(super) fn row_label(row: Row) -> &'static str {
     }
 }
 
+/// what a Settings row shows on its right, the same in every look
+pub(super) enum RowValue {
+    Switch(bool),
+    Text(String),
+    Colour(&'static str, Color), // the preset's name ("Custom" otherwise) and the accent as drawn
+    Update(bool, Option<UpdateNote>), // the switch, and what the updater is at
+}
+
+pub(super) enum UpdateNote {
+    Out(String), // a newer release, its tag
+    Restart,
+    Updating,
+}
+
 /// how many rows of height `h` (plus `gap`) fit between top and bottom, and
 /// the first one to show so that `sel` is visible
-fn window(top: f32, bottom: f32, h: f32, gap: f32, sel: usize) -> (usize, usize) {
-    let rows = (((bottom - top + gap - 2.0) / (h + gap)).floor() as usize).max(1);
+pub(super) fn window(top: f32, bottom: f32, h: f32, gap: f32, sel: usize) -> (usize, usize) {
+    let rows = (((bottom - top + gap) / (h + gap)).floor() as usize).max(1);
     (rows, if sel >= rows { sel - rows + 1 } else { 0 })
+}
+
+impl Server {
+    /// a newer release was found and nothing is being done with it yet
+    pub(super) fn update_found(&self) -> bool {
+        self.prefs.update && self.update.latest.is_some() && self.update.stage == Stage::Idle
+    }
+
+    pub(super) fn row_value(&self, row: Row) -> RowValue {
+        match row {
+            Row::Ftp => RowValue::Switch(self.prefs.ftp),
+            Row::CiaInfo => RowValue::Switch(self.prefs.cia_info),
+            Row::Protect => RowValue::Switch(self.prefs.protect),
+            Row::ScreenIdle => RowValue::Switch(self.prefs.screen_idle),
+            Row::Login => RowValue::Text(self.login.as_ref().map_or("none", |l| l.0.as_str()).to_string()),
+            Row::Look => RowValue::Text(self.prefs.theme.name().to_string()),
+            Row::Colour => {
+                let name = PRESETS.iter().find(|&&(_, c)| c == self.accent).map_or("Custom", |&(n, _)| n);
+                RowValue::Colour(name, Palette::for_accent(Theme::Red, self.accent).accent)
+            }
+            Row::AutoOff => RowValue::Text(match self.prefs.auto_off {
+                0 => "never".to_string(),
+                m => format!("after {m} min"),
+            }),
+            Row::Update => RowValue::Update(
+                self.prefs.update,
+                match self.update.stage {
+                    Stage::Idle if self.update_found() => {
+                        Some(UpdateNote::Out(self.update.latest.clone().unwrap_or_default()))
+                    }
+                    Stage::Idle => None,
+                    Stage::Done => Some(UpdateNote::Restart),
+                    _ => Some(UpdateNote::Updating),
+                },
+            ),
+        }
+    }
+
+    /// what the A hint does on the Settings tab
+    pub(super) fn settings_action(&self) -> &'static str {
+        if ROWS[self.menu.row] == Row::Update && self.update_found() { "update" } else { "change" }
+    }
+
+    /// Recent's line over the list
+    pub(super) fn free_text(&self) -> String {
+        self.ui.sd_free.map(|v| format!("{} free", format_big(v))).unwrap_or_default()
+    }
+
+    /// what Recent says instead of a list
+    pub(super) fn recent_empty(&self) -> Option<&'static str> {
+        (self.cias.is_empty() && self.inst.is_none()).then_some("No CIAs yet: upload one over FTP")
+    }
+
+    /// Browse's count of entries, or the viewed image's size
+    pub(super) fn browse_count(&self) -> String {
+        match (self.ui.viewed_size(), self.menu.browse.entries.len()) {
+            (Some((w, h)), _) => format!("{w} x {h}"),
+            (None, 1) => "1 item".to_string(),
+            (None, n) => format!("{n} items"),
+        }
+    }
+
+    /// what Browse says instead of a list
+    pub(super) fn browse_empty(&self) -> Option<&'static str> {
+        let br = &self.menu.browse;
+        if br.failed {
+            Some("This folder can't be opened")
+        } else if br.entries.is_empty() {
+            Some(if br.loaded { "This folder is empty" } else { "Reading the folder..." })
+        } else {
+            None
+        }
+    }
 }
 
 impl Server {
@@ -230,20 +317,20 @@ impl Server {
     fn paint_recent(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
         let s = &NUNITO_BOLD_11;
-        let free = self.ui.sd_free.map(|v| format!("{} free", format_big(v))).unwrap_or_default();
+        let free = self.free_text();
         // the section marker, and the free space
         bite_dot(c, LEFT, CONTENT + ((s.height - 12.0) / 2.0).round(), pal);
         c.text_right(s, RIGHT, CONTENT + s.ascent, &free, pal.dim);
         let top = CONTENT + s.height + 4.0;
 
         let bottom = self.bottom_stack(c, b, &self.recent_hints(b));
-        if self.cias.is_empty() && self.inst.is_none() {
-            empty(c, top, bottom, "No CIAs yet: upload one over FTP", pal);
+        if let Some(line) = self.recent_empty() {
+            empty(c, top, bottom, line, pal);
             return;
         }
         let f = &NUNITO_XBOLD_13;
         let (h, gap) = (f.height + 10.0, 5.0);
-        let (rows, first) = window(top, bottom, h, gap, self.cia_sel);
+        let (rows, first) = window(top, bottom - 2.0, h, gap, self.cia_sel);
         let mut y = top;
         for (i, cia) in self.cias.iter().enumerate().skip(first).take(rows) {
             let sel = i == self.cia_sel;
@@ -266,11 +353,7 @@ impl Server {
         let pal = &self.ui.pal;
         let br = &self.menu.browse;
         let s = &NUNITO_BOLD_11;
-        let count = match (self.ui.viewed_size(), br.entries.len()) {
-            (Some((w, h)), _) => format!("{w} x {h}"),
-            (None, 1) => "1 item".to_string(),
-            (None, n) => format!("{n} items"),
-        };
+        let count = self.browse_count();
         let cw = s.width(&count, 0.0);
         let p = &NUNITO_XBOLD_12;
         let path = p.fit_start(&br.dir, RIGHT - LEFT - 16.0 - cw - 10.0);
@@ -280,17 +363,13 @@ impl Server {
         let top = CONTENT + p.height + 3.0;
 
         let bottom = self.bottom_stack(c, b, &self.browse_hints());
-        if br.failed {
-            empty(c, top, bottom, "This folder can't be opened", pal);
-            return;
-        }
-        if br.entries.is_empty() {
-            empty(c, top, bottom, if br.loaded { "This folder is empty" } else { "Reading the folder..." }, pal);
+        if let Some(line) = self.browse_empty() {
+            empty(c, top, bottom, line, pal);
             return;
         }
         let f = &NUNITO_BOLD_12;
         let (h, gap) = (f.height + 8.0, 4.0);
-        let (rows, first) = window(top, bottom, h, gap, br.sel);
+        let (rows, first) = window(top, bottom - 2.0, h, gap, br.sel);
         let mut y = top;
         for (i, e) in br.entries.iter().enumerate().skip(first).take(rows) {
             let sel = i == br.sel;
@@ -316,12 +395,10 @@ impl Server {
     /// the login, the FTP server, the CIA details, the screens, the console turning off and updates
     fn paint_settings(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
-        let found = self.prefs.update && self.update.latest.is_some() && self.update.stage == Stage::Idle;
-        let action = if ROWS[self.menu.row] == Row::Update && found { "update" } else { "change" };
-        let bottom = self.bottom_stack(c, b, &[(Button::A, action), (Button::Dpad, "")]);
+        let bottom = self.bottom_stack(c, b, &[(Button::A, self.settings_action()), (Button::Dpad, "")]);
         // all of them fit, unless the update's card is up: then they scroll
         let (h, gap) = (17.0, 1.0);
-        let (rows, first) = window(CONTENT, bottom, h, gap, self.menu.row);
+        let (rows, first) = window(CONTENT, bottom - 2.0, h, gap, self.menu.row);
         let mut y = CONTENT;
         for (i, &row) in ROWS.iter().enumerate().skip(first).take(rows) {
             let sel = i == self.menu.row;
@@ -332,31 +409,20 @@ impl Server {
             let cy = y + h / 2.0;
             c.text(f, l, base, row_label(row), pal.text, 0.0);
             let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
-            match row {
-                Row::Ftp => toggle(c, r, cy, self.prefs.ftp, pal),
-                Row::CiaInfo => toggle(c, r, cy, self.prefs.cia_info, pal),
-                Row::Protect => toggle(c, r, cy, self.prefs.protect, pal),
-                Row::ScreenIdle => toggle(c, r, cy, self.prefs.screen_idle, pal),
-                Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
-                Row::Look => value(c, self.prefs.theme.name()),
-                Row::Colour => {
+            match self.row_value(row) {
+                RowValue::Switch(on) => toggle(c, r, cy, on, pal),
+                RowValue::Text(text) => value(c, &text),
+                RowValue::Colour(name, dot) => {
                     // its name and a dot of it (the accent as drawn, so as light as the red one)
-                    let name = PRESETS.iter().find(|&&(_, c)| c == self.accent).map_or("Custom", |&(n, _)| n);
                     let w = f.width(name, 0.0);
                     value(c, name);
-                    let dot = Palette::for_accent(Theme::Red, self.accent).accent;
                     c.circle(r - w - 10.0, cy, 4.5, dot);
                 }
-                Row::AutoOff => match self.prefs.auto_off {
-                    0 => value(c, "never"),
-                    m => value(c, &format!("after {m} min")),
-                },
-                Row::Update => {
-                    toggle(c, r, cy, self.prefs.update, pal);
+                RowValue::Update(on, note) => {
+                    toggle(c, r, cy, on, pal);
                     let r = r - 26.0 - 8.0;
-                    let tag = self.update.latest.as_deref().unwrap_or("");
-                    match self.update.stage {
-                        Stage::Idle if found => {
+                    match note {
+                        Some(UpdateNote::Out(tag)) => {
                             // a newer release: its version in an accent pill
                             let p = &NUNITO_XBOLD_11;
                             let text = format!("{tag} is out");
@@ -365,13 +431,13 @@ impl Server {
                             c.pill(r - pw, py, pw, ph, pal.accent);
                             c.text(p, r - pw + 7.0, py + 0.5 + p.ascent, &text, pal.on_accent, 0.0);
                         }
-                        Stage::Idle => {}
-                        Stage::Done => {
+                        Some(UpdateNote::Restart) => {
                             c.text_right(f, r, base, "restart Cement", if sel { pal.soft } else { pal.dim });
                         }
-                        _ => {
+                        Some(UpdateNote::Updating) => {
                             c.text_right(f, r, base, "updating...", if sel { pal.soft } else { pal.dim });
                         }
+                        None => {}
                     }
                 }
             }

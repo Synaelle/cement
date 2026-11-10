@@ -297,14 +297,15 @@ fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: C
     x + w.round()
 }
 
-/// what installing the CIA would do to the installed copy
-fn install_kind(info: &CiaInfo) -> &'static str {
+/// what installing the CIA would do to the installed copy, and whether that is
+/// good news (drawn in the accent)
+fn install_kind(info: &CiaInfo) -> (&'static str, bool) {
     match (info.installed, info.version) {
-        (None, _) => "new",
-        (Some(_), None) => "reinstall",
-        (Some(old), Some(new)) if new > old => "update",
-        (Some(old), Some(new)) if new == old => "reinstall",
-        _ => "downgrade",
+        (None, _) => ("new", true),
+        (Some(_), None) => ("reinstall", false),
+        (Some(old), Some(new)) if new > old => ("update", true),
+        (Some(old), Some(new)) if new == old => ("reinstall", false),
+        _ => ("downgrade", false),
     }
 }
 
@@ -395,10 +396,9 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
     }
     let (l, mut r) = (ix + ICON as f32 + 8.0, x + w - 10.0);
     if let Some(info) = info {
-        let kind = install_kind(info);
+        let (kind, accent) = install_kind(info);
         let p = &NUNITO_XBOLD_11;
         let (kw, kh) = (p.width(kind, 0.0) + 14.0, p.height + 4.0);
-        let accent = kind == "new" || kind == "update";
         let ky = (y + (TICKET_H - kh) / 2.0).round();
         c.pill(r - kw, ky, kw, kh, if accent { pal.accent } else { pal.track });
         c.text(p, r - kw + 7.0, ky + 2.0 + p.ascent, kind, if accent { pal.on_accent } else { pal.soft }, 0.0);

@@ -4,16 +4,15 @@
 // Grotesk at 400 and 600, sharp 2 px corners, 1 px borders and thin lines. Its
 // own layout of both screens, showing the same things as the round looks.
 
-use super::bottom::Hit;
+use super::bottom::{Hit, RowValue, UpdateNote, row_label, window};
 use super::canvas::{Canvas, Color};
 use super::font::*;
 use super::{BAD, Button, CardText, GOOD, help, install_kind, ticket_detail, wrap};
 use crate::install::{CiaInfo, ICON};
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
 use crate::picture::is_image;
-use crate::ui::palette::{PRESETS, Palette, Theme};
+use crate::ui::palette::Palette;
 use crate::ui::{Bottom, Top};
-use crate::update::Stage;
 use crate::util::{base_name, format_size, ip_text, is_cia};
 use crate::{PROTOCOL, Server, VERSION, battery_text, sys};
 
@@ -328,9 +327,8 @@ impl Server {
         let l = left + icon + 10.0;
         let mut r = right;
         if let Some(info) = info {
-            let kind = install_kind(info);
+            let (kind, accent) = install_kind(info);
             let k = &HANKEN_SEMI_12;
-            let accent = kind == "new" || kind == "update";
             let kw = k.width(kind, 0.0);
             c.text(k, r - kw, mid(k, iy + icon / 2.0), kind, if accent { pal.accent } else { pal.dim }, 0.0);
             r -= kw + 12.0;
@@ -371,8 +369,7 @@ impl Server {
             Tab::Recent => self.recent_hints(b),
             Tab::Browse => self.browse_hints(),
             Tab::Settings => {
-                let found = self.prefs.update && self.update.latest.is_some() && self.update.stage == Stage::Idle;
-                vec![(Button::A, if ROWS[self.menu.row] == Row::Update && found { "update" } else { "change" }), (Button::Dpad, "")]
+                vec![(Button::A, self.settings_action()), (Button::Dpad, "")]
             }
         };
         let bottom = self.hint_bar(c, b, &hints);
@@ -463,13 +460,12 @@ impl Server {
     }
 
     fn recent_ficelle(&self, c: &mut Canvas, bottom: f32, hits: &mut Vec<Hit>) {
-        let free = self.ui.sd_free.map(|v| format!("{} free", super::format_big(v))).unwrap_or_default();
-        let top = self.section(c, "CIAs to install", &free);
-        if self.cias.is_empty() && self.inst.is_none() {
-            self.empty_ficelle(c, top, bottom, "No CIAs yet: upload one over FTP");
+        let top = self.section(c, "CIAs to install", &self.free_text());
+        if let Some(line) = self.recent_empty() {
+            self.empty_ficelle(c, top, bottom, line);
             return;
         }
-        let (rows, first) = window(top, bottom, 26.0, self.cia_sel);
+        let (rows, first) = window(top, bottom, 26.0, 0.0, self.cia_sel);
         let mut y = top;
         for (i, cia) in self.cias.iter().enumerate().skip(first).take(rows) {
             self.list_row(c, y, i == self.cia_sel, Glyph::Package, base_name(&cia.path), &format_size(cia.size), false);
@@ -480,21 +476,12 @@ impl Server {
 
     fn browse_ficelle(&self, c: &mut Canvas, bottom: f32, hits: &mut Vec<Hit>) {
         let br = &self.menu.browse;
-        let count = match (self.ui.viewed_size(), br.entries.len()) {
-            (Some((w, h)), _) => format!("{w} x {h}"),
-            (None, 1) => "1 item".to_string(),
-            (None, n) => format!("{n} items"),
-        };
-        let top = self.section(c, &br.dir, &count);
-        if br.failed {
-            self.empty_ficelle(c, top, bottom, "This folder can't be opened");
+        let top = self.section(c, &br.dir, &self.browse_count());
+        if let Some(line) = self.browse_empty() {
+            self.empty_ficelle(c, top, bottom, line);
             return;
         }
-        if br.entries.is_empty() {
-            self.empty_ficelle(c, top, bottom, if br.loaded { "This folder is empty" } else { "Reading the folder..." });
-            return;
-        }
-        let (rows, first) = window(top, bottom, 26.0, br.sel);
+        let (rows, first) = window(top, bottom, 26.0, 0.0, br.sel);
         let mut y = top;
         for (i, e) in br.entries.iter().enumerate().skip(first).take(rows) {
             let glyph = if e.dir {
@@ -515,10 +502,9 @@ impl Server {
 
     fn settings_ficelle(&self, c: &mut Canvas, bottom: f32, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
-        let found = self.prefs.update && self.update.latest.is_some() && self.update.stage == Stage::Idle;
         let h = 19.0;
         let top = TAB_H + 4.0;
-        let (rows, first) = window(top, bottom, h, self.menu.row);
+        let (rows, first) = window(top, bottom, h, 0.0, self.menu.row);
         let mut y = top;
         for (i, &row) in ROWS.iter().enumerate().skip(first).take(rows) {
             let sel = i == self.menu.row;
@@ -530,39 +516,26 @@ impl Server {
             let v = &HANKEN_REG_12;
             let cy = y + h / 2.0;
             let r = R - 6.0;
-            c.text(f, L + 6.0, mid(f, cy), super::bottom::row_label(row), pal.text, 0.0);
+            c.text(f, L + 6.0, mid(f, cy), row_label(row), pal.text, 0.0);
             let ink = if sel { pal.text } else { pal.dim };
             let value = |c: &mut Canvas, text: &str| c.text_right(v, r, mid(v, cy), text, ink);
-            match row {
-                Row::Ftp => switch(c, r, cy, self.prefs.ftp, bg, pal),
-                Row::CiaInfo => switch(c, r, cy, self.prefs.cia_info, bg, pal),
-                Row::Protect => switch(c, r, cy, self.prefs.protect, bg, pal),
-                Row::ScreenIdle => switch(c, r, cy, self.prefs.screen_idle, bg, pal),
-                Row::Login => value(c, self.login.as_ref().map_or("none", |l| l.0.as_str())),
-                Row::Look => value(c, self.prefs.theme.name()),
-                Row::Colour => {
-                    let name = PRESETS.iter().find(|&&(_, c)| c == self.accent).map_or("Custom", |&(n, _)| n);
+            match self.row_value(row) {
+                RowValue::Switch(on) => switch(c, r, cy, on, bg, pal),
+                RowValue::Text(text) => value(c, &text),
+                RowValue::Colour(name, swatch) => {
                     let w = v.width(name, 0.0);
                     value(c, name);
-                    let swatch = Palette::for_accent(Theme::Red, self.accent).accent;
                     c.round(r - w - 8.0 - 8.0, (cy - 4.0).round(), 8.0, 8.0, 2.0, swatch);
                 }
-                Row::AutoOff => match self.prefs.auto_off {
-                    0 => value(c, "never"),
-                    m => value(c, &format!("after {m} min")),
-                },
-                Row::Update => {
-                    switch(c, r, cy, self.prefs.update, bg, pal);
+                RowValue::Update(on, note) => {
+                    switch(c, r, cy, on, bg, pal);
                     let r = r - 22.0 - 8.0;
-                    let tag = self.update.latest.as_deref().unwrap_or("");
                     let k = &HANKEN_SEMI_12;
-                    match self.update.stage {
-                        Stage::Idle if found => {
-                            c.text_right(k, r, mid(k, cy), &format!("{tag} is out"), pal.accent);
-                        }
-                        Stage::Idle => {}
-                        Stage::Done => c.text_right(v, r, mid(v, cy), "restart Cement", ink),
-                        _ => c.text_right(v, r, mid(v, cy), "updating...", ink),
+                    match note {
+                        Some(UpdateNote::Out(tag)) => c.text_right(k, r, mid(k, cy), &format!("{tag} is out"), pal.accent),
+                        Some(UpdateNote::Restart) => c.text_right(v, r, mid(v, cy), "restart Cement", ink),
+                        Some(UpdateNote::Updating) => c.text_right(v, r, mid(v, cy), "updating...", ink),
+                        None => {}
                     }
                 }
             }
@@ -578,11 +551,4 @@ fn letter_button(c: &mut Canvas, x: f32, cy: f32, ch: char, pal: &Palette) {
     c.circle(cx, cy, 7.5, strong(pal));
     c.circle(cx, cy, 6.5, pal.bg);
     letter(c, cx, cy, ch, pal.dim);
-}
-
-/// how many rows of height `h` fit between top and bottom, and the first one
-/// to show so that `sel` is visible
-fn window(top: f32, bottom: f32, h: f32, sel: usize) -> (usize, usize) {
-    let rows = (((bottom - top) / h).floor() as usize).max(1);
-    (rows, if sel >= rows { sel - rows + 1 } else { 0 })
 }
