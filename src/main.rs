@@ -336,7 +336,9 @@ impl Server {
                 self.set_login(None);
                 Some(("Login cleared: anyone can connect".to_string(), true))
             }
-            Some(user) if !settings::valid_user(user.trim()) => Some(("A user name can't have spaces".to_string(), false)),
+            Some(user) if !settings::valid_user(user.trim()) => {
+                Some(("A user name can't have spaces".to_string(), false))
+            }
             Some(user) => {
                 let user = user.trim().to_string();
                 sys::keyboard(&format!("Password for {user}"), "", true, 64).map(|pass| {

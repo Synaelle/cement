@@ -236,7 +236,8 @@ impl Untar {
         let mut at = 0;
         while at < self.meta.len() {
             let Some(sp) = self.meta[at..].iter().position(|&c| c == b' ') else { break };
-            let len: usize = std::str::from_utf8(&self.meta[at..at + sp]).ok().and_then(|n| n.parse().ok()).unwrap_or(0);
+            let len: usize =
+                std::str::from_utf8(&self.meta[at..at + sp]).ok().and_then(|n| n.parse().ok()).unwrap_or(0);
             if len <= sp || at + len > self.meta.len() {
                 break;
             }

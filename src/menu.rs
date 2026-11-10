@@ -95,11 +95,11 @@ const MAX_ENTRIES: usize = 1000;
 pub struct Menu {
     pub tab: Tab,
     pub browse: Browser,
-    pub row: usize,                     // Settings
-    pub view: bool,                     // Browse: the selected image is shown on the top screen
-    pub held: bool,                     // the Up or Down being handled is a repeat of a held key
-    hold: Option<(u32, u64, u64)>,      // Up or Down held: which, since when, the next repeat
-    confirm: Option<(String, u64)>,     // what a first press asked about, and until when a second one confirms it
+    pub row: usize,                 // Settings
+    pub view: bool,                 // Browse: the selected image is shown on the top screen
+    pub held: bool,                 // the Up or Down being handled is a repeat of a held key
+    hold: Option<(u32, u64, u64)>,  // Up or Down held: which, since when, the next repeat
+    confirm: Option<(String, u64)>, // what a first press asked about, and until when a second one confirms it
 }
 
 /// Up or Down held: the first repeat after HOLD_MS, then one every REPEAT_MS,
@@ -268,7 +268,11 @@ impl Server {
             self.cia_message("Busy: wait for the transfers to end".into());
             return;
         }
-        let question = if dir { format!("Press X again to delete {name} and all in it") } else { format!("Press X again to delete {name}") };
+        let question = if dir {
+            format!("Press X again to delete {name} and all in it")
+        } else {
+            format!("Press X again to delete {name}")
+        };
         if !self.confirm(&path, question) {
             return;
         }

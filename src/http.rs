@@ -148,9 +148,9 @@ fn fail_of(e: &io::Error) -> Fail {
 }
 
 enum Framing {
-    Length(u64),               // bytes left
-    Chunked(u64, bool),        // bytes left in this chunk, the last one was read
-    Close,                     // until the server closes
+    Length(u64),        // bytes left
+    Chunked(u64, bool), // bytes left in this chunk, the last one was read
+    Close,              // until the server closes
 }
 
 /// a response's body, read as it arrives
@@ -313,7 +313,12 @@ mod tests {
     #[test]
     fn urls() {
         let u = parse_url("https://GitHub.com/Synaelle/cement/releases/download/v1.2.0/Cement.cia").unwrap();
-        assert!(u.tls && u.host == "github.com" && u.port == 443 && u.path == "/Synaelle/cement/releases/download/v1.2.0/Cement.cia");
+        assert!(
+            u.tls
+                && u.host == "github.com"
+                && u.port == 443
+                && u.path == "/Synaelle/cement/releases/download/v1.2.0/Cement.cia"
+        );
         let u = parse_url("https://example.org:8443").unwrap();
         assert!(u.port == 8443 && u.path == "/");
         assert!(parse_url("ftp://example.org/").is_none());
@@ -336,7 +341,8 @@ mod tests {
             s.write_all(b"5\r\nhello\r\n7;x=1\r\n, world\r\n0\r\nTrailer: y\r\n\r\n").unwrap();
         });
         let tcp = TcpStream::connect(addr).unwrap();
-        let mut body = Body { r: BufReader::new(Stream::Plain(tcp)), framing: Framing::Chunked(0, false), length: None };
+        let mut body =
+            Body { r: BufReader::new(Stream::Plain(tcp)), framing: Framing::Chunked(0, false), length: None };
         let mut out = String::new();
         body.read_to_string(&mut out).unwrap();
         assert_eq!(out, "hello, world");

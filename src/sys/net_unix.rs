@@ -118,7 +118,13 @@ pub fn shutdown_write(fd: Sock) {
     unsafe {
         libc::shutdown(fd, libc::SHUT_WR);
         let l = libc::linger { l_onoff: 1, l_linger: 0 };
-        libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_LINGER, (&raw const l).cast(), size_of::<libc::linger>() as libc::socklen_t);
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_LINGER,
+            (&raw const l).cast(),
+            size_of::<libc::linger>() as libc::socklen_t,
+        );
     }
 }
 

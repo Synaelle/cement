@@ -101,7 +101,18 @@ fn draw_glyph(c: &mut Canvas, x: f32, y: f32, g: Glyph, ink: Color, bg: Color) {
         Glyph::Image => {
             c.card(x, y + 2.0, 14.0, 11.0, 2.0, bg, ink);
             c.circle(x + 4.5, y + 5.5, 1.3, ink);
-            for (dx, dy) in [(2.0, 10.0), (3.0, 9.0), (4.0, 8.0), (5.0, 7.0), (6.0, 8.0), (7.0, 9.0), (8.0, 10.0), (9.0, 9.0), (10.0, 8.0), (11.0, 9.0)] {
+            for (dx, dy) in [
+                (2.0, 10.0),
+                (3.0, 9.0),
+                (4.0, 8.0),
+                (5.0, 7.0),
+                (6.0, 8.0),
+                (7.0, 9.0),
+                (8.0, 10.0),
+                (9.0, 9.0),
+                (10.0, 8.0),
+                (11.0, 9.0),
+            ] {
                 c.round(x + dx, y + dy, 1.0, 1.0, 0.0, ink);
             }
         }
@@ -316,7 +327,17 @@ impl Server {
     }
 
     /// the selected CIA: its icon, title and publisher, its details, and what installing it does
-    fn ticket(&self, c: &mut Canvas, left: f32, right: f32, room: (f32, f32), path: &str, size: u64, info: Option<&CiaInfo>, pal: &Palette) {
+    fn ticket(
+        &self,
+        c: &mut Canvas,
+        left: f32,
+        right: f32,
+        room: (f32, f32),
+        path: &str,
+        size: u64,
+        info: Option<&CiaInfo>,
+        pal: &Palette,
+    ) {
         let (f, d) = (&HANKEN_SEMI_13, &HANKEN_REG_12);
         let icon = 32.0;
         let iy = (room.0 + (room.1 - room.0 - icon) / 2.0).round();
@@ -456,7 +477,14 @@ impl Server {
     fn empty_ficelle(&self, c: &mut Canvas, top: f32, bottom: f32, line: &str) {
         let f = &HANKEN_REG_13;
         let line = f.fit(line, 296.0);
-        c.text(f, ((320.0 - f.width(&line, 0.0)) / 2.0).round(), mid(f, (top + bottom) / 2.0), &line, self.ui.pal.dim, 0.0);
+        c.text(
+            f,
+            ((320.0 - f.width(&line, 0.0)) / 2.0).round(),
+            mid(f, (top + bottom) / 2.0),
+            &line,
+            self.ui.pal.dim,
+            0.0,
+        );
     }
 
     fn recent_ficelle(&self, c: &mut Canvas, bottom: f32, hits: &mut Vec<Hit>) {
@@ -532,7 +560,9 @@ impl Server {
                     let r = r - 22.0 - 8.0;
                     let k = &HANKEN_SEMI_12;
                     match note {
-                        Some(UpdateNote::Out(tag)) => c.text_right(k, r, mid(k, cy), &format!("{tag} is out"), pal.accent),
+                        Some(UpdateNote::Out(tag)) => {
+                            c.text_right(k, r, mid(k, cy), &format!("{tag} is out"), pal.accent)
+                        }
                         Some(UpdateNote::Restart) => c.text_right(v, r, mid(v, cy), "restart Cement", ink),
                         Some(UpdateNote::Updating) => c.text_right(v, r, mid(v, cy), "updating...", ink),
                         None => {}

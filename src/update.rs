@@ -34,7 +34,8 @@ pub fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
     let v = v.trim();
     let v = v.strip_prefix(['v', 'V']).unwrap_or(v);
     let base = v.split(['-', '+']).next()?;
-    let num = |p: &str| (!p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())).then(|| p.parse::<u32>().ok()).flatten();
+    let num =
+        |p: &str| (!p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())).then(|| p.parse::<u32>().ok()).flatten();
     let mut n = base.split('.').map(num);
     let v = (n.next()??, n.next()??, n.next()??);
     n.next().is_none().then_some(v)
@@ -160,7 +161,9 @@ fn download(url: &str, s: &Shared) -> Outcome {
         Ok(b) => b,
         Err(f) => return Outcome::Failed(why(f)),
     };
-    let Some(total) = body.length.filter(|&n| n > 0 && n <= MAX_CIA) else { return Outcome::Failed("bad answer".into()) };
+    let Some(total) = body.length.filter(|&n| n > 0 && n <= MAX_CIA) else {
+        return Outcome::Failed("bad answer".into());
+    };
     *s.total.lock().unwrap() = total;
     // the file and then the installed title
     if sys::sd_space().is_some_and(|(free, _)| free < 2 * total + (1 << 20)) {
@@ -168,7 +171,9 @@ fn download(url: &str, s: &Shared) -> Outcome {
     }
     sys::create_dir("/3ds"); // fail when they exist already
     sys::create_dir("/3ds/cement");
-    let Some(f) = File::open_write(FILE).filter(|f| f.set_size(0)) else { return Outcome::Failed("SD card write error".into()) };
+    let Some(f) = File::open_write(FILE).filter(|f| f.set_size(0)) else {
+        return Outcome::Failed("SD card write error".into());
+    };
     let mut buf = vec![0u8; 64 * 1024];
     let mut off = 0u64;
     loop {
@@ -383,7 +388,10 @@ mod tests {
     fn tags() {
         let json = r#"{"url":"https://api.github.com/x","tag_name" : "v1.2.0","name":"1.2.0","body":"see \"tag_name\": \"v9.9.9\""}"#;
         assert_eq!(tag_name(json).as_deref(), Some("v1.2.0"));
-        assert_eq!(tag_name(r#"{"body":"a \"tag_name\":\"v9.0.0\" b","tag_name":"v1.3.0"}"#).as_deref(), Some("v1.3.0"));
+        assert_eq!(
+            tag_name(r#"{"body":"a \"tag_name\":\"v9.0.0\" b","tag_name":"v1.3.0"}"#).as_deref(),
+            Some("v1.3.0")
+        );
         assert_eq!(tag_name("{\n  \"tag_name\":\n  \"v1.0.0\"\n}").as_deref(), Some("v1.0.0"));
         assert_eq!(tag_name(r#"{"message":"Not Found"}"#), None);
         assert_eq!(tag_name(r#"{"tag_name":"v1/../../x"}"#), None, "only characters a URL takes as they are");

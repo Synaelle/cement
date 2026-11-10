@@ -20,7 +20,7 @@ const MAX_PIXELS: u64 = 3_000_000;
 pub struct Picture {
     pub w: usize, // the image, fitted
     pub h: usize,
-    pub px: Vec<u32>,  // 0xRRGGBB, w x h
+    pub px: Vec<u32>,     // 0xRRGGBB, w x h
     pub full: (u32, u32), // the image's own size
 }
 

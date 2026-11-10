@@ -7,8 +7,8 @@
 // bundle (SITE BUNDLE) hands its buffers to its unpacker here instead.
 
 use std::alloc::{Layout, alloc, dealloc};
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 
 use crate::sys;
 use crate::untar::Untar;

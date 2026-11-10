@@ -120,7 +120,15 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { ftp: true, screen_idle: true, auto_off: 0, cia_info: true, protect: true, update: true, theme: Theme::Red }
+        Prefs {
+            ftp: true,
+            screen_idle: true,
+            auto_off: 0,
+            cia_info: true,
+            protect: true,
+            update: true,
+            theme: Theme::Red,
+        }
     }
 }
 
@@ -129,7 +137,8 @@ pub const AUTO_OFF: [u32; 5] = [0, 5, 15, 30, 60];
 
 pub fn load() -> Settings {
     let text = read();
-    let accent = get(&text, "accent").and_then(|v| parse_color(&v)).filter(|&c| c != OLD_DEFAULT).unwrap_or(DEFAULT_ACCENT);
+    let accent =
+        get(&text, "accent").and_then(|v| parse_color(&v)).filter(|&c| c != OLD_DEFAULT).unwrap_or(DEFAULT_ACCENT);
     let accent_time = get(&text, "accent_time").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
     let login = match (get(&text, "user"), get(&text, "pass_hash"), get(&text, "pass")) {
         (Some(u), Some(h), _) if valid_user(&u) => Some((u, h)),

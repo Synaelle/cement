@@ -5,8 +5,8 @@
 // One non-blocking poll() loop on the main thread handles every socket; the
 // disk thread does the SD card reads and writes of the transfers (disk.rs).
 
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 
 use crate::disk::{self, Buf, CHUNK, Disk, NBUF};
 use crate::install::InstallStart;
@@ -49,7 +49,7 @@ enum Slot {
 pub struct Xfer {
     file: Option<Arc<File>>,
     untar: Option<Arc<Mutex<Untar>>>, // SITE BUNDLE: the stream is unpacked instead of written
-    up: bool, // network -> SD
+    up: bool,                         // network -> SD
     slots: [Slot; NBUF],
     cur: usize,      // STOR: buffer being filled, RETR: buffer being sent
     send_pos: usize, // RETR: bytes of the current buffer already sent
@@ -189,9 +189,9 @@ pub struct Session {
 
     pub x: Xfer,
 
-    logged_in: bool, // USER/PASS matched the login (always true without one)
-    user: String,    // the USER given, waiting for PASS
-    wrong: u8,       // wrong passwords on this connection
+    logged_in: bool,        // USER/PASS matched the login (always true without one)
+    user: String,           // the USER given, waiting for PASS
+    wrong: u8,              // wrong passwords on this connection
     bundle: Option<String>, // SITE BUNDLE: the next STOR is a tar unpacked into this folder
     bundle_base: u32,       // batch_files_done when the bundle started
 
@@ -339,7 +339,9 @@ impl Session {
         let line = match mode {
             Mode::Mlsd => format!("type={};size={}; {}\r\n", if dir { "dir" } else { "file" }, size, name),
             Mode::Nlst => format!("{name}\r\n"),
-            _ => format!("{} 1 3ds 3ds {} Jan 01 2000 {}\r\n", if dir { "drwxrwxrwx" } else { "-rw-rw-rw-" }, size, name),
+            _ => {
+                format!("{} 1 3ds 3ds {} Jan 01 2000 {}\r\n", if dir { "drwxrwxrwx" } else { "-rw-rw-rw-" }, size, name)
+            }
         };
         self.list.extend_from_slice(line.as_bytes());
     }
@@ -364,7 +366,8 @@ pub struct Progress {
 }
 
 pub fn progress_of(s: &Session, now: u64) -> Progress {
-    let mut p = Progress { active: false, done: 0, size: 0, bps: 0, eta: -1, batch_done: 0, batch_bytes: 0, batch_eta: -1 };
+    let mut p =
+        Progress { active: false, done: 0, size: 0, bps: 0, eta: -1, batch_done: 0, batch_bytes: 0, batch_eta: -1 };
     p.active = s.started && (s.mode == Mode::Stor || s.mode == Mode::Retr);
     if p.active {
         let ms = now.saturating_sub(s.xfer_start);
@@ -436,7 +439,14 @@ pub struct Net {
 
 impl Net {
     pub fn new() -> Net {
-        Net { listen: None, pending: [None; MAX_PENDING], up: false, ndm_locked: false, ip: 0, pasv_port: sys::ports().1 }
+        Net {
+            listen: None,
+            pending: [None; MAX_PENDING],
+            up: false,
+            ndm_locked: false,
+            ip: 0,
+            pasv_port: sys::ports().1,
+        }
     }
 
     /// half-close and let the peer close, so no queued data gets lost
@@ -612,7 +622,8 @@ impl Server {
             let s = &mut self.sess[i];
             let Some(ctrl) = s.ctrl else {
                 // control connection died while replying: release the rest
-                if s.data.is_some() || s.pasv.is_some() || s.x.file.is_some() || !s.list.is_empty() || s.x.has_buffers() {
+                if s.data.is_some() || s.pasv.is_some() || s.x.file.is_some() || !s.list.is_empty() || s.x.has_buffers()
+                {
                     s.close();
                 }
                 continue;
@@ -1266,8 +1277,9 @@ impl Server {
                     s.reply("425 Use PASV first\r\n");
                 } else {
                     let mut entries = Vec::new();
-                    let listed =
-                        path.is_some_and(|p| sys::list_dir(&p, &mut |name, dir, size| entries.push((name.to_string(), dir, size))));
+                    let listed = path.is_some_and(|p| {
+                        sys::list_dir(&p, &mut |name, dir, size| entries.push((name.to_string(), dir, size)))
+                    });
                     if !listed {
                         s.end_transfer();
                         s.reply("550 No such directory\r\n");
@@ -1381,7 +1393,8 @@ impl Server {
 
     fn site(&mut self, i: usize, arg: &[u8]) {
         let text = String::from_utf8_lossy(arg);
-        let sub: String = text.split_whitespace().next().unwrap_or("").chars().take(15).collect::<String>().to_ascii_uppercase();
+        let sub: String =
+            text.split_whitespace().next().unwrap_or("").chars().take(15).collect::<String>().to_ascii_uppercase();
         match sub.as_str() {
             "STATUS" => {
                 let text = self.site_status(i);
@@ -1538,7 +1551,12 @@ impl Server {
             let batch = if s.batch_files != 0 {
                 format!(
                     " batch={} batch_files_done={} batch_files={} batch_bytes_done={} batch_bytes={} batch_eta={}",
-                    s.batch_kind.name(), s.batch_files_done, s.batch_files, p.batch_done, p.batch_bytes, p.batch_eta
+                    s.batch_kind.name(),
+                    s.batch_files_done,
+                    s.batch_files,
+                    p.batch_done,
+                    p.batch_bytes,
+                    p.batch_eta
                 )
             } else {
                 String::new()

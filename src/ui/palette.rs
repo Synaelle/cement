@@ -42,8 +42,8 @@ pub const PRESETS: [(&str, Color); 8] = [
 /// the looks the Settings tab offers
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Theme {
-    Red,  // Cement's own: near-black and red
-    Miku, // graphite and Miku teal
+    Red,     // Cement's own: near-black and red
+    Miku,    // graphite and Miku teal
     Ficelle, // the red look's colours, sharp, in Hanken Grotesk
 }
 
@@ -202,7 +202,10 @@ mod tests {
     #[test]
     fn default_round_trips() {
         // the default colours come back unchanged on their own hue
-        for c in [0x3cc8bd, 0x8ee6de, 0x24262b, 0x17302f, 0x2e3238, 0xf1f2f4, 0xe44c3e, 0xe6dfd8, 0x1f1c1b, 0x3a1915, 0x2e2a28, 0x9a918a] {
+        for c in [
+            0x3cc8bd, 0x8ee6de, 0x24262b, 0x17302f, 0x2e3238, 0xf1f2f4, 0xe44c3e, 0xe6dfd8, 0x1f1c1b, 0x3a1915,
+            0x2e2a28, 0x9a918a,
+        ] {
             let (h, s, l) = to_hsl(c);
             let back = from_hsl(h, s, l);
             let diff = |s: u32| ((back >> s) & 255).abs_diff((c >> s) & 255);
@@ -219,7 +222,14 @@ mod tests {
         let red = Palette::for_accent(Theme::Red, DEFAULT_ACCENT);
         for (name, c) in PRESETS {
             let p = Palette::for_accent(Theme::Red, c);
-            let pairs = [(p.accent, red.accent), (p.text, red.text), (p.dim, red.dim), (p.bg, red.bg), (p.card, red.card), (p.highlight, red.highlight)];
+            let pairs = [
+                (p.accent, red.accent),
+                (p.text, red.text),
+                (p.dim, red.dim),
+                (p.bg, red.bg),
+                (p.card, red.card),
+                (p.highlight, red.highlight),
+            ];
             for (got, want) in pairs {
                 let (a, b) = (luminance(got), luminance(want));
                 assert!((a - b).abs() <= 0.01 + 0.03 * b, "{name}: {got:06x} vs {want:06x}");

@@ -21,7 +21,7 @@ pub struct Cia {
 
 /// what the install thread reports
 pub struct Shared {
-    pub done: Mutex<u64>,     // bytes installed (no 64-bit atomics on the ARM11)
+    pub done: Mutex<u64>,      // bytes installed (no 64-bit atomics on the ARM11)
     pub preparing: AtomicBool, // removing the installed copy first (can take a while)
     finished: AtomicBool,
     rc: AtomicI32,
@@ -31,8 +31,8 @@ pub struct Shared {
 /// how a request to install a file went
 pub enum InstallStart {
     Started,
-    Queued, // starts when the transfers end
-    Asked,  // waits for A on the console
+    Queued,                     // starts when the transfers end
+    Asked,                      // waits for A on the console
     Refused(u16, &'static str), // the FTP reply code and why
 }
 
@@ -498,7 +498,13 @@ fn install(path: &str, total: u64, confirmed: bool, shared: &Shared) {
     let mut r: i32 = 0;
     let mut err = "";
     let mut fail = |r: &mut i32, rc: i32, msg: &'static str| {
-        *r = if rc < 0 { rc } else if *r < 0 { *r } else { -1 };
+        *r = if rc < 0 {
+            rc
+        } else if *r < 0 {
+            *r
+        } else {
+            -1
+        };
         err = msg;
     };
     let mut am: Option<sys::AmInstall> = None;

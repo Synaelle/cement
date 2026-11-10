@@ -142,7 +142,9 @@ pub fn keys_down() -> u32 {
         return KEY_TOUCH;
     }
     // longest names first: "LEFT" before "L"
-    for (name, key_bit) in [("SELECT", KEY_SELECT), ("RIGHT", KEY_RIGHT), ("LEFT", KEY_LEFT), ("UP", KEY_UP), ("DOWN", KEY_DOWN)] {
+    for (name, key_bit) in
+        [("SELECT", KEY_SELECT), ("RIGHT", KEY_RIGHT), ("LEFT", KEY_LEFT), ("UP", KEY_UP), ("DOWN", KEY_DOWN)]
+    {
         if key.starts_with(name) {
             return held(key_bit);
         }

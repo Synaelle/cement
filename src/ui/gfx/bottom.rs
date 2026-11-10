@@ -7,13 +7,13 @@
 use super::canvas::{Canvas, Color};
 use super::font::*;
 use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, bite_dot, card_height, draw_card, format_big, hint};
+use crate::Server;
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
 use crate::picture::is_image;
 use crate::ui::Bottom;
 use crate::ui::palette::{PRESETS, Palette, Theme};
 use crate::update::{self, Stage};
 use crate::util::{base_name, format_size, is_cia};
-use crate::Server;
 
 /// a spot of the screen and what touching it means
 pub struct Hit {
@@ -58,7 +58,14 @@ fn empty(c: &mut Canvas, top: f32, bottom: f32, line: &str, pal: &Palette) {
     c.round(LEFT, top, RIGHT - LEFT, h, 9.0, pal.card);
     let f = &NUNITO_XBOLD_13;
     let mid = (LEFT + RIGHT) / 2.0;
-    c.text(f, mid - f.width(line, 0.0) / 2.0, top + (h - f.height) / 2.0 + f.ascent, &f.fit(line, RIGHT - LEFT - 16.0), pal.text, 0.0);
+    c.text(
+        f,
+        mid - f.width(line, 0.0) / 2.0,
+        top + (h - f.height) / 2.0 + f.ascent,
+        &f.fit(line, RIGHT - LEFT - 16.0),
+        pal.text,
+        0.0,
+    );
 }
 
 /// a Settings row's name
@@ -200,7 +207,14 @@ impl Server {
             c.pill(x, y, w, h, if on { pal.accent } else { pal.track });
             let name = tab.name();
             let tx = x + ((w - f.width(name, 0.0)) / 2.0).round();
-            c.text(f, tx, y + ((h - f.height) / 2.0).round() + f.ascent, name, if on { pal.on_accent } else { pal.soft }, 0.0);
+            c.text(
+                f,
+                tx,
+                y + ((h - f.height) / 2.0).round() + f.ascent,
+                name,
+                if on { pal.on_accent } else { pal.soft },
+                0.0,
+            );
             hits.push(Hit { x0: x, y0: 0.0, x1: x + w, y1: y + h + 3.0, tap: Tap::Tab(tab) });
         }
     }
@@ -242,7 +256,11 @@ impl Server {
                 title: format!("Downloading Cement {tag}"),
                 value: if total != 0 { format!("{pct}%") } else { String::new() },
                 frac: (total != 0).then(|| done as f32 / total as f32),
-                detail: if total != 0 { format!("{} of {}", format_size(done), format_size(total)) } else { "Connecting...".into() },
+                detail: if total != 0 {
+                    format!("{} of {}", format_size(done), format_size(total))
+                } else {
+                    "Connecting...".into()
+                },
                 right: String::new(),
             })
         } else if let Stage::Waiting(size) = self.update.stage {
@@ -264,7 +282,11 @@ impl Server {
                 let pct = if inst.total != 0 { done * 100 / inst.total } else { 0 };
                 let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
                 let card = CardText {
-                    title: if is_update { format!("Installing Cement {tag}") } else { format!("Installing {}", base_name(&inst.path)) },
+                    title: if is_update {
+                        format!("Installing Cement {tag}")
+                    } else {
+                        format!("Installing {}", base_name(&inst.path))
+                    },
                     value: if preparing { String::new() } else { format!("{pct}%") },
                     frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
                     detail: if preparing {
@@ -296,7 +318,11 @@ impl Server {
         let action = match br.entries.get(br.sel) {
             Some(e) if !e.dir && is_cia(&e.name) => "install",
             Some(e) if !e.dir && is_image(&e.name) => {
-                if self.menu.view { "close" } else { "view" }
+                if self.menu.view {
+                    "close"
+                } else {
+                    "view"
+                }
             }
             _ => "open",
         };
@@ -408,7 +434,8 @@ impl Server {
             let (l, r) = (LEFT + 9.0, RIGHT - 9.0);
             let cy = y + h / 2.0;
             c.text(f, l, base, row_label(row), pal.text, 0.0);
-            let value = |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
+            let value =
+                |c: &mut Canvas, text: &str| c.text_right(f, r, base, text, if sel { pal.soft } else { pal.dim });
             match self.row_value(row) {
                 RowValue::Switch(on) => toggle(c, r, cy, on, pal),
                 RowValue::Text(text) => value(c, &text),

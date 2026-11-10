@@ -63,7 +63,9 @@ pub fn init() -> bool {
         let layout = std::alloc::Layout::from_size_align(SOC_BUFSIZE, SOC_ALIGN).unwrap();
         SOC_BUF = std::alloc::alloc(layout).cast();
         let mut sd: c::FS_Archive = 0;
-        if SOC_BUF.is_null() || !ok(c::FSUSER_OpenArchive(&mut sd, c::ARCHIVE_SDMC, c::fsMakePath(c::PATH_EMPTY, c"".as_ptr().cast()))) {
+        if SOC_BUF.is_null()
+            || !ok(c::FSUSER_OpenArchive(&mut sd, c::ARCHIVE_SDMC, c::fsMakePath(c::PATH_EMPTY, c"".as_ptr().cast())))
+        {
             return false;
         }
         let _ = SD.set(sd);
@@ -422,12 +424,14 @@ impl File {
 
     pub fn read_at(&self, off: u64, buf: &mut [u8]) -> Option<usize> {
         let mut n = 0u32;
-        unsafe { ok(c::FSFILE_Read(self.0, &mut n, off, buf.as_mut_ptr().cast(), buf.len() as u32)) }.then_some(n as usize)
+        unsafe { ok(c::FSFILE_Read(self.0, &mut n, off, buf.as_mut_ptr().cast(), buf.len() as u32)) }
+            .then_some(n as usize)
     }
 
     pub fn write_at(&self, off: u64, buf: &[u8]) -> Option<usize> {
         let mut n = 0u32;
-        unsafe { ok(c::FSFILE_Write(self.0, &mut n, off, buf.as_ptr().cast(), buf.len() as u32, 0)) }.then_some(n as usize)
+        unsafe { ok(c::FSFILE_Write(self.0, &mut n, off, buf.as_ptr().cast(), buf.len() as u32, 0)) }
+            .then_some(n as usize)
     }
 
     /// false when the written data may not be on the card
@@ -536,7 +540,10 @@ pub fn create_dir(path: &str) -> bool {
 /// a file or a folder
 pub fn rename(from: &str, to: &str) -> bool {
     let (Some(a), Some(b)) = (FsPath::new(from), FsPath::new(to)) else { return false };
-    unsafe { ok(c::FSUSER_RenameFile(sd(), a.raw(), sd(), b.raw())) || ok(c::FSUSER_RenameDirectory(sd(), a.raw(), sd(), b.raw())) }
+    unsafe {
+        ok(c::FSUSER_RenameFile(sd(), a.raw(), sd(), b.raw()))
+            || ok(c::FSUSER_RenameDirectory(sd(), a.raw(), sd(), b.raw()))
+    }
 }
 
 // ---------------------------------------------------------------------------

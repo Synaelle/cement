@@ -61,7 +61,9 @@ impl Server {
     fn top(&mut self) -> Option<Top> {
         let now = sys::now_ms();
         let sel = if self.prefs.cia_info { self.selected_cia() } else { None };
-        if now.saturating_sub(self.last_time) < 500 && !self.ui.top_stale(&sel, (self.menu.tab, self.menu.row, self.viewed_image())) {
+        if now.saturating_sub(self.last_time) < 500
+            && !self.ui.top_stale(&sel, (self.menu.tab, self.menu.row, self.viewed_image()))
+        {
             return None;
         }
 

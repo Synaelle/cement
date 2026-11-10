@@ -9,15 +9,15 @@ mod canvas;
 mod ficelle;
 mod font;
 
-use canvas::{Canvas, Color};
-use font::*;
 use super::palette::{Palette, Theme};
 use crate::settings::DEFAULT_ACCENT;
+use canvas::{Canvas, Color};
+use font::*;
 
 use super::{Bottom, Top};
+use crate::install::{CiaInfo, ICON, cia_info, version_text};
 use crate::menu::{ROWS, Row, Tab};
 use crate::picture::{self, Picture};
-use crate::install::{CiaInfo, ICON, cia_info, version_text};
 use crate::server::{BatchKind, Mode, progress_of};
 use crate::sys;
 use crate::update::Stage;
@@ -41,7 +41,7 @@ const INSTALL_FRAME_MS: u64 = 100;
 struct Screen {
     which: sys::Screen,
     c: Canvas,
-    shown: Vec<u32>,                         // what the displayed framebuffer holds
+    shown: Vec<u32>,                            // what the displayed framebuffer holds
     last: Option<(usize, usize, usize, usize)>, // changed at the last present: the other buffer lacks it
 }
 
@@ -88,10 +88,10 @@ impl Screen {
 pub struct Ui {
     top: Option<Screen>, // taken out while drawing
     bottom: Option<Screen>,
-    bottom_at: u64,       // last bottom screen drawing
-    sd_free: Option<u64>, // read again when the CIA list changes
+    bottom_at: u64,         // last bottom screen drawing
+    sd_free: Option<u64>,   // read again when the CIA list changes
     hits: Vec<bottom::Hit>, // where the bottom screen's tabs, rows and swatches are
-    pal: Palette,         // the colours for the look and accent below
+    pal: Palette,           // the colours for the look and accent below
     pal_for: (Theme, u32),
     info: Option<(String, u64, Option<CiaInfo>)>, // the selected CIA's path, size and details
     drawn_for: (Tab, usize, Option<String>),      // the tab, Settings row and image the top screen shows
@@ -278,7 +278,15 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &
         }
         Button::Dpad => {
             // red arms on the accent hint would vanish: they take the background there
-            c.icon(&BTN_DPAD, x, y, |color| if color == 0xffffff { fg } else if on == pal.accent { on } else { pal.accent });
+            c.icon(&BTN_DPAD, x, y, |color| {
+                if color == 0xffffff {
+                    fg
+                } else if on == pal.accent {
+                    on
+                } else {
+                    pal.accent
+                }
+            });
             BTN_DPAD.size as f32
         }
         Button::Start => keycap(c, x, y, "START", fg, on),
@@ -338,13 +346,23 @@ fn paint_note(c: &mut Canvas, title: &str, detail: &str, pal: &Palette) {
 fn help(row: Row) -> &'static str {
     match row {
         Row::Login => "The user name and password a PC needs to connect. With none, anyone on your Wi-Fi can connect.",
-        Row::Ftp => "Off, no PC can connect and the connected ones are dropped. Installing and browsing here still work.",
-        Row::CiaInfo => "Shows the selected CIA under the address: its icon, title, version and whether it's new or an update.",
-        Row::Protect => "Can't delete /Nintendo 3DS, /boot.firm, /luma, /gm9 or /boot.3dsx. Luma's screenshots stay free.",
-        Row::ScreenIdle => "Both screens go dark after a minute with no button or transfer. Any button lights them again.",
+        Row::Ftp => {
+            "Off, no PC can connect and the connected ones are dropped. Installing and browsing here still work."
+        }
+        Row::CiaInfo => {
+            "Shows the selected CIA under the address: its icon, title, version and whether it's new or an update."
+        }
+        Row::Protect => {
+            "Can't delete /Nintendo 3DS, /boot.firm, /luma, /gm9 or /boot.3dsx. Luma's screenshots stay free."
+        }
+        Row::ScreenIdle => {
+            "Both screens go dark after a minute with no button or transfer. Any button lights them again."
+        }
         Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
         Row::Update => "Looks for a newer Cement on GitHub when it starts, with the Wi-Fi on. A turns it on or off.",
-        Row::Look => "How the screens look: Red is Cement's own, Miku is graphite and teal, Ficelle is sharp and quiet. A or left and right change it.",
+        Row::Look => {
+            "How the screens look: Red is Cement's own, Miku is graphite and teal, Ficelle is sharp and quiet. A or left and right change it."
+        }
         Row::Colour => "The red look's colour, kept in sync with Baguette. Left and right pick another one.",
     }
 }
@@ -370,7 +388,14 @@ fn draw_help(c: &mut Canvas, x: f32, y: f32, w: f32, text: &str, pal: &Palette) 
     let q = &NUNITO_XBOLD_13;
     let (cx, cy) = (x + 19.0, y + TICKET_H / 2.0);
     c.circle(cx, cy, 10.0, pal.selected);
-    c.text(q, cx - (q.width("?", 0.0) / 2.0).round(), cy - (q.height / 2.0).round() + q.ascent, "?", pal.highlight, 0.0);
+    c.text(
+        q,
+        cx - (q.width("?", 0.0) / 2.0).round(),
+        cy - (q.height / 2.0).round() + q.ascent,
+        "?",
+        pal.highlight,
+        0.0,
+    );
     let f = &NUNITO_BOLD_11;
     let (l, r) = (x + 38.0, x + w - 12.0);
     let mut lines = wrap(f, text, r - l);
@@ -460,7 +485,9 @@ impl Server {
             }
             match &self.ui.picture {
                 Some((_, Ok(pic))) => paint_picture(&mut scr.c, pic, &self.ui.pal),
-                Some((path, Err(why))) => paint_note(&mut scr.c, &format!("Can't show {}", base_name(path)), why, &self.ui.pal),
+                Some((path, Err(why))) => {
+                    paint_note(&mut scr.c, &format!("Can't show {}", base_name(path)), why, &self.ui.pal)
+                }
                 None => {}
             }
             scr.present();
@@ -488,7 +515,11 @@ impl Server {
             self.ui.sd_free = sys::sd_space().map(|(free, _)| free);
         }
         let Some(mut scr) = self.ui.bottom.take() else { return };
-        self.ui.hits = if self.prefs.theme == Theme::Ficelle { self.paint_bottom_ficelle(&mut scr.c, b) } else { self.paint_bottom(&mut scr.c, b) };
+        self.ui.hits = if self.prefs.theme == Theme::Ficelle {
+            self.paint_bottom_ficelle(&mut scr.c, b)
+        } else {
+            self.paint_bottom(&mut scr.c, b)
+        };
         scr.present();
         self.ui.bottom = Some(scr);
     }
@@ -498,70 +529,85 @@ impl Server {
         let tag = self.update.latest.as_deref().filter(|_| self.prefs.update);
         match (self.update.stage, tag) {
             (Stage::Done, _) => "The update is installed: restart Cement to use it.".into(),
-            (Stage::Idle, Some(tag)) => format!("A downloads Cement {tag} and installs it, then restart Cement. Left and right turn the check off."),
+            (Stage::Idle, Some(tag)) => format!(
+                "A downloads Cement {tag} and installs it, then restart Cement. Left and right turn the check off."
+            ),
             (Stage::Idle, None) => help(Row::Update).into(),
-            (_, tag) => format!("Downloading and installing Cement {}. Keep the 3DS on until it's done.", tag.unwrap_or("")),
+            (_, tag) => {
+                format!("Downloading and installing Cement {}. Keep the 3DS on until it's done.", tag.unwrap_or(""))
+            }
         }
     }
 
     /// what the transfer card says: the file moving, the batch, or the server's state
     fn transfer_card(&self, t: &Top, now: u64) -> CardText {
-    let batch = self.sess.iter().find(|s| s.ctrl.is_some() && s.batch_files != 0);
-    let bp = batch.map(|s| progress_of(s, now));
-    let mut card = CardText { title: String::new(), value: String::new(), frac: None, detail: String::new(), right: String::new() };
-    let mut parts = Vec::new();
-    if let Some(s) = batch {
-        let (done, total) = (s.batch_files_done, s.batch_files);
-        parts.push(if s.batch_kind == BatchKind::Delete {
-            format!("{done} of {total} files")
-        } else {
-            format!("file {} of {total}", (done + 1).min(total))
-        });
-    }
-    if let Some(i) = t.active {
-        let s = &self.sess[i];
-        let p = progress_of(s, now);
-        let verb = if s.mode == Mode::Stor { "Receiving" } else { "Sending" };
-        card.title = format!("{verb} {}", s.name);
-        card.value = format!("{}/s", format_size(self.rate));
-        if p.size != 0 {
-            card.frac = Some(p.done as f32 / p.size as f32);
-        }
-        if batch.is_none() {
-            parts.push(if p.size != 0 {
-                format!("{} of {}", format_size(p.done), format_size(p.size))
+        let batch = self.sess.iter().find(|s| s.ctrl.is_some() && s.batch_files != 0);
+        let bp = batch.map(|s| progress_of(s, now));
+        let mut card = CardText {
+            title: String::new(),
+            value: String::new(),
+            frac: None,
+            detail: String::new(),
+            right: String::new(),
+        };
+        let mut parts = Vec::new();
+        if let Some(s) = batch {
+            let (done, total) = (s.batch_files_done, s.batch_files);
+            parts.push(if s.batch_kind == BatchKind::Delete {
+                format!("{done} of {total} files")
             } else {
-                format_size(p.done)
+                format!("file {} of {total}", (done + 1).min(total))
             });
-            card.right = time_left(p.eta);
         }
-    } else if let Some(s) = batch {
-        card.title = match s.batch_kind {
-            BatchKind::Delete => "Deleting files",
-            BatchKind::Down => "Sending files",
-            BatchKind::Up => "Receiving files",
+        if let Some(i) = t.active {
+            let s = &self.sess[i];
+            let p = progress_of(s, now);
+            let verb = if s.mode == Mode::Stor { "Receiving" } else { "Sending" };
+            card.title = format!("{verb} {}", s.name);
+            card.value = format!("{}/s", format_size(self.rate));
+            if p.size != 0 {
+                card.frac = Some(p.done as f32 / p.size as f32);
+            }
+            if batch.is_none() {
+                parts.push(if p.size != 0 {
+                    format!("{} of {}", format_size(p.done), format_size(p.size))
+                } else {
+                    format_size(p.done)
+                });
+                card.right = time_left(p.eta);
+            }
+        } else if let Some(s) = batch {
+            card.title = match s.batch_kind {
+                BatchKind::Delete => "Deleting files",
+                BatchKind::Down => "Sending files",
+                BatchKind::Up => "Receiving files",
+            }
+            .into();
+            if s.batch_kind == BatchKind::Delete {
+                card.frac = Some(s.batch_files_done as f32 / s.batch_files.max(1) as f32);
+            }
+        } else {
+            let up = self.net.up && self.net.listen.is_some();
+            card.title = if up && t.clients != 0 { pcs(t.clients) } else { self.status.clone() };
+            card.detail = if self.prefs.ftp {
+                "No transfer right now"
+            } else {
+                "Turn it back on in Settings, on the bottom screen"
+            }
+            .into();
         }
-        .into();
-        if s.batch_kind == BatchKind::Delete {
-            card.frac = Some(s.batch_files_done as f32 / s.batch_files.max(1) as f32);
+        if let (Some(s), Some(bp)) = (batch, &bp) {
+            if s.batch_kind != BatchKind::Delete && bp.batch_bytes != 0 && t.active.is_none() {
+                card.frac = Some(bp.batch_done as f32 / bp.batch_bytes as f32);
+            }
+            card.right = time_left(bp.batch_eta);
         }
-    } else {
-        let up = self.net.up && self.net.listen.is_some();
-        card.title = if up && t.clients != 0 { pcs(t.clients) } else { self.status.clone() };
-        card.detail = if self.prefs.ftp { "No transfer right now" } else { "Turn it back on in Settings, on the bottom screen" }.into();
-    }
-    if let (Some(s), Some(bp)) = (batch, &bp) {
-        if s.batch_kind != BatchKind::Delete && bp.batch_bytes != 0 && t.active.is_none() {
-            card.frac = Some(bp.batch_done as f32 / bp.batch_bytes as f32);
+        if t.active.is_some() || batch.is_some() {
+            if t.clients != 0 {
+                parts.push(pcs(t.clients));
+            }
+            card.detail = parts.join(" · ");
         }
-        card.right = time_left(bp.batch_eta);
-    }
-    if t.active.is_some() || batch.is_some() {
-        if t.clients != 0 {
-            parts.push(pcs(t.clients));
-        }
-        card.detail = parts.join(" · ");
-    }
         card
     }
 
@@ -593,7 +639,14 @@ impl Server {
         let (pw, ph) = (p.width(&label, 0.0) + 16.0, p.height + 6.0);
         let py = y + (f.height - ph) / 2.0;
         c.pill(right - pw, py, pw, ph, if t.low { pal.accent } else { pal.track });
-        c.text(p, right - pw + 8.0, py + 3.0 + p.ascent, &label, if t.low { pal.on_accent } else { pal.highlight }, 0.0);
+        c.text(
+            p,
+            right - pw + 8.0,
+            py + 3.0 + p.ascent,
+            &label,
+            if t.low { pal.on_accent } else { pal.highlight },
+            0.0,
+        );
         // START left of the battery, leaving the room under the address free
         let h = &NUNITO_BOLD_11;
         let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);

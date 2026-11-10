@@ -88,15 +88,7 @@ pub fn mdtm_text(ms2000: u64) -> String {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
-    format!(
-        "{:04}{:02}{:02}{:02}{:02}{:02}",
-        year,
-        month,
-        day,
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
+    format!("{:04}{:02}{:02}{:02}{:02}{:02}", year, month, day, rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 pub fn ip_text(ip: u32) -> String {
