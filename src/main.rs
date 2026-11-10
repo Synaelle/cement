@@ -141,6 +141,7 @@ pub struct Server {
     pub accent: u32,                     // the red look's colour (Settings or SITE COLOR)
     pub accent_time: u64,                // when it was picked (local clock, seconds since 1970); 0 = never
     pub login: Option<(String, String)>, // FTP user and password hash (settings::hash_pass); None: anonymous
+    pub pass_after: u64,                 // after a wrong password, no other is checked before this
     pub ui: ui::Ui,
 }
 
@@ -181,6 +182,7 @@ impl Server {
             accent: 0,
             accent_time: 0,
             login: None,
+            pass_after: 0,
             ui: ui::Ui::new(),
         }
     }

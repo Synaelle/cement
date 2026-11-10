@@ -22,6 +22,8 @@ const SOCK_BUFSIZE: i32 = 32768; // same value ftpd uses on 3DS
 const CMD_SIZE: usize = 4096;
 const DATA_TIMEOUT: u64 = 15_000; // ms to wait for the data connection
 const IDLE_TIMEOUT: u64 = 300_000; // ms without any command before dropping a client
+const WRONG_PASS_MS: u64 = 1000; // after a wrong password, no other is checked for this long
+const MAX_WRONG_PASS: u8 = 3; // wrong passwords before a connection is closed
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -171,6 +173,7 @@ pub struct Session {
 
     logged_in: bool, // USER/PASS matched the login (always true without one)
     user: String,    // the USER given, waiting for PASS
+    wrong: u8,       // wrong passwords on this connection
     bundle: Option<String>, // SITE BUNDLE: the next STOR is a tar unpacked into this folder
     bundle_base: u32,       // batch_files_done when the bundle started
 
@@ -211,6 +214,7 @@ impl Session {
             x: Xfer::new(),
             logged_in: false,
             user: String::new(),
+            wrong: 0,
             bundle: None,
             bundle_base: 0,
             allo: 0,
@@ -283,6 +287,7 @@ impl Session {
         self.end_transfer();
         self.logged_in = false;
         self.user.clear();
+        self.wrong = 0;
         self.bundle = None;
         self.allo = 0;
         self.batch_files = 0;
@@ -1039,19 +1044,35 @@ impl Server {
             "PASS" => {
                 let pass = String::from_utf8_lossy(arg).into_owned();
                 let s = &mut self.sess[i];
+                // a check takes about 50 ms of the main loop: after a wrong password
+                // nobody gets another one checked for a second, so guessing can't
+                // stall the 3DS, and a connection gets three tries
+                let waiting = now < self.pass_after;
                 match &self.login {
                     None => {
                         s.logged_in = true;
                         s.reply("230 Logged in\r\n");
                     }
-                    Some((user, hash)) if s.user == *user && settings::check_pass(hash, &pass) => {
+                    Some((user, hash)) if !waiting && s.user == *user && settings::check_pass(hash, &pass) => {
                         s.logged_in = true;
+                        s.wrong = 0;
                         s.reply("230 Logged in\r\n");
                     }
                     Some(_) => {
                         s.logged_in = false;
                         s.user.clear();
-                        s.reply("530 Login incorrect\r\n");
+                        s.wrong += 1;
+                        if !waiting {
+                            self.pass_after = now + WRONG_PASS_MS;
+                        }
+                        if s.wrong >= MAX_WRONG_PASS {
+                            s.reply("421 Too many wrong passwords\r\n");
+                            s.close();
+                        } else if waiting {
+                            s.reply("530 Wait a second and try again\r\n");
+                        } else {
+                            s.reply("530 Login incorrect\r\n");
+                        }
                     }
                 }
             }

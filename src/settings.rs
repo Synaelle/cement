@@ -30,9 +30,9 @@ pub fn parse_color(s: &str) -> Option<u32> {
 /// 50 ms on the 3DS)
 const ROUNDS: u32 = 1000;
 
-fn stretch(salt: &str, pass: &str) -> String {
+fn stretch(salt: &str, pass: &str, rounds: u32) -> String {
     let mut h = sha256(format!("{salt}:{pass}").as_bytes());
-    for _ in 1..ROUNDS {
+    for _ in 1..rounds {
         h = sha256(&h);
     }
     hex(&h)
@@ -43,14 +43,15 @@ pub fn hash_pass(pass: &str) -> String {
     // a salt only has to differ between consoles and logins, not be secret
     let seed = format!("{}:{}:{:p}", sys::now_ms(), pass.len(), &pass);
     let salt = hex(&sha256(seed.as_bytes())[..8]);
-    format!("sha256:{ROUNDS}:{salt}:{}", stretch(&salt, pass))
+    format!("sha256:{ROUNDS}:{salt}:{}", stretch(&salt, pass, ROUNDS))
 }
 
-/// whether `pass` is the password `stored` (from hash_pass) was made from
+/// whether `pass` is the password `stored` (from hash_pass) was made from,
+/// with the rounds it was made with, so a change of ROUNDS keeps old logins
 pub fn check_pass(stored: &str, pass: &str) -> bool {
     let mut parts = stored.splitn(4, ':');
-    match (parts.next(), parts.next(), parts.next(), parts.next()) {
-        (Some("sha256"), Some(r), Some(salt), Some(hash)) if r == ROUNDS.to_string() => stretch(salt, pass) == hash,
+    match (parts.next(), parts.next().map(str::parse::<u32>), parts.next(), parts.next()) {
+        (Some("sha256"), Some(Ok(rounds @ 1..=100_000)), Some(salt), Some(hash)) => stretch(salt, pass, rounds) == hash,
         _ => false,
     }
 }
@@ -211,5 +212,8 @@ mod tests {
         assert!(check_pass(&h, " two words "));
         assert!(!check_pass(&h, "two words") && !check_pass(&h, ""));
         assert!(!check_pass("plain", "plain"), "only hashes are accepted");
+        let other = format!("sha256:10:salt:{}", stretch("salt", "pw", 10));
+        assert!(check_pass(&other, "pw"), "a hash made with other rounds still works");
+        assert!(!check_pass("sha256:0:salt:x", "pw") && !check_pass("sha256:-1:salt:x", "pw"));
     }
 }
