@@ -97,12 +97,7 @@ jobs:
         run: |
           # the version shown (no -dev suffix) and the CIA's title version, both from VERSION
           grep -qx "built \.\.\. Cement.cia v$VERSION" "$RUNNER_TEMP/build.log" || { echo "the build isn't v$VERSION" >&2; exit 1; }
-          u32() { od -An -tu4 -j "$1" -N4 Cement.cia | tr -d ' \n'; }
-          align() { echo $(( ($1 + 63) / 64 * 64 )); }
-          tmd=$(( $(align "$(u32 0)") + $(align "$(u32 8)") + $(align "$(u32 12)") ))
-          set -- $(od -An -tu1 -j $((tmd + 0x140 + 0x9C)) -N2 Cement.cia)
-          v=$(( ($1 << 8) | $2 ))
-          title="$((v >> 10)).$(((v >> 4) & 63)).$((v & 15))"
+          title=$(sh tools/set-cia-version.sh Cement.cia)
           [ "$title" = "$VERSION" ] || { echo "CIA title version $title, not $VERSION" >&2; exit 1; }
 
       - name: Sign the checksums
