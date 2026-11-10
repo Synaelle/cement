@@ -985,9 +985,14 @@ impl Server {
         let cmd = cmd.as_str();
         let now = sys::now_ms();
         self.sess[i].last_cmd = now;
+        // before anything below changes what the 3DS does
+        if !self.logged_in(i) && !matches!(cmd, "USER" | "PASS" | "QUIT" | "FEAT" | "SYST" | "NOOP" | "OPTS") {
+            self.sess[i].reply("530 Please log in with USER and PASS\r\n");
+            return;
+        }
         // a client that only polls (Baguette's status) isn't someone using the 3DS
         let poll = cmd == "NOOP" || (cmd == "SITE" && arg.len() >= 6 && arg[..6].eq_ignore_ascii_case(b"STATUS"));
-        if !poll {
+        if !poll && self.logged_in(i) {
             self.last_ftp = now;
         }
 
@@ -1005,11 +1010,6 @@ impl Server {
             {
                 s.batch_files_done += 1;
             }
-        }
-
-        if !self.logged_in(i) && !matches!(cmd, "USER" | "PASS" | "QUIT" | "FEAT" | "SYST" | "NOOP" | "OPTS") {
-            self.sess[i].reply("530 Please log in with USER and PASS\r\n");
-            return;
         }
         if matches!(cmd, "RETR" | "APPE" | "LIST" | "NLST" | "MLSD") {
             self.sess[i].bundle = None; // only the very next STOR is a bundle
