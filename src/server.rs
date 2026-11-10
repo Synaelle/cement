@@ -1316,10 +1316,11 @@ impl Server {
                 }
             }
             "INSTALL" => {
-                // SITE INSTALL <path>: as pressing A on that CIA
+                // SITE INSTALL <path>: as pressing A on that CIA, except that system titles
+                // are refused and a reinstall or downgrade waits for A on the console
                 let arg = text.get(7..).unwrap_or("").trim_start();
                 let reply = match util::resolve_path(&self.sess[i].cwd, arg.as_bytes()) {
-                    Some(path) if !arg.is_empty() => self.site_install(&path),
+                    Some(path) if !arg.is_empty() => self.request_install(&path, true),
                     _ => "550 No such CIA\r\n",
                 };
                 self.sess[i].reply(reply);

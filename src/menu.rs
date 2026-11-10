@@ -228,15 +228,24 @@ impl Server {
 
     /// true when `what` was asked about within CONFIRM_MS (the second press),
     /// else asks with `question`
-    fn confirm(&mut self, what: &str, question: String) -> bool {
-        let now = sys::now_ms();
-        if self.menu.confirm.as_ref().is_some_and(|(w, until)| w == what && now < *until) {
+    pub fn confirm(&mut self, what: &str, question: String) -> bool {
+        if self.asked(what) {
             self.menu.confirm = None;
             return true;
         }
-        self.cia_message(question);
-        self.menu.confirm = Some((what.to_string(), now + CONFIRM_MS));
+        self.ask(what, question);
         false
+    }
+
+    /// asks with `question`: a press within CONFIRM_MS confirms `what`
+    pub fn ask(&mut self, what: &str, question: String) {
+        self.cia_message(question);
+        self.menu.confirm = Some((what.to_string(), sys::now_ms() + CONFIRM_MS));
+    }
+
+    /// `what` was asked about and the question still shows
+    pub fn asked(&self, what: &str) -> bool {
+        self.menu.confirm.as_ref().is_some_and(|(w, until)| w == what && sys::now_ms() < *until)
     }
 
     /// X on a file or a folder: the first press asks, a second one within CONFIRM_MS deletes it
@@ -290,7 +299,7 @@ impl Server {
             // a touch selects a row, a second one on it installs
             Some(Tap::Item(i)) if i < self.cias.len() && self.inst.is_none() => {
                 if i == self.cia_sel {
-                    self.start_install();
+                    self.start_install(true);
                 } else {
                     self.cia_sel = i;
                 }
@@ -342,7 +351,7 @@ impl Server {
         } else if is_image(&path) {
             self.menu.view = !self.menu.view;
         } else if is_cia(&path) {
-            let reply = self.site_install(&path);
+            let reply = self.request_install(&path, false);
             let msg = match &reply[..3] {
                 "200" if reply.contains("queued") => Some("The install starts when the transfers end".to_string()),
                 "200" => None,

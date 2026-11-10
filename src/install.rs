@@ -89,8 +89,10 @@ impl Server {
         }
     }
 
-    /// SITE INSTALL: what pressing A on that file does; the FTP reply
-    pub fn site_install(&mut self, path: &str) -> &'static str {
+    /// SITE INSTALL (`remote`) or A on a Browse file; the FTP reply. Over the
+    /// network, titles that go to the system memory are refused: FBI installs
+    /// them, in the hands of whoever holds the console.
+    pub fn request_install(&mut self, path: &str, remote: bool) -> &'static str {
         if self.inst.is_some() || self.inst_queue.is_some() {
             return "450 Busy: another install is running\r\n";
         }
@@ -98,6 +100,9 @@ impl Server {
         let Some(size) = size else { return "550 No such CIA\r\n" };
         if battery_low(self.battery()) {
             return "451 Battery too low: plug in the charger\r\n";
+        }
+        if remote && install_plan(path).is_some_and(|p| p.nand) {
+            return "550 System, DSiWare and FIRM titles install from FBI on the 3DS\r\n";
         }
         if !self.cias.iter().any(|c| c.path == path) {
             self.cia_add(path, size);
@@ -109,8 +114,14 @@ impl Server {
             self.inst_queue = Some(path.to_string()); // starts when the transfers end
             return "200 Install queued\r\n";
         }
-        self.start_install();
-        if self.inst.is_some() { "200 Install started\r\n" } else { "451 Install could not start\r\n" }
+        self.start_install(!remote);
+        if self.inst.is_some() {
+            "200 Install started\r\n"
+        } else if self.asked_install(path) {
+            "200 Press A on the 3DS to confirm\r\n"
+        } else {
+            "451 Install could not start\r\n"
+        }
     }
 
     /// starts a queued SITE INSTALL once the SD card is free
@@ -122,12 +133,17 @@ impl Server {
         if let Some(i) = self.cias.iter().position(|c| c.path == path) {
             self.cia_sel = i;
             self.last_wake = sys::now_ms();
-            self.start_install();
+            self.start_install(false);
         }
     }
 
     pub fn installing(&self) -> bool {
         self.inst.is_some()
+    }
+
+    /// a second A press on `path` would install it
+    fn asked_install(&self, path: &str) -> bool {
+        self.asked(&install_key(path))
     }
 
     pub fn cia_message(&mut self, msg: String) {
@@ -136,18 +152,22 @@ impl Server {
         self.bottom_dirty = true;
     }
 
-    pub fn start_install(&mut self) {
+    /// installs the selected Recent CIA; `by_hand` when A was pressed on it
+    pub fn start_install(&mut self, by_hand: bool) {
         if self.inst.is_some() || self.cia_sel >= self.cias.len() {
             return;
         }
         let cia = &self.cias[self.cia_sel];
         let (path, total) = (cia.path.clone(), cia.size);
-        self.install_file(&path, total);
+        self.install_file(&path, total, by_hand);
     }
 
     /// installs the CIA at `path` (a Recent or Browse file, or the downloaded
-    /// update); false when it can't start (said on the bottom screen)
-    pub fn install_file(&mut self, path: &str, total: u64) -> bool {
+    /// update); false when it can't start or waits for a second A press (said
+    /// on the bottom screen). Reinstalls and downgrades delete the installed
+    /// copy first, and system titles go to the system memory: those need A
+    /// twice, and only a press `by_hand` counts as the second one.
+    pub fn install_file(&mut self, path: &str, total: u64, by_hand: bool) -> bool {
         if self.inst.is_some() {
             return false;
         }
@@ -160,6 +180,23 @@ impl Server {
             self.cia_message("Busy: wait for the transfer to end".into());
             return false;
         }
+        let confirmed = match install_plan(path).and_then(|p| p.question(base_name(path))) {
+            None => false,
+            Some(q) if by_hand => {
+                if !self.confirm(&install_key(path), q) {
+                    return false;
+                }
+                true
+            }
+            Some(q) => {
+                // asked from afar: Recent shows the selected file, and a tab
+                // change would drop the question
+                self.menu.tab = crate::menu::Tab::Recent;
+                self.menu.view = false;
+                self.ask(&install_key(path), q);
+                return false;
+            }
+        };
         let shared = Arc::new(Shared {
             done: Mutex::new(0),
             preparing: AtomicBool::new(false),
@@ -170,7 +207,7 @@ impl Server {
         self.cia_msg.clear();
         sys::set_sleep_allowed(false); // never sleep in the middle of an install
         let (p, s) = (path.to_string(), shared.clone());
-        let started = match sys::spawn(-2, 0x30, Box::new(move || install(&p, total, &s))) {
+        let started = match sys::spawn(-2, 0x30, Box::new(move || install(&p, total, confirmed, &s))) {
             Some(t) => {
                 self.inst = Some(Install { path: path.to_string(), total, shared, thread: Some(t) });
                 self.install_result = None;
@@ -227,12 +264,50 @@ impl Server {
         if down & (sys::KEY_UP | sys::KEY_DOWN) != 0 {
             self.cia_sel = crate::menu::step(self.cia_sel, n, down & sys::KEY_UP != 0, self.menu.held);
         } else if down & sys::KEY_A != 0 {
-            self.start_install();
+            self.start_install(true);
         } else {
             return;
         }
         self.bottom_dirty = true;
     }
+}
+
+/// what a first A press asks about, kept apart from the X press on the same file
+fn install_key(path: &str) -> String {
+    format!("install {path}")
+}
+
+/// what installing a CIA would do to the console
+struct Plan {
+    nand: bool,             // a system, DSiWare or FIRM title: it goes to the system memory
+    installed: Option<u16>, // the version installed now
+    version: Option<u16>,   // the CIA's
+}
+
+impl Plan {
+    /// what a first A press asks, when the install needs a second one
+    fn question(&self, name: &str) -> Option<String> {
+        let name = util::clip(name, 24);
+        if self.nand {
+            Some(format!("Press A again to install the system title {name}"))
+        } else if !must_delete(self.installed, self.version) {
+            None
+        } else if self.installed.zip(self.version).is_some_and(|(old, new)| new < old) {
+            Some(format!("Press A again to downgrade {name}"))
+        } else {
+            Some(format!("Press A again to reinstall {name}"))
+        }
+    }
+}
+
+/// None when the file isn't a readable CIA (the install then says why)
+fn install_plan(path: &str) -> Option<Plan> {
+    let f = File::open_read(path)?;
+    let mut head = vec![0u8; 0x4000];
+    let n = f.read_at(0, &mut head)?;
+    let (id, version) = cia_title(&head[..n])?;
+    let dest = title_destination(id);
+    Some(Plan { nand: dest == sys::MEDIA_NAND, installed: sys::am_title_version(dest, id), version })
 }
 
 /// FBI fs_get_title_destination: DSiWare, system and DLP titles go to NAND
@@ -394,8 +469,8 @@ fn must_delete(installed: Option<u16>, version: Option<u16>) -> bool {
     }
 }
 
-/// the install thread
-fn install(path: &str, total: u64, shared: &Shared) {
+/// the install thread; `confirmed` when A was pressed twice for it
+fn install(path: &str, total: u64, confirmed: bool, shared: &Shared) {
     let mut r: i32 = 0;
     let mut err = "";
     let mut fail = |r: &mut i32, rc: i32, msg: &'static str| {
@@ -436,6 +511,11 @@ fn install(path: &str, total: u64, shared: &Shared) {
                     // like FBI, but only when AM needs it; Cement can't delete itself, so
                     // the same or an older version of it can't go over it
                     let delete = must_delete(sys::am_title_version(dest, id), version);
+                    // the file may have changed since it was asked about
+                    if (delete || dest == sys::MEDIA_NAND) && !confirmed {
+                        fail(&mut r, 0, "Press A twice on the 3DS to install it");
+                        break;
+                    }
                     if delete && sys::self_title() == Some((id, dest)) {
                         fail(&mut r, 0, "Use FBI to reinstall Cement");
                         break;
@@ -502,6 +582,17 @@ mod tests {
         assert!(!must_delete(Some(2), Some(3))); // update
         assert!(must_delete(Some(3), Some(3))); // reinstall
         assert!(must_delete(Some(4), Some(3))); // downgrade
+    }
+
+    #[test]
+    fn questions() {
+        let plan = |nand, installed, version| Plan { nand, installed, version };
+        assert_eq!(plan(false, None, Some(3)).question("a"), None); // new
+        assert_eq!(plan(false, Some(2), Some(3)).question("a"), None); // update
+        assert_eq!(plan(false, Some(3), Some(3)).question("a").unwrap(), "Press A again to reinstall a");
+        assert_eq!(plan(false, Some(4), Some(3)).question("a").unwrap(), "Press A again to downgrade a");
+        assert_eq!(plan(false, Some(4), None).question("a").unwrap(), "Press A again to reinstall a");
+        assert_eq!(plan(true, None, Some(3)).question("a").unwrap(), "Press A again to install the system title a");
     }
 
     #[test]

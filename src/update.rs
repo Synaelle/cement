@@ -249,7 +249,7 @@ impl Server {
         }
         if let Stage::Waiting(size) = self.update.stage {
             if self.inst.is_none() && !self.fs_busy() {
-                if self.install_file(FILE, size) {
+                if self.install_file(FILE, size, false) {
                     self.update.stage = Stage::Installing;
                 } else {
                     self.update.stage = Stage::Idle;
