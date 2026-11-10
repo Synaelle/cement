@@ -14,24 +14,25 @@
    <img src="meta/qr.png" width="160" alt="QR code for Cement.cia">
 
 2. Open it and connect to the address shown on the top screen (like `192.168.1.10:5000`) with
-   any FTP client, or with [**Baguette**](https://github.com/Synaelle/baguette) 🥖
+   any FTP client, or with [Baguette](https://github.com/Synaelle/baguette).
 
 ## On the 3DS
 
-L and R switch the bottom screen's tabs:
+L and R switch between the three tabs of the bottom screen.
 
-- **Recent**: the CIAs you sent, and those in `/`, `/cia`, `/cias` and `/fbi`
-- **Browse**: every folder of the SD card. A on an image (PNG, JPEG or BMP, like Luma's
-  screenshots) shows it on the top screen
-- **Settings**: FTP login, FTP server on or off, CIA details on the top screen, file protection,
-  screens, auto off, the look (red, Miku teal or the sharp Ficelle), the red look's colour and
-  updates. A newer Cement shows up there and A installs it. The top screen tells what the selected
-  one does
+Recent lists the CIAs you sent and the ones in `/`, `/cia`, `/cias` and `/fbi`. Browse opens every
+folder of the SD card, and A on a PNG, JPEG or BMP image (like Luma's screenshots) shows it on the
+top screen. Settings holds the FTP login, the FTP server switch, the CIA details on the top screen,
+file protection, the screens, auto off, the look and the red look's colour. Red is the default
+look, with Miku teal and the sharper Ficelle next to it. Settings also shows when a newer Cement is
+out, and A installs it. The top screen explains the selected setting.
 
 The top screen shows the selected CIA's icon, title and version, and whether it's new or an update.
-A installs it (and deletes the file once it's installed). X deletes the selected file or folder,
-pressed twice. `/Nintendo 3DS`, `/boot.firm`, `/luma`, `/gm9` and `/boot.3dsx` can't be deleted
-while "Protect important 3DS files" is on.
+A installs it and deletes the file once it's installed. A reinstall, a downgrade or a system title
+asks for a second press of A first. A PC can't install system titles, and a reinstall or downgrade
+it starts waits for A on the 3DS. X deletes the selected file or folder when pressed twice. While
+"Protect important 3DS files" is on, `/Nintendo 3DS`, `/boot.firm`, `/luma`, `/gm9` and
+`/boot.3dsx` can't be deleted.
 
 With no login set, anyone on your Wi-Fi can connect. The password isn't kept on the SD card, only a
 salted hash of it.
@@ -64,10 +65,10 @@ through.
 
 ## Credits
 
-Fonts: [Fredoka](https://github.com/hafontia/Fredoka-One),
+The fonts are [Fredoka](https://github.com/hafontia/Fredoka-One),
 [Nunito](https://github.com/googlefonts/nunito) and
-[Hanken Grotesk](https://github.com/marcologous/hanken-grotesk) (SIL Open Font License). Button
-glyphs: [Input Prompts](https://kenney.nl/assets/input-prompts) by Kenney (CC0).
+[Hanken Grotesk](https://github.com/marcologous/hanken-grotesk), under the SIL Open Font License.
+The button glyphs are Kenney's [Input Prompts](https://kenney.nl/assets/input-prompts) (CC0).
 
 ## License
 
