@@ -28,9 +28,12 @@ fn within(a: &str, b: &str) -> bool {
 }
 
 /// Some(why) when deleting this path would hit a protected one (the path
-/// itself, something inside one, or a folder holding one)
+/// itself, something inside one, or a folder holding one). The path is
+/// normalised first, so "//luma" or "/x/../luma" is still /luma; one that
+/// can't be normalised counts as the root, which holds them all.
 pub fn delete(path: &str) -> Option<String> {
-    let path = if path.is_empty() { "/" } else { path };
+    let path = crate::util::resolve_path("/", path.as_bytes()).unwrap_or_else(|| "/".to_string());
+    let path = path.as_str();
     let free = FREE.iter().any(|f| within(path, f));
     PATHS
         .iter()
@@ -57,5 +60,8 @@ mod tests {
         assert!(delete("/luma/screenshots").is_none(), "Luma's screenshots stay free");
         assert!(delete("/luma/screenshots/top.bmp").is_none());
         assert!(delete("/luma/dumps/arm11/crash.dmp").is_none(), "and its crash dumps");
+        assert!(delete("//luma").is_some() && delete("/./luma").is_some() && delete("/x/../luma").is_some());
+        assert!(delete("/luma/screenshots/../config.ini").is_some(), "out of a free folder again");
+        assert!(delete("").is_some(), "the root");
     }
 }
