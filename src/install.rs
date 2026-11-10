@@ -367,6 +367,14 @@ fn cia_sections(h: &[u8]) -> Option<([usize; 5], u64)> {
     Some(([word(0), word(2), word(3), word(4), word(5)], content))
 }
 
+/// the size of a complete CIA: its sections end to end, each 64-byte aligned
+/// but the last one
+fn cia_size(h: &[u8]) -> Option<u64> {
+    let (sizes, content) = cia_sections(h)?;
+    let align = |v: u64| (v + 0x3F) & !0x3F;
+    Some(sizes[..4].iter().map(|&s| align(s as u64)).sum::<u64>() + align(content) + sizes[4] as u64)
+}
+
 /// UTF-16LE up to the first 0; None when the font can't draw it (Latin-1 only)
 fn utf16(b: &[u8]) -> Option<String> {
     let units = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&u| u != 0);
@@ -503,6 +511,11 @@ fn install(path: &str, total: u64, confirmed: bool, shared: &Shared) {
                         break;
                     };
                     title = id;
+                    // an interrupted upload: nothing installed may go for it
+                    if cia_size(&buf[..n]).is_none_or(|size| total < size) {
+                        fail(&mut r, 0, "The file is incomplete: send it again");
+                        break;
+                    }
                     let dest = title_destination(id);
                     if sys::is_new3ds() == Some(false) && (id >> 28) & 0xF == 2 {
                         fail(&mut r, 0, "This title is for New 3DS only");
@@ -593,6 +606,17 @@ mod tests {
         assert_eq!(plan(false, Some(4), Some(3)).question("a").unwrap(), "Press A again to downgrade a");
         assert_eq!(plan(false, Some(4), None).question("a").unwrap(), "Press A again to reinstall a");
         assert_eq!(plan(true, None, Some(3)).question("a").unwrap(), "Press A again to install the system title a");
+    }
+
+    #[test]
+    fn sizes() {
+        let mut h = [0u8; 0x20];
+        for (i, v) in [0x2020u32, 0, 0xA00, 0x350, 0xB34, 0x3AC0].iter().enumerate() {
+            h[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        h[0x18..0x20].copy_from_slice(&0x14_7400u64.to_le_bytes());
+        assert_eq!(cia_size(&h), Some(1_370_048)); // a Cement.cia, exactly its file size
+        assert_eq!(cia_size(&h[..0x10]), None);
     }
 
     #[test]
