@@ -220,7 +220,8 @@ mod tests {
         assert!(check_pass(&h, " two words "));
         assert!(!check_pass(&h, "two words") && !check_pass(&h, ""));
         assert!(!check_pass("plain", "plain"), "only hashes are accepted");
-        let other = format!("sha256:10:salt:{}", stretch("salt", "pw", 10));
+        let salt = h.split(':').nth(2).unwrap();
+        let other = format!("sha256:10:{salt}:{}", stretch(salt, "pw", 10));
         assert!(check_pass(&other, "pw"), "a hash made with other rounds still works");
         assert!(!check_pass("sha256:0:salt:x", "pw") && !check_pass("sha256:-1:salt:x", "pw"));
     }
