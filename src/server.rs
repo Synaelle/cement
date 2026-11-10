@@ -570,7 +570,13 @@ impl Server {
                 Kind::Pasv(i) => {
                     let s = &mut self.sess[i];
                     if s.pasv == Some(p.fd) {
-                        if let Some((fd, _)) = net::accept(p.fd) {
+                        // only from the client's own address: anyone else could
+                        // take the next port and the data with it
+                        if let Some((fd, peer)) = net::accept(p.fd) {
+                            if peer != s.peer {
+                                net::close(fd);
+                                continue;
+                            }
                             close_now(&mut s.pasv);
                             close_now(&mut s.data);
                             s.data = Some(fd);
