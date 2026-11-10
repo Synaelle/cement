@@ -253,11 +253,11 @@ impl Server {
     fn ask_delete(&mut self, path: String, dir: bool) {
         let name = base_name(&path).to_string();
         self.bottom_dirty = true;
-        if self.prefs.protect {
-            if let Some(why) = protect::delete(&path) {
-                self.cia_message(why);
-                return;
-            }
+        if self.prefs.protect
+            && let Some(why) = protect::delete(&path)
+        {
+            self.cia_message(why);
+            return;
         }
         let inside = |p: &str| p == path || (dir && p.starts_with(&format!("{}/", path.trim_end_matches('/'))));
         if self.inst.as_ref().is_some_and(|i| inside(&i.path)) || self.inst_queue.as_deref().is_some_and(inside) {

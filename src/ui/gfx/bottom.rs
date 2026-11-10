@@ -251,7 +251,7 @@ impl Server {
         // the update's progress shows in Settings too, where it was started
         let tag = self.update.latest.as_deref().unwrap_or("");
         let card = if let Some((done, total)) = self.update.progress() {
-            let pct = if total != 0 { done * 100 / total } else { 0 };
+            let pct = (done * 100).checked_div(total).unwrap_or(0);
             Some(CardText {
                 title: format!("Downloading Cement {tag}"),
                 value: if total != 0 { format!("{pct}%") } else { String::new() },
@@ -276,28 +276,28 @@ impl Server {
         };
         let mut cards: Vec<CardText> = card.into_iter().collect();
         let is_update = self.inst.as_ref().is_some_and(|i| i.path == update::FILE);
-        if self.menu.tab != Tab::Settings || is_update {
-            if let Some(inst) = &self.inst {
-                let done = *inst.shared.done.lock().unwrap();
-                let pct = if inst.total != 0 { done * 100 / inst.total } else { 0 };
-                let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
-                let card = CardText {
-                    title: if is_update {
-                        format!("Installing Cement {tag}")
-                    } else {
-                        format!("Installing {}", base_name(&inst.path))
-                    },
-                    value: if preparing { String::new() } else { format!("{pct}%") },
-                    frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
-                    detail: if preparing {
-                        "Preparing... removing the old copy".into()
-                    } else {
-                        format!("{} of {}", format_size(done), format_size(inst.total))
-                    },
-                    right: String::new(),
-                };
-                cards.push(card);
-            }
+        if (self.menu.tab != Tab::Settings || is_update)
+            && let Some(inst) = &self.inst
+        {
+            let done = *inst.shared.done.lock().unwrap();
+            let pct = (done * 100).checked_div(inst.total).unwrap_or(0);
+            let preparing = inst.shared.preparing.load(std::sync::atomic::Ordering::Relaxed);
+            let card = CardText {
+                title: if is_update {
+                    format!("Installing Cement {tag}")
+                } else {
+                    format!("Installing {}", base_name(&inst.path))
+                },
+                value: if preparing { String::new() } else { format!("{pct}%") },
+                frac: (inst.total != 0 && !preparing).then(|| done as f32 / inst.total as f32),
+                detail: if preparing {
+                    "Preparing... removing the old copy".into()
+                } else {
+                    format!("{} of {}", format_size(done), format_size(inst.total))
+                },
+                right: String::new(),
+            };
+            cards.push(card);
         }
         cards
     }

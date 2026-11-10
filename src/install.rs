@@ -393,7 +393,7 @@ fn cia_size(h: &[u8]) -> Option<u64> {
 
 /// UTF-16LE up to the first 0; None when the font can't draw it (Latin-1 only)
 fn utf16(b: &[u8]) -> Option<String> {
-    let units = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&u| u != 0);
+    let units = b.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&u| u != 0);
     let s: String = char::decode_utf16(units).collect::<Result<_, _>>().ok()?;
     let s = s.trim().to_string();
     (!s.is_empty() && s.chars().all(|c| (c as u32) < 0x100 && !c.is_control())).then_some(s)
@@ -404,7 +404,7 @@ fn utf16(b: &[u8]) -> Option<String> {
 fn icon(raw: &[u8]) -> Vec<u32> {
     const N: usize = 48;
     let mut src = vec![[0f32; 3]; N * N];
-    for (i, px) in raw.chunks_exact(2).take(N * N).enumerate() {
+    for (i, px) in raw.as_chunks::<2>().0.iter().take(N * N).enumerate() {
         let v = u16::from_le_bytes([px[0], px[1]]) as u32;
         let (tile, k) = (i / 64, i % 64);
         let x = (tile % (N / 8)) * 8 + ((k & 1) | ((k >> 1) & 2) | ((k >> 2) & 4));
@@ -587,10 +587,10 @@ fn install(path: &str, total: u64, confirmed: bool, shared: &Shared) {
             match am.finish() {
                 Err(rc) => fail(&mut r, rc, "Install could not finish"),
                 Ok(()) => {
-                    if title & 0xFFF_FFFF == 0x2 {
-                        if let Err(rc) = sys::am_install_firm(title) {
-                            fail(&mut r, rc, "FIRM install failed");
-                        }
+                    if title & 0xFFF_FFFF == 0x2
+                        && let Err(rc) = sys::am_install_firm(title)
+                    {
+                        fail(&mut r, rc, "FIRM install failed");
                     }
                 }
             }

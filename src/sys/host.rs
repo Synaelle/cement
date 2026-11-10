@@ -216,7 +216,9 @@ pub fn set_sleep_allowed(allowed: bool) {
 // ---------------------------------------------------------------------------
 // APT: closing the lid is simulated with the sleep flag file
 
-static mut HANDLER: Option<(fn(AptEvent, *mut c_void), *mut c_void)> = None;
+type AptHandler = fn(AptEvent, *mut c_void);
+
+static mut HANDLER: Option<(AptHandler, *mut c_void)> = None;
 
 pub fn apt_hook(f: fn(AptEvent, *mut c_void), param: *mut c_void) {
     unsafe { HANDLER = Some((f, param)) }
@@ -228,16 +230,16 @@ pub fn apt_unhook() {
 
 pub fn apt_main_loop() -> bool {
     let flag = env("CEMENT_SLEEPFLAG").unwrap_or_else(|| "sleep.flag".into());
-    if let Some((f, param)) = unsafe { HANDLER } {
-        if fs::metadata(&flag).is_ok() {
-            eprintln!("[shim] sleeping");
-            f(AptEvent::Sleep, param);
-            while fs::metadata(&flag).is_ok() {
-                sleep_ms(50);
-            }
-            eprintln!("[shim] woke up");
-            f(AptEvent::Wakeup, param);
+    if let Some((f, param)) = unsafe { HANDLER }
+        && fs::metadata(&flag).is_ok()
+    {
+        eprintln!("[shim] sleeping");
+        f(AptEvent::Sleep, param);
+        while fs::metadata(&flag).is_ok() {
+            sleep_ms(50);
         }
+        eprintln!("[shim] woke up");
+        f(AptEvent::Wakeup, param);
     }
     true
 }

@@ -254,14 +254,15 @@ impl Server {
                 self.update_spawn(Kind::Check, api);
             }
         }
-        if let Stage::Waiting(size) = self.update.stage {
-            if self.inst.is_none() && !self.fs_busy() {
-                if self.install_file(FILE, size, false) {
-                    self.update.stage = Stage::Installing;
-                } else {
-                    self.update.stage = Stage::Idle;
-                    sys::delete_file(FILE);
-                }
+        if let Stage::Waiting(size) = self.update.stage
+            && self.inst.is_none()
+            && !self.fs_busy()
+        {
+            if self.install_file(FILE, size, false) {
+                self.update.stage = Stage::Installing;
+            } else {
+                self.update.stage = Stage::Idle;
+                sys::delete_file(FILE);
             }
         }
     }

@@ -65,8 +65,11 @@ const ICONS: &[(&str, &str, usize)] = &[
     ("BTN_R", "switch_button_r.svg", 15),
 ];
 
-/// the filled paths of a Kenney SVG: (fill colour, outlines as closed polygons)
-fn svg_paths(svg: &str) -> Vec<(u32, Vec<Vec<(f32, f32)>>)> {
+/// closed polygons, each a list of points
+type Outlines = Vec<Vec<(f32, f32)>>;
+
+/// the filled paths of a Kenney SVG: (fill colour, outlines)
+fn svg_paths(svg: &str) -> Vec<(u32, Outlines)> {
     let attr = |tag: &str, name: &str| -> Option<String> {
         let at = tag.find(&format!(" {name}=\""))? + name.len() + 3;
         Some(tag[at..at + tag[at..].find('"')?].to_string())

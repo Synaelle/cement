@@ -272,13 +272,13 @@ impl Untar {
                 }
                 State::Data => {
                     let n = (self.left.min(data.len() as u64)) as usize;
-                    if let Some(f) = &self.file {
-                        if f.write_at(self.off, &data[..n]) != Some(n) {
-                            self.file = None;
-                            sys::delete_file(&self.path);
-                            let name = self.current.clone();
-                            self.error(&name);
-                        }
+                    if let Some(f) = &self.file
+                        && f.write_at(self.off, &data[..n]) != Some(n)
+                    {
+                        self.file = None;
+                        sys::delete_file(&self.path);
+                        let name = self.current.clone();
+                        self.error(&name);
                     }
                     self.off += n as u64;
                     self.left -= n as u64;

@@ -8,6 +8,11 @@ license = "AGPL-3.0-or-later"
 # Built for the 3DS with `cargo 3ds build --release` (see the Makefile); built
 # for a PC (`cargo build --release`) it is a test server that plays the 3DS.
 
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+# the drawing functions take a position, a size, a palette and what to draw
+too_many_arguments = "allow"
+
 [build-dependencies]
 fontdue = "0.9" # rasterises assets/fonts into glyph atlases (build.rs)
 

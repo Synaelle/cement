@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(resolve_path("/", b"a\r\nb"), None);
         let long = "x".repeat(PATH_SIZE);
         assert_eq!(resolve_path("/", long.as_bytes()), None);
-        assert_eq!(resolve_path("/", long[..PATH_SIZE - 2].as_bytes()).map(|p| p.len()), Some(PATH_SIZE - 1));
+        assert_eq!(resolve_path("/", &long.as_bytes()[..PATH_SIZE - 2]).map(|p| p.len()), Some(PATH_SIZE - 1));
     }
 
     #[test]

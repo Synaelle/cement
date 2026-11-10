@@ -13,7 +13,10 @@ pub enum Io {
     Failed,
 }
 
+// short on Linux, int on the 3DS
+#[allow(clippy::unnecessary_cast)]
 pub const POLL_IN: i16 = libc::POLLIN as i16;
+#[allow(clippy::unnecessary_cast)]
 pub const POLL_OUT: i16 = libc::POLLOUT as i16;
 
 #[derive(Clone, Copy)]
@@ -135,6 +138,7 @@ pub fn close(fd: Sock) {
 }
 
 /// < 0: the network went away
+#[allow(clippy::unnecessary_cast)] // revents: short on Linux, int on the 3DS
 pub fn poll(fds: &mut [PollFd], timeout_ms: i32) -> i32 {
     let mut raw: Vec<libc::pollfd> =
         fds.iter().map(|p| libc::pollfd { fd: p.fd, events: p.events as _, revents: 0 }).collect();

@@ -101,9 +101,13 @@ fn jpeg(data: Vec<u8>) -> Result<(Raw, (u32, u32)), String> {
     drop(d);
     let px = match fmt {
         Some(jpeg_decoder::PixelFormat::L8) => pixels.iter().map(|&l| rgb(l, l, l)).collect(),
-        Some(jpeg_decoder::PixelFormat::RGB24) => pixels.chunks_exact(3).map(|p| rgb(p[0], p[1], p[2])).collect(),
+        Some(jpeg_decoder::PixelFormat::RGB24) => {
+            pixels.as_chunks::<3>().0.iter().map(|p| rgb(p[0], p[1], p[2])).collect()
+        }
         Some(jpeg_decoder::PixelFormat::CMYK32) => pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| {
                 let k = 255 - p[3] as u32;
                 let c = |v: u8| ((255 - v as u32) * k / 255) as u8;
@@ -181,7 +185,7 @@ fn fit(raw: Raw) -> (usize, usize, Vec<u32>) {
                     (r, g, b, n) = (r + (p >> 16), g + ((p >> 8) & 255), b + (p & 255), n + 1);
                 }
             }
-            px.push((r / n) << 16 | (g / n) << 8 | b / n);
+            px.push((r / n) << 16 | (g / n) << 8 | (b / n));
         }
     }
     (w, h, px)

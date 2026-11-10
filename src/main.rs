@@ -192,10 +192,10 @@ impl Server {
     /// cached: asked for on every transfer and status
     pub fn battery(&mut self) -> Battery {
         let now = sys::now_ms();
-        if let Some((at, b)) = self.battery_cache {
-            if now - at < 2000 {
-                return b;
-            }
+        if let Some((at, b)) = self.battery_cache
+            && now - at < 2000
+        {
+            return b;
         }
         let b = Battery {
             percent: sys::battery_percent().map_or(-1, |v| v as i32),
