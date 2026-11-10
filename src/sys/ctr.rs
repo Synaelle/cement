@@ -340,6 +340,11 @@ pub fn update_urls(api: &str, download: &str) -> Option<(String, String)> {
     Some((api.into(), download.into()))
 }
 
+/// the key the release's checksums are signed with
+pub fn update_key(release: [u8; 32]) -> [u8; 32] {
+    release
+}
+
 /// the version the update check compares with
 pub fn app_version() -> String {
     crate::VERSION.into()

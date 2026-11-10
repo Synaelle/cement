@@ -4,6 +4,9 @@
 // for the latest release. A newer one shows in Settings' Updates row (which
 // also turns the check off), where A streams its Cement.cia to the SD card and
 // installs it with the usual install code (install.rs), which deletes it after.
+// The release's SHA256SUMS is checked against its Ed25519 signature first, and
+// the download against SHA256SUMS, so only what the release workflow built and
+// signed is installed.
 // The installed title is Cement itself at a newer title version, so the 3DS
 // takes it over the running copy; it runs once Cement is restarted.
 
@@ -12,12 +15,17 @@ use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use ring::{digest, signature};
+
 use crate::http::{self, Fail};
 use crate::sys::{self, File};
 use crate::{Server, battery_low};
 
 const API: &str = "https://api.github.com/repos/Synaelle/cement/releases/latest";
 const DOWNLOAD: &str = "https://github.com/Synaelle/cement/releases/download/{tag}/Cement.cia";
+
+/// the public half of the key the release workflow signs SHA256SUMS with
+const RELEASE_KEY: &str = "18d787177065e96304292b13b2ee55dcc840912731f0caad59bbb60ce3320b67";
 
 /// where the download goes (not one of the folders Recent lists)
 pub const FILE: &str = "/3ds/cement/update.cia";
@@ -155,8 +163,39 @@ fn check(url: &str, s: &Shared) -> Outcome {
     }
 }
 
-/// the download thread: the CIA streamed into FILE
+/// a small release file next to the CIA (SHA256SUMS and its signature)
+fn fetch_small(url: &str, s: &Shared) -> Result<Vec<u8>, String> {
+    let mut body = http::get(url, "application/octet-stream", &s.sock).map_err(|f| match f {
+        Fail::Status(404) => "the release isn't signed".to_string(),
+        f => why(f),
+    })?;
+    let mut data = Vec::new();
+    body.by_ref().take(4096).read_to_end(&mut data).map_err(|_| "connection lost".to_string())?;
+    Ok(data)
+}
+
+/// Cement.cia's SHA-256 from SHA256SUMS, once its signature checks out
+fn signed_hash(url: &str, s: &Shared) -> Result<[u8; 32], String> {
+    let base = &url[..url.rfind('/').ok_or("bad answer")? + 1];
+    let sums = fetch_small(&format!("{base}SHA256SUMS"), s)?;
+    let sig = fetch_small(&format!("{base}SHA256SUMS.sig"), s)?;
+    let key = sys::update_key(crate::hash::unhex32(RELEASE_KEY).ok_or("bad key")?);
+    signature::UnparsedPublicKey::new(&signature::ED25519, key)
+        .verify(&sums, &sig)
+        .map_err(|_| "the release's signature doesn't match")?;
+    String::from_utf8_lossy(&sums)
+        .lines()
+        .find_map(|l| l.strip_suffix("  Cement.cia").and_then(crate::hash::unhex32))
+        .ok_or_else(|| "Cement.cia isn't in the signed list".to_string())
+}
+
+/// the download thread: the CIA streamed into FILE, checked against the
+/// release's signed checksums
 fn download(url: &str, s: &Shared) -> Outcome {
+    let expected = match signed_hash(url, s) {
+        Ok(h) => h,
+        Err(why) => return Outcome::Failed(why),
+    };
     let mut body = match http::get(url, "application/octet-stream", &s.sock) {
         Ok(b) => b,
         Err(f) => return Outcome::Failed(why(f)),
@@ -176,6 +215,7 @@ fn download(url: &str, s: &Shared) -> Outcome {
     };
     let mut buf = vec![0u8; 64 * 1024];
     let mut off = 0u64;
+    let mut hash = digest::Context::new(&digest::SHA256);
     loop {
         // whole buffers: fewer, bigger SD card writes
         let mut n = 0;
@@ -195,13 +235,20 @@ fn download(url: &str, s: &Shared) -> Outcome {
         if f.write_at(off, &buf[..n]) != Some(n) {
             return Outcome::Failed("SD card write error".into());
         }
+        hash.update(&buf[..n]);
         off += n as u64;
         *s.done.lock().unwrap() = off;
     }
     if !f.flush() {
         return Outcome::Failed("SD card write error".into());
     }
-    if off != total { Outcome::Failed("connection lost".into()) } else { Outcome::Saved(total) }
+    if off != total {
+        Outcome::Failed("connection lost".into())
+    } else if hash.finish().as_ref() != expected {
+        Outcome::Failed("the download doesn't match the release".into())
+    } else {
+        Outcome::Saved(total)
+    }
 }
 
 impl Server {

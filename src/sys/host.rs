@@ -284,6 +284,12 @@ pub fn update_urls(_api: &str, download: &str) -> Option<(String, String)> {
     Some((env("CEMENT_UPDATE_URL")?, env("CEMENT_UPDATE_DOWNLOAD").unwrap_or_else(|| download.into())))
 }
 
+/// CEMENT_UPDATE_KEY (64 hex digits) stands in for the release key, so tests
+/// can sign with their own
+pub fn update_key(release: [u8; 32]) -> [u8; 32] {
+    env("CEMENT_UPDATE_KEY").and_then(|k| crate::hash::unhex32(&k)).unwrap_or(release)
+}
+
 pub fn app_version() -> String {
     env("CEMENT_UPDATE_VERSION").unwrap_or_else(|| crate::VERSION.into())
 }

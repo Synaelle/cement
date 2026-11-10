@@ -22,6 +22,8 @@ jpeg-decoder = { version = "0.3", default-features = false } # no rayon threads
 # the update check and download over HTTPS (http.rs): ring for the crypto, Mozilla's roots
 rustls = { version = "0.23", default-features = false, features = ["std", "ring"] } # TLS 1.3 only, as GitHub serves
 webpki-roots = "1"
+# Ed25519 for the release's signed checksums (update.rs), the same ring rustls uses
+ring = { version = "0.17", default-features = false }
 
 [target.'cfg(target_os = "horizon")'.dependencies]
 ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" } # pinned by Cargo.lock
