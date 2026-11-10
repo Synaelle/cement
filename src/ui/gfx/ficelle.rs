@@ -561,7 +561,7 @@ impl Server {
                     let k = &HANKEN_SEMI_12;
                     match note {
                         Some(UpdateNote::Out(tag)) => {
-                            c.text_right(k, r, mid(k, cy), &format!("{tag} is out"), pal.accent)
+                            c.text_right(k, r, mid(k, cy), &format!("{tag} is out"), pal.highlight)
                         }
                         Some(UpdateNote::Restart) => c.text_right(v, r, mid(v, cy), "restart Cement", ink),
                         Some(UpdateNote::Updating) => c.text_right(v, r, mid(v, cy), "updating...", ink),

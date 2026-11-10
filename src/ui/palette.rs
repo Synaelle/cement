@@ -96,7 +96,7 @@ const MIKU: Palette = Palette {
 const RED: Palette = Palette {
     accent: DEFAULT_ACCENT,
     on_accent: 0x140b09, // dark: white on this red is too faint
-    highlight: DEFAULT_ACCENT,
+    highlight: 0xe86a5e, // the accent made lighter, for small text on the track and selection
     soft: 0xe6dfd8,
     bg: 0x0e0d0d,
     blob: 0x161414,
@@ -138,6 +138,12 @@ fn from_hsl(h: f64, s: f64, l: f64) -> Color {
         ((v * 255.0).round() as u32).min(255)
     };
     f(0.0) << 16 | f(8.0) << 8 | f(4.0)
+}
+
+/// the WCAG contrast ratio of two colours, 1 to 21
+pub fn contrast(a: Color, b: Color) -> f64 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
 /// WCAG relative luminance
@@ -235,6 +241,8 @@ mod tests {
                 assert!((a - b).abs() <= 0.01 + 0.03 * b, "{name}: {got:06x} vs {want:06x}");
             }
             assert!(Palette::for_accent(Theme::Miku, c) == Palette::for_accent(Theme::Miku, DEFAULT_ACCENT));
+            // small text in the highlight, on the track and the selection
+            assert!(contrast(p.highlight, p.track) >= 4.5 && contrast(p.highlight, p.selected) >= 4.5, "{name}");
         }
     }
 }

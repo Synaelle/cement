@@ -11,7 +11,7 @@ use crate::Server;
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
 use crate::picture::is_image;
 use crate::ui::Bottom;
-use crate::ui::palette::{PRESETS, Palette, Theme};
+use crate::ui::palette::{PRESETS, Palette, Theme, contrast};
 use crate::update::{self, Stage};
 use crate::util::{base_name, format_size, is_cia};
 
@@ -40,7 +40,13 @@ fn toggle(c: &mut Canvas, right: f32, cy: f32, on: bool, pal: &Palette) {
     let (x, y) = (right - w, (cy - h / 2.0).round());
     c.pill(x, y, w, h, if on { pal.accent } else { pal.track });
     let kx = if on { x + w - 7.0 } else { x + 7.0 };
-    c.circle(kx, y + 7.0, 5.0, if on { WHITE } else { pal.dim });
+    // a white knob on a light accent (Miku's teal) gets a dark edge to stand out
+    if on && contrast(WHITE, pal.accent) < 3.0 {
+        c.circle(kx, y + 7.0, 5.5, pal.on_accent);
+        c.circle(kx, y + 7.0, 4.5, WHITE);
+    } else {
+        c.circle(kx, y + 7.0, 5.0, if on { WHITE } else { pal.dim });
+    }
 }
 
 /// a list row: the selected one has a border and is 2 px taller
