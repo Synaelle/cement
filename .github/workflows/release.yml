@@ -2,7 +2,8 @@ name: release
 
 # A pushed v* tag first opens a draft release named after the version (the
 # notes are written by hand while it builds), then builds Cement.cia and
-# Cement.3dsx into it, and makes it public once both are on it.
+# Cement.3dsx into it with their signed checksums, and makes it public once
+# all of them are on it.
 on:
   push:
     tags: ["v*"]
@@ -104,10 +105,28 @@ jobs:
           title="$((v >> 10)).$(((v >> 4) & 63)).$((v & 15))"
           [ "$title" = "$VERSION" ] || { echo "CIA title version $title, not $VERSION" >&2; exit 1; }
 
+      - name: Sign the checksums
+        env:
+          SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          # the public half Baguette checks the signature with
+          PUBLIC_KEY: 18d787177065e96304292b13b2ee55dcc840912731f0caad59bbb60ce3320b67
+        run: |
+          [ -n "$SIGNING_KEY" ] || { echo "the RELEASE_SIGNING_KEY secret is missing" >&2; exit 1; }
+          key="$RUNNER_TEMP/key.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$SIGNING_KEY" > "$key")
+          # a wrong key in the secret fails here, not in Baguette
+          public=$(openssl pkey -in "$key" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+          [ "$public" = "$PUBLIC_KEY" ] || { echo "the signing key doesn't match the public key" >&2; exit 1; }
+          sha256sum Cement.cia Cement.3dsx > SHA256SUMS
+          openssl pkeyutl -sign -inkey "$key" -rawin -in SHA256SUMS -out SHA256SUMS.sig
+          [ "$(wc -c < SHA256SUMS.sig)" -eq 64 ] || { echo "the signature isn't 64 bytes" >&2; exit 1; }
+          cat SHA256SUMS
+
       - name: Upload to the draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" Cement.cia Cement.3dsx --clobber
+        run: gh release upload "$GITHUB_REF_NAME" Cement.cia Cement.3dsx SHA256SUMS SHA256SUMS.sig --clobber
 
   publish:
     needs: build
@@ -116,12 +135,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Publish once both files are on it
+      - name: Publish once all files are on it
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
-          for f in Cement.cia Cement.3dsx; do
+          for f in Cement.cia Cement.3dsx SHA256SUMS SHA256SUMS.sig; do
             grep -qx "$f" <<< "$assets" || { echo "$f is missing from the release" >&2; exit 1; }
           done
           gh release edit "$GITHUB_REF_NAME" --draft=false
