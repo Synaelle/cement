@@ -7,11 +7,13 @@ pub const PATH_SIZE: usize = 1024;
 /// Resolves `arg` against `cwd` into an absolute, normalized SD card path ("/", "/a/b").
 /// ".." can't climb above "/", and only the SD card archive is ever opened, so
 /// nothing outside the SD card is reachable. None for a path that can't exist
-/// on the SD card (a backslash, invalid UTF-8, too long).
+/// on the SD card (a backslash, a control character, invalid UTF-8, too long).
 pub fn resolve_path(cwd: &str, arg: &[u8]) -> Option<String> {
     let arg = std::str::from_utf8(arg).ok()?;
-    if arg.contains('\\') {
-        return None; // not a valid name character on the SD card
+    // not valid in names on the SD card; a NUL would also cut the path short
+    // where the file service reads it
+    if arg.chars().any(|c| c == '\\' || c.is_control()) {
+        return None;
     }
     let joined = if arg.starts_with('/') { arg.to_string() } else { format!("{cwd}/{arg}") };
     let mut out = String::new();
@@ -120,6 +122,8 @@ mod tests {
         assert_eq!(resolve_path("/a/b", b"/c").as_deref(), Some("/c"), "absolute: the folder doesn't matter");
         assert_eq!(resolve_path("/a", b"..").as_deref(), Some("/"));
         assert_eq!(resolve_path("/", b"\xff"), None, "not UTF-8");
+        assert_eq!(resolve_path("/", b"a\0b"), None);
+        assert_eq!(resolve_path("/", b"a\r\nb"), None);
         let long = "x".repeat(PATH_SIZE);
         assert_eq!(resolve_path("/", long.as_bytes()), None);
         assert_eq!(resolve_path("/", long[..PATH_SIZE - 2].as_bytes()).map(|p| p.len()), Some(PATH_SIZE - 1));
