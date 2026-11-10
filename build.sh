@@ -43,13 +43,17 @@ if [ -z "${DEVKITARM:-}" ]; then
 	cache=${XDG_CACHE_HOME:-$HOME/.cache}/cement/devkitpro
 	if [ ! -x "$cache/tools/bin/3dsxtool" ] || [ ! -d "$cache/devkitARM" ] || [ "$(cat "$cache/.image" 2>/dev/null)" != "$IMAGE" ]; then
 		command -v docker >/dev/null || { echo "install devkitPro (set DEVKITARM) or Docker for the 3DS build" >&2; exit 1; }
-		echo "copying devkitARM out of $IMAGE to $cache"
+		echo "copying devkitARM out of $IMAGE to $cache (a few minutes, about 600 MB)"
 		mkdir -p "$(dirname "$cache")"
-		rm -rf "$cache" "$cache.part"
+		rm -rf "$cache" "$cache.part" "$cache.tar"
 		id=$(docker create "$IMAGE")
-		mkdir -p "$cache.part" # complete copies only; streamed as tar because
-		docker cp "$id:/opt/devkitpro/." - | tar -x -C "$cache.part" # one symlink points outside
-		docker rm "$id" >/dev/null
+		trap 'docker rm "$id" >/dev/null 2>&1 || true; rm -f "$cache.tar"' EXIT
+		# taken as a tar (one symlink points outside the folder), each step
+		# checked, into a folder that only becomes the cache once complete
+		docker cp "$id:/opt/devkitpro/." - > "$cache.tar"
+		echo "unpacking $(du -h "$cache.tar" | cut -f1)"
+		mkdir -p "$cache.part"
+		tar -x -C "$cache.part" -f "$cache.tar"
 		echo "$IMAGE" > "$cache.part/.image"
 		mv "$cache.part" "$cache"
 	fi
