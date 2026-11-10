@@ -24,6 +24,7 @@ const DATA_TIMEOUT: u64 = 15_000; // ms to wait for the data connection
 const IDLE_TIMEOUT: u64 = 300_000; // ms without any command before dropping a client
 const WRONG_PASS_MS: u64 = 1000; // after a wrong password, no other is checked for this long
 const MAX_WRONG_PASS: u8 = 3; // wrong passwords before a connection is closed
+const MAX_OUT: usize = 64 * 1024; // unsent replies before a client is dropped
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -170,6 +171,7 @@ pub struct Session {
     data: Option<Sock>,
     pub peer: u32, // client IP: one PC opens several connections
     cmd: Vec<u8>,
+    out: Vec<u8>, // replies the control socket hasn't taken yet
     cwd: String,
     rnfr: String,
     rest: u64,
@@ -215,6 +217,7 @@ impl Session {
             data: None,
             peer: 0,
             cmd: Vec::new(),
+            out: Vec::new(),
             cwd: "/".into(),
             rnfr: String::new(),
             rest: 0,
@@ -250,26 +253,36 @@ impl Session {
         self.ctrl.is_some() && (self.mode == Mode::Stor || self.mode == Mode::Retr || self.batch_files != 0)
     }
 
+    /// queued after any earlier reply and sent as far as the socket takes it
+    /// now; the rest goes when the socket can take more (serve), so a slow
+    /// client never holds up the main loop
     pub fn reply(&mut self, text: &str) {
+        if self.ctrl.is_none() {
+            return;
+        }
+        self.out.extend_from_slice(text.as_bytes());
+        self.send_out();
+    }
+
+    fn send_out(&mut self) {
         let Some(ctrl) = self.ctrl else { return };
-        let bytes = text.as_bytes();
-        let (mut sent, mut tries) = (0, 0);
-        while sent < bytes.len() {
-            match net::send(ctrl, &bytes[sent..]) {
-                Io::Done(n) => sent += n,
-                Io::WouldBlock if {
-                    tries += 1;
-                    tries < 50
-                } =>
-                {
-                    let mut p = [PollFd { fd: ctrl, events: POLL_OUT, revents: 0 }];
-                    net::poll(&mut p, 100);
+        while !self.out.is_empty() {
+            match net::send(ctrl, &self.out) {
+                Io::Done(n) => {
+                    self.out.drain(..n);
                 }
+                Io::WouldBlock => break,
                 _ => {
+                    self.out.clear();
                     close_now(&mut self.ctrl);
                     return;
                 }
             }
+        }
+        // a client that stopped reading its replies
+        if self.out.len() > MAX_OUT {
+            self.out.clear();
+            close_now(&mut self.ctrl);
         }
     }
 
@@ -303,6 +316,7 @@ impl Session {
         self.logged_in = false;
         self.user.clear();
         self.wrong = 0;
+        self.out.clear();
         self.bundle = None;
         self.allo = 0;
         self.batch_files = 0;
@@ -511,7 +525,10 @@ impl Server {
             match *kind {
                 Kind::Listen => self.accept_client(),
                 Kind::Ctrl(i) => {
-                    if self.sess[i].ctrl == Some(p.fd) {
+                    if self.sess[i].ctrl == Some(p.fd) && p.revents & POLL_OUT != 0 {
+                        self.sess[i].send_out();
+                    }
+                    if self.sess[i].ctrl == Some(p.fd) && p.revents & !POLL_OUT != 0 {
                         self.read_commands(i);
                     }
                 }
@@ -576,7 +593,7 @@ impl Server {
                 s.close();
                 continue;
             }
-            add(ctrl, POLL_IN, Kind::Ctrl(i));
+            add(ctrl, if s.out.is_empty() { POLL_IN } else { POLL_IN | POLL_OUT }, Kind::Ctrl(i));
             if let Some(pasv) = s.pasv {
                 if now.saturating_sub(s.data_since) > DATA_TIMEOUT {
                     close_now(&mut s.pasv);
