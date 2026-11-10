@@ -279,8 +279,8 @@ impl Session {
         }
         self.x.drain();
         if let Some(f) = self.x.file.take() {
-            if self.x.up {
-                f.flush();
+            if self.x.up && !f.flush() {
+                self.x.err = true; // the upload may not be complete on the card
             }
         }
     }

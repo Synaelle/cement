@@ -16,7 +16,7 @@ use crate::untar::Untar;
 pub const NBUF: usize = 4;
 pub const CHUNK: usize = 256 * 1024;
 
-/// CHUNK bytes, 64-byte aligned (cache lines, like the C server's memalign)
+/// CHUNK bytes, 64-byte aligned (the ARM11's cache line size)
 pub struct Buf(*mut u8);
 
 unsafe impl Send for Buf {}

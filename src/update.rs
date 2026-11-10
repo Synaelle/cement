@@ -193,7 +193,9 @@ fn download(url: &str, s: &Shared) -> Outcome {
         off += n as u64;
         *s.done.lock().unwrap() = off;
     }
-    f.flush();
+    if !f.flush() {
+        return Outcome::Failed("SD card write error".into());
+    }
     if off != total { Outcome::Failed("connection lost".into()) } else { Outcome::Saved(total) }
 }
 

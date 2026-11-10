@@ -96,8 +96,7 @@ fn set(changes: &[(&str, Option<&str>)]) -> bool {
     sys::create_dir(DIR);
     let Some(f) = File::open_write(FILE) else { return false };
     let ok = f.write_at(0, text.as_bytes()) == Some(text.len()) && f.set_size(text.len() as u64);
-    f.flush();
-    ok
+    f.flush() && ok
 }
 
 pub struct Settings {

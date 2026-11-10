@@ -383,8 +383,8 @@ impl File {
         Some(done)
     }
 
-    pub fn flush(&self) {
-        let _ = self.0.sync_all();
+    pub fn flush(&self) -> bool {
+        self.0.sync_all().is_ok()
     }
 }
 

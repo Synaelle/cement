@@ -139,7 +139,11 @@ impl Untar {
 
     fn finish_file(&mut self) {
         if let Some(f) = self.file.take() {
-            f.flush();
+            if !f.flush() {
+                let name = self.current.clone();
+                self.error(&name);
+                return;
+            }
             self.files += 1;
             if is_cia(&self.path) {
                 self.cias.push((self.path.clone(), self.size));

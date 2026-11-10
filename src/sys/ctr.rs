@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The 3DS side of the platform layer: libctru through ctru-sys.
 
-// like the C server, the status of cleanup and best-effort calls is ignored
+// The status of cleanup and best-effort calls (closing handles, leaving
+// services, hints to the system) is ignored: nothing can be done when they
+// fail. Calls whose failure matters return it.
 #![allow(unused_must_use)]
 
 use std::ffi::c_void;
@@ -428,10 +430,9 @@ impl File {
         unsafe { ok(c::FSFILE_Write(self.0, &mut n, off, buf.as_ptr().cast(), buf.len() as u32, 0)) }.then_some(n as usize)
     }
 
-    pub fn flush(&self) {
-        unsafe {
-            c::FSFILE_Flush(self.0);
-        }
+    /// false when the written data may not be on the card
+    pub fn flush(&self) -> bool {
+        ok(unsafe { c::FSFILE_Flush(self.0) })
     }
 }
 
