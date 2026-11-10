@@ -361,7 +361,7 @@ fn help(row: Row) -> &'static str {
         Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
         Row::Update => "Looks for a newer Cement on GitHub when it starts, with the Wi-Fi on. A turns it on or off.",
         Row::Look => {
-            "How the screens look: Red is Cement's own, Miku is graphite and teal, Ficelle is sharp and quiet. A or left and right change it."
+            "Red is Cement's own look, Miku is graphite and teal, Ficelle is sharp and quiet. A, left or right change it."
         }
         Row::Colour => "The red look's colour, kept in sync with Baguette. Left and right pick another one.",
     }
