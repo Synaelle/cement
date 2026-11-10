@@ -13,8 +13,9 @@ pub const H: usize = 240;
 
 /// bigger files aren't read (the 3DS has little memory)
 const MAX_FILE: u64 = 16 << 20;
-/// PNGs decode at full size: 3 Mpx is 12 MB of RGBA
-const MAX_PNG_PIXELS: u64 = 3_000_000;
+/// the most pixels decoded at once: 3 Mpx is 12 MB of RGBA, then as much again
+/// as 0xRRGGBB (PNGs and BMPs decode at full size, JPEGs at the reduced one)
+const MAX_PIXELS: u64 = 3_000_000;
 
 pub struct Picture {
     pub w: usize, // the image, fitted
@@ -56,16 +57,18 @@ fn rgb(r: u8, g: u8, b: u8) -> u32 {
     (r as u32) << 16 | (g as u32) << 8 | b as u32
 }
 
-fn png(data: &[u8]) -> Result<(Raw, (u32, u32)), String> {
+/// takes the file, to free it before the pixels are converted
+fn png(data: Vec<u8>) -> Result<(Raw, (u32, u32)), String> {
     let mut d = png::Decoder::new(std::io::Cursor::new(data));
     d.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut r = d.read_info().map_err(|_| "Not a PNG Cement can read")?;
     let (w, h) = (r.info().width, r.info().height);
-    if w as u64 * h as u64 > MAX_PNG_PIXELS {
+    if w as u64 * h as u64 > MAX_PIXELS {
         return Err(format!("Too big to show ({w} x {h})"));
     }
     let mut buf = vec![0; r.output_buffer_size().ok_or("Too big to show")?];
     let out = r.next_frame(&mut buf).map_err(|_| "This PNG is damaged")?;
+    drop(r);
     let ch = out.color_type.samples();
     let px = buf[..out.buffer_size()]
         .chunks_exact(ch)
@@ -77,15 +80,25 @@ fn png(data: &[u8]) -> Result<(Raw, (u32, u32)), String> {
     Ok((Raw { w: w as usize, h: h as usize, px }, (w, h)))
 }
 
-fn jpeg(data: &[u8]) -> Result<(Raw, (u32, u32)), String> {
-    let mut d = jpeg_decoder::Decoder::new(data);
+/// takes the file, to free it before the pixels are converted
+fn jpeg(data: Vec<u8>) -> Result<(Raw, (u32, u32)), String> {
+    let mut d = jpeg_decoder::Decoder::new(std::io::Cursor::new(data));
     d.read_info().map_err(|_| "Not a JPEG Cement can read")?;
     let info = d.info().ok_or("Not a JPEG Cement can read")?;
     let full = (info.width as u32, info.height as u32);
+    // a progressive JPEG keeps every coefficient of the full image while it decodes
+    let progressive = info.coding_process == jpeg_decoder::CodingProcess::DctProgressive;
+    if progressive && full.0 as u64 * full.1 as u64 > MAX_PIXELS {
+        return Err(format!("Too big to show ({} x {})", full.0, full.1));
+    }
     // the smallest 1/8 step still covering the screen: much less to decode
     let (w, h) = d.scale(W as u16, H as u16).map_err(|_| "Not a JPEG Cement can read")?;
+    if w as u64 * h as u64 > MAX_PIXELS {
+        return Err(format!("Too big to show ({} x {})", full.0, full.1));
+    }
     let pixels = d.decode().map_err(|_| "This JPEG is damaged")?;
     let fmt = d.info().map(|i| i.pixel_format);
+    drop(d);
     let px = match fmt {
         Some(jpeg_decoder::PixelFormat::L8) => pixels.iter().map(|&l| rgb(l, l, l)).collect(),
         Some(jpeg_decoder::PixelFormat::RGB24) => pixels.chunks_exact(3).map(|p| rgb(p[0], p[1], p[2])).collect(),
@@ -102,8 +115,9 @@ fn jpeg(data: &[u8]) -> Result<(Raw, (u32, u32)), String> {
     Ok((Raw { w: w as usize, h: h as usize, px }, full))
 }
 
-/// uncompressed 24 or 32 bits per pixel, as Luma3DS and most tools write them
-fn bmp(d: &[u8]) -> Result<(Raw, (u32, u32)), String> {
+/// uncompressed 24 or 32 bits per pixel, as Luma3DS and most tools write them;
+/// takes the file like the others, to free it before the image is fitted
+fn bmp(d: Vec<u8>) -> Result<(Raw, (u32, u32)), String> {
     let u16_at = |i: usize| d.get(i..i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
     let u32_at = |i: usize| d.get(i..i + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
     let bad = || "Not a BMP Cement can read".to_string();
@@ -119,11 +133,12 @@ fn bmp(d: &[u8]) -> Result<(Raw, (u32, u32)), String> {
         return Err("Only 24 and 32-bit BMPs are supported".into());
     }
     let (w, rows) = (w as usize, h.unsigned_abs() as usize);
-    if w as u64 * rows as u64 > MAX_PNG_PIXELS {
+    if w as u64 * rows as u64 > MAX_PIXELS {
         return Err(format!("Too big to show ({w} x {rows})"));
     }
     let stride = (w * bpp / 8 + 3) & !3;
-    if start + stride * rows > d.len() {
+    // the offset comes from the file: it must not wrap a 32-bit usize
+    if stride.checked_mul(rows).and_then(|n| n.checked_add(start)).is_none_or(|end| end > d.len()) {
         return Err("This BMP is cut short".into());
     }
     let mut px = Vec::with_capacity(w * rows);
@@ -175,15 +190,14 @@ fn fit(raw: Raw) -> (usize, usize, Vec<u32>) {
 pub fn load(path: &str) -> Result<Picture, String> {
     let data = read(path)?;
     let (raw, full) = if data.starts_with(b"\x89PNG") {
-        png(&data)?
+        png(data)?
     } else if data.starts_with(&[0xFF, 0xD8]) {
-        jpeg(&data)?
+        jpeg(data)?
     } else if data.starts_with(b"BM") {
-        bmp(&data)?
+        bmp(data)?
     } else {
         return Err("Not an image Cement can show".into());
     };
-    drop(data);
     let (w, h, px) = fit(raw);
     Ok(Picture { w, h, px, full })
 }
@@ -213,9 +227,26 @@ mod tests {
         d[28] = 24;
         d.extend_from_slice(&[255, 255, 255, 0, 0, 0, 0, 0]); // bottom row, padded to 8
         d.extend_from_slice(&[255, 0, 0, 0, 0, 255, 0, 0]); // top row
-        let (raw, full) = bmp(&d).unwrap();
+        let (raw, full) = bmp(d.clone()).unwrap();
         assert_eq!(full, (2, 2));
         assert_eq!(raw.px, vec![0x0000ff, 0xff0000, 0xffffff, 0x000000]);
+        d[10..14].copy_from_slice(&0xFFFF_FFF0u32.to_le_bytes()); // wraps a 32-bit offset
+        assert!(bmp(d).is_err());
+    }
+
+    #[test]
+    fn jpeg_sizes() {
+        // a header alone: SOF2 (progressive) or SOF0, 3 components, then DQT and DHT never come
+        let header = |sof: u8, w: u16, h: u16| {
+            let mut d = vec![0xFF, 0xD8, 0xFF, sof, 0, 17, 8];
+            d.extend_from_slice(&h.to_be_bytes());
+            d.extend_from_slice(&w.to_be_bytes());
+            d.extend_from_slice(&[3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 0xFF, 0xD9]);
+            d
+        };
+        assert_eq!(jpeg(header(0xC2, 4000, 3000)).err().unwrap(), "Too big to show (4000 x 3000)");
+        assert_eq!(jpeg(header(0xC0, 65000, 65000)).err().unwrap(), "Too big to show (65000 x 65000)");
+        assert_ne!(jpeg(header(0xC0, 4000, 3000)).err().unwrap(), "Too big to show (4000 x 3000)");
     }
 
     #[test]
@@ -225,7 +256,7 @@ mod tests {
         let mut e = png::Encoder::new(&mut d, 2, 1);
         e.set_color(png::ColorType::Rgba);
         e.write_header().unwrap().write_image_data(&[255, 0, 0, 255, 0, 0, 255, 128]).unwrap();
-        let (raw, full) = png(&d).unwrap();
+        let (raw, full) = png(d).unwrap();
         assert_eq!(full, (2, 1));
         assert_eq!(raw.px, vec![0xff0000, 0x0000ff]);
 
@@ -234,7 +265,7 @@ mod tests {
         e.set_color(png::ColorType::Grayscale);
         e.set_depth(png::BitDepth::Sixteen);
         e.write_header().unwrap().write_image_data(&[0x80, 0, 0xff, 0xff]).unwrap();
-        assert_eq!(png(&d).unwrap().0.px, vec![0x808080, 0xffffff]);
-        assert!(png(b"not a png").is_err());
+        assert_eq!(png(d).unwrap().0.px, vec![0x808080, 0xffffff]);
+        assert!(png(b"not a png".to_vec()).is_err());
     }
 }
