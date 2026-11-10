@@ -44,16 +44,20 @@ pub struct Untar {
     pub cias: Vec<(String, u64)>, // unpacked CIA files, for the bottom screen
 }
 
-/// an octal number field (or GNU base-256 for big sizes)
-fn number(field: &[u8]) -> u64 {
+/// the biggest file the SD card's FAT32 holds: anything bigger is a damaged archive
+const MAX_ENTRY: u64 = u32::MAX as u64;
+
+/// an octal number field (or GNU base-256 for big sizes); None when it doesn't
+/// fit in a u64
+fn number(field: &[u8]) -> Option<u64> {
     if field[0] & 0x80 != 0 {
-        return field[1..].iter().fold(0u64, |v, &b| v << 8 | b as u64);
+        return field[1..].iter().try_fold(0u64, |v, &b| v.checked_mul(256).map(|v| v | b as u64));
     }
     field
         .iter()
         .skip_while(|&&c| c == b' ')
         .take_while(|&&c| (b'0'..=b'7').contains(&c))
-        .fold(0u64, |v, &c| v * 8 + (c - b'0') as u64)
+        .try_fold(0u64, |v, &c| v.checked_mul(8).map(|v| v + (c - b'0') as u64))
 }
 
 fn text(field: &[u8]) -> String {
@@ -161,12 +165,12 @@ impl Untar {
         self.zeros = 0;
         // the checksum counts its own field as spaces
         let sum: u64 = h.iter().enumerate().map(|(i, &b)| if (148..156).contains(&i) { 32 } else { b as u64 }).sum();
-        if sum != number(&h[148..156]) {
+        let size = self.next_size.take().or_else(|| number(&h[124..136]));
+        let Some(size) = size.filter(|&size| number(&h[148..156]) == Some(sum) && size <= MAX_ENTRY) else {
             self.error("(damaged archive)");
             self.state = State::End;
             return;
-        }
-        let size = self.next_size.take().unwrap_or_else(|| number(&h[124..136]));
+        };
         let name = self.next_path.take().unwrap_or_else(|| {
             let (name, prefix) = (text(&h[0..100]), text(&h[345..500]));
             if &h[257..262] == b"ustar" && !prefix.is_empty() { format!("{prefix}/{name}") } else { name }
@@ -322,5 +326,12 @@ mod tests {
         }
         assert_eq!(t.target(&"x".repeat(1100)), None, "too long for the SD card");
         assert_eq!(Untar::new("/").target("a/b").as_deref(), Some("/a/b"));
+    }
+
+    #[test]
+    fn numbers() {
+        assert_eq!(number(b"00000001750\0"), Some(1000));
+        assert_eq!(number(&[0x80, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]), Some(1 << 32));
+        assert_eq!(number(&[0x80, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), None, "wraps a u64");
     }
 }
