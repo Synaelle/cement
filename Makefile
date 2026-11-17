@@ -80,7 +80,7 @@ all: cement
 
 cement:
 	@CEMENT_VERSION="$(APP_VERSION)" $(CARGO) 3ds build --profile $(PROFILE)
-	$(call package,Cement,Cement,meta/banner.png,meta/icon.png,$(ELF))
+	$(call package,Cement,Cement,meta/banner.png,meta/icon-3ds.png,$(ELF))
 
 clean:
 	@echo clean ...
