@@ -218,10 +218,9 @@ fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText, pal: &Palette
     c.text_right(f, r, ty + f.ascent, &t.right, pal.dim);
 }
 
-/// the section marker: a dot with a bite taken out of its top right
-fn bite_dot(c: &mut Canvas, x: f32, y: f32, pal: &Palette) {
-    c.circle(x + 6.0, y + 6.0, 5.5, pal.accent);
-    c.circle(x + 11.0, y + 2.0, 2.6, pal.bg);
+/// the section marker: a short dash, centred in a 12 px line
+fn section_mark(c: &mut Canvas, x: f32, y: f32, pal: &Palette) {
+    c.round(x, y + 4.5, 10.0, 3.0, 1.5, pal.accent);
 }
 
 /// the button a hint is about

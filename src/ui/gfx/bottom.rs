@@ -6,7 +6,7 @@
 
 use super::canvas::{Canvas, Color};
 use super::font::*;
-use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, bite_dot, card_height, draw_card, format_big, hint};
+use super::{BAD, Button, CardText, GLYPH, GOOD, WHITE, card_height, draw_card, format_big, hint, section_mark};
 use crate::Server;
 use crate::menu::{ROWS, Row, TABS, Tab, Tap};
 use crate::picture::is_image;
@@ -351,7 +351,7 @@ impl Server {
         let s = &NUNITO_BOLD_12;
         let free = self.free_text();
         // the section marker, and the free space
-        bite_dot(c, LEFT, CONTENT + ((s.height - 12.0) / 2.0).round(), pal);
+        section_mark(c, LEFT, CONTENT + ((s.height - 12.0) / 2.0).round(), pal);
         c.text_right(s, RIGHT, CONTENT + s.ascent, &free, pal.dim);
         let top = CONTENT + s.height + 4.0;
 
@@ -389,7 +389,7 @@ impl Server {
         let cw = s.width(&count, 0.0);
         let p = &NUNITO_XBOLD_12;
         let path = p.fit_start(&br.dir, RIGHT - LEFT - 16.0 - cw - 10.0);
-        bite_dot(c, LEFT, CONTENT + ((p.height - 12.0) / 2.0).round(), pal);
+        section_mark(c, LEFT, CONTENT + ((p.height - 12.0) / 2.0).round(), pal);
         c.text(p, LEFT + 16.0, CONTENT + p.ascent, &path, pal.soft, 0.0);
         c.text_right(s, RIGHT, CONTENT + (p.height - s.height) / 2.0 + s.ascent, &count, pal.dim);
         let top = CONTENT + p.height + 3.0;
