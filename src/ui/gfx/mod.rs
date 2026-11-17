@@ -416,9 +416,9 @@ fn ticket_detail(size: u64, info: Option<&CiaInfo>) -> String {
             parts.push(format_size(size));
             parts.push(if i.nand { "NAND" } else { "SD" }.to_string());
             parts.push(format!("{:016X}", i.id));
-            parts.join(" · ")
+            parts.join(", ")
         }
-        None => format!("{} · not a CIA Cement can read", format_size(size)),
+        None => format!("{}, not a CIA Cement can read", format_size(size)),
     }
 }
 
@@ -569,7 +569,7 @@ impl Server {
             if t.clients != 0 {
                 parts.push(pcs(t.clients));
             }
-            card.detail = parts.join(" · ");
+            card.detail = parts.join(", ");
         }
         card
     }
@@ -621,7 +621,7 @@ impl Server {
         // the protocol level says which Baguette goes with this Cement (they version apart);
         // a long -dev version is cut short before the hint
         let v = &NUNITO_BOLD_12;
-        let version = v.fit(&format!("v{VERSION} · protocol {PROTOCOL}"), room - end - 6.0);
+        let version = v.fit(&format!("v{VERSION}, protocol {PROTOCOL}"), room - end - 6.0);
         c.text(v, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
         y += f.height + 9.0;
 

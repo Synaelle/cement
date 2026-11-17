@@ -274,7 +274,7 @@ impl Server {
                 title: format!("Downloaded Cement {tag}"),
                 value: String::new(),
                 frac: Some(0.0),
-                detail: format!("{} · installs when the transfers end", format_size(size)),
+                detail: format!("{}, installs when the transfers end", format_size(size)),
                 right: String::new(),
             })
         } else {

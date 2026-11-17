@@ -276,7 +276,7 @@ impl Server {
         c.card(x, ky, kw, 14.0, 2.0, pal.bg, strong(pal));
         c.text(k, x + 4.0, cap_baseline(k, 'S', ky + 7.0), "START", pal.dim, 0.0);
         // the protocol level says which Baguette goes with this Cement
-        let version = s.fit(&format!("{VERSION} · protocol {PROTOCOL}"), x - 10.0 - end - 8.0);
+        let version = s.fit(&format!("{VERSION}, protocol {PROTOCOL}"), x - 10.0 - end - 8.0);
         c.text(s, end + 8.0, base, &version, pal.dim, 0.0);
         y += n.height + 10.0;
 
