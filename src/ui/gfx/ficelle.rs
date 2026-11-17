@@ -7,9 +7,9 @@
 use super::bottom::{Hit, RowValue, UpdateNote, row_label, window};
 use super::canvas::{Canvas, Color};
 use super::font::*;
-use super::{BAD, Button, CardText, GOOD, help, install_kind, ticket_detail, wrap};
+use super::{BAD, Button, CardText, GOOD, install_kind, ticket_detail, wrap};
 use crate::install::{CiaInfo, ICON};
-use crate::menu::{ROWS, Row, TABS, Tab, Tap};
+use crate::menu::{ROWS, TABS, Tab, Tap};
 use crate::picture::is_image;
 use crate::ui::palette::Palette;
 use crate::ui::{Bottom, Top};
@@ -306,9 +306,7 @@ impl Server {
                 c.text(w, left, ly + w.ascent, line, pal.accent, 0.0);
                 ly += w.height;
             }
-        } else if self.menu.tab == Tab::Settings {
-            let row = ROWS[self.menu.row];
-            let text = if row == Row::Update { self.update_help() } else { help(row).to_string() };
+        } else if let Some(text) = self.update_news().filter(|_| self.menu.tab == Tab::Settings) {
             let f = &HANKEN_REG_12;
             let mut lines = wrap(f, &text, right - left);
             if lines.len() > 2 {

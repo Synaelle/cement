@@ -22,7 +22,7 @@ colour in sync with Cement.
 
 L and R switch tabs. Recent lists the CIAs you sent and those in `/`, `/cia`, `/cias` and `/fbi`.
 Browse opens any folder and shows PNG, JPEG and BMP images. Settings holds the FTP login, the
-looks, auto off and updates, and the top screen explains each one.
+looks, auto off and updates.
 
 A installs the selected CIA and deletes the file afterwards. A reinstall, a downgrade or a system
 title needs A twice, and a PC can't install system titles. X deletes a file or folder when pressed

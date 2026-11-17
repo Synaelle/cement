@@ -16,7 +16,7 @@ use font::*;
 
 use super::{Bottom, Top};
 use crate::install::{CiaInfo, ICON, cia_info, version_text};
-use crate::menu::{ROWS, Row, Tab};
+use crate::menu::Tab;
 use crate::picture::{self, Picture};
 use crate::server::{BatchKind, Mode, progress_of};
 use crate::sys;
@@ -342,31 +342,6 @@ fn paint_note(c: &mut Canvas, title: &str, detail: &str, pal: &Palette) {
     }
 }
 
-/// what a Settings row does, for the top screen (two lines at most)
-fn help(row: Row) -> &'static str {
-    match row {
-        Row::Login => "The user name and password a PC needs to connect. With none, anyone on your Wi-Fi can connect.",
-        Row::Ftp => {
-            "Off, no PC can connect and the connected ones are dropped. Installing and browsing here still work."
-        }
-        Row::CiaInfo => {
-            "Shows the selected CIA under the address: its icon, title, version and whether it's new or an update."
-        }
-        Row::Protect => {
-            "Can't delete /Nintendo 3DS, /boot.firm, /luma, /gm9 or /boot.3dsx. Luma's screenshots stay free."
-        }
-        Row::ScreenIdle => {
-            "Both screens go dark after a minute with no button or transfer. Any button lights them again."
-        }
-        Row::AutoOff => "Turns the 3DS off after this long with no button and no FTP use. Left and right change it.",
-        Row::Update => "Looks for a newer Cement on GitHub when it starts, with the Wi-Fi on. A turns it on or off.",
-        Row::Look => {
-            "Red is Cement's own look, Miku is graphite and teal, Ficelle is sharp and quiet. A, left or right change it."
-        }
-        Row::Colour => "The red look's colour, kept in sync with Baguette. Left and right pick another one.",
-    }
-}
-
 /// `text` cut into lines no wider than `w`, at spaces
 fn wrap(f: &Font, text: &str, w: f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
@@ -382,22 +357,11 @@ fn wrap(f: &Font, text: &str, w: f32) -> Vec<String> {
     lines
 }
 
-/// the help card in the ticket's place: a "?" and what the row does
-fn draw_help(c: &mut Canvas, x: f32, y: f32, w: f32, text: &str, pal: &Palette) {
+/// the update's news in the ticket's place, two lines at most
+fn draw_note(c: &mut Canvas, x: f32, y: f32, w: f32, text: &str, pal: &Palette) {
     c.card(x, y, w, TICKET_H, 9.0, pal.card, pal.border);
-    let q = &NUNITO_XBOLD_13;
-    let (cx, cy) = (x + 19.0, y + TICKET_H / 2.0);
-    c.circle(cx, cy, 10.0, pal.selected);
-    c.text(
-        q,
-        cx - (q.width("?", 0.0) / 2.0).round(),
-        cy - (q.height / 2.0).round() + q.ascent,
-        "?",
-        pal.highlight,
-        0.0,
-    );
     let f = &NUNITO_BOLD_11;
-    let (l, r) = (x + 38.0, x + w - 12.0);
+    let (l, r) = (x + 12.0, x + w - 12.0);
     let mut lines = wrap(f, text, r - l);
     if lines.len() > 2 {
         let rest = lines[1..].join(" ");
@@ -524,18 +488,17 @@ impl Server {
         self.ui.bottom = Some(scr);
     }
 
-    /// the Updates row's help, which follows what the update is doing
-    fn update_help(&self) -> String {
+    /// what the update is doing, for the top screen while Settings is open
+    fn update_news(&self) -> Option<String> {
         let tag = self.update.latest.as_deref().filter(|_| self.prefs.update);
         match (self.update.stage, tag) {
-            (Stage::Done, _) => "The update is installed: restart Cement to use it.".into(),
-            (Stage::Idle, Some(tag)) => format!(
-                "A downloads Cement {tag} and installs it, then restart Cement. Left and right turn the check off."
-            ),
-            (Stage::Idle, None) => help(Row::Update).into(),
-            (_, tag) => {
-                format!("Downloading and installing Cement {}. Keep the 3DS on until it's done.", tag.unwrap_or(""))
-            }
+            (Stage::Done, _) => Some("The update is installed. Restart Cement to use it.".into()),
+            (Stage::Idle, Some(tag)) => Some(format!("Cement {tag} is out. A on Updates installs it.")),
+            (Stage::Idle, None) => None,
+            (_, tag) => Some(format!(
+                "Downloading and installing Cement {}. Keep the 3DS on until it's done.",
+                tag.unwrap_or("")
+            )),
         }
     }
 
@@ -677,8 +640,8 @@ impl Server {
         x = c.text(f, x, y + f.ascent, ":", pal.accent, 1.0);
         c.text(f, x, y + f.ascent, &sys::ports().0.to_string(), pal.text, 1.0);
         y += f.height + 2.0;
-        // under the address: a low battery warning, what the selected Settings
-        // row does, or the selected CIA
+        // under the address: a low battery warning, the update's news in
+        // Settings, or the selected CIA
         let ticket = self.prefs.cia_info.then_some(self.ui.info.as_ref()).flatten();
         if t.low {
             let w = &NUNITO_XBOLD_12;
@@ -686,10 +649,8 @@ impl Server {
                 c.text_right(w, right, y + 4.0 + w.ascent, line, pal.highlight);
                 y += w.height + 3.0;
             }
-        } else if self.menu.tab == Tab::Settings {
-            let row = ROWS[self.menu.row];
-            let text = if row == Row::Update { self.update_help() } else { help(row).to_string() };
-            draw_help(c, left, y + 4.0, right - left, &text, pal);
+        } else if let Some(text) = self.update_news().filter(|_| self.menu.tab == Tab::Settings) {
+            draw_note(c, left, y + 4.0, right - left, &text, pal);
         } else if let Some((path, size, info)) = ticket {
             draw_ticket(c, left, y + 4.0, right - left, path, *size, info.as_ref(), pal);
         }
