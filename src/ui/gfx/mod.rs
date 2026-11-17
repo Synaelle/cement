@@ -196,7 +196,7 @@ const CARD_PAD_Y: f32 = 9.0;
 const CARD_PAD_X: f32 = 11.0;
 
 fn card_height() -> f32 {
-    2.0 + 2.0 * CARD_PAD_Y + NUNITO_XBOLD_13.height + 6.0 + 8.0 + 6.0 + NUNITO_BOLD_11.height
+    2.0 + 2.0 * CARD_PAD_Y + NUNITO_XBOLD_13.height + 6.0 + 8.0 + 6.0 + NUNITO_BOLD_12.height
 }
 
 fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText, pal: &Palette) {
@@ -211,7 +211,7 @@ fn draw_card(c: &mut Canvas, x: f32, y: f32, w: f32, t: &CardText, pal: &Palette
     ty += f.height + 6.0;
     bar(c, l, ty, r - l, t.frac, pal);
     ty += 8.0 + 6.0;
-    let f = &NUNITO_BOLD_11;
+    let f = &NUNITO_BOLD_12;
     let rw = f.width(&t.right, 0.0);
     let detail = f.fit(&t.detail, r - l - rw - 10.0);
     c.text(f, l, ty + f.ascent, &detail, pal.dim, 0.0);
@@ -239,7 +239,7 @@ const GLYPH: f32 = 15.0;
 
 /// width and height of a button glyph
 fn glyph_size(b: Button) -> (f32, f32) {
-    let f = &NUNITO_XBOLD_11;
+    let f = &NUNITO_XBOLD_12;
     match b {
         Button::A => (BTN_A.size as f32, BTN_A.size as f32),
         Button::B => (BTN_B.size as f32, BTN_B.size as f32),
@@ -252,7 +252,7 @@ fn glyph_size(b: Button) -> (f32, f32) {
 /// START has no glyph in Kenney's set: a small keycap like the
 /// real buttons, with the name in it
 fn keycap(c: &mut Canvas, x: f32, y: f32, name: &str, fill: Color, ink: Color) -> f32 {
-    let f = &NUNITO_XBOLD_11;
+    let f = &NUNITO_XBOLD_12;
     let w = (f.width(name, 0.0) + 8.0).round();
     c.pill(x, y, w, GLYPH, fill);
     c.text(f, x + 4.0, y + ((GLYPH - f.height) / 2.0).round() + f.ascent, name, ink, 0.0);
@@ -295,7 +295,7 @@ fn glyph(c: &mut Canvas, x: f32, y: f32, b: Button, fg: Color, on: Color, pal: &
 
 /// a hint pill: a button glyph and what it does; returns its right edge
 fn hint(c: &mut Canvas, x: f32, y: f32, b: Button, label: &str, bg: Color, fg: Color, pal: &Palette) -> f32 {
-    let f = &NUNITO_XBOLD_11;
+    let f = &NUNITO_XBOLD_12;
     let h = (f.height + 6.0).round();
     let (gw, gh) = glyph_size(b);
     let w = if label.is_empty() { 3.0 + gw + 3.0 } else { 3.0 + gw + 5.0 + f.width(label, 0.0) + 8.0 };
@@ -329,7 +329,7 @@ fn paint_picture(c: &mut Canvas, pic: &Picture, pal: &Palette) {
 /// the image viewer's message (opening, or why it can't show it), centred in a card
 fn paint_note(c: &mut Canvas, title: &str, detail: &str, pal: &Palette) {
     c.fill(pal.bg);
-    let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
+    let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_12);
     let w = 300.0;
     let h = if detail.is_empty() { f.height + 24.0 } else { f.height + d.height + 26.0 };
     let (x, y) = ((c.w as f32 - w) / 2.0, ((c.h as f32 - h) / 2.0).round());
@@ -360,7 +360,7 @@ fn wrap(f: &Font, text: &str, w: f32) -> Vec<String> {
 /// the update's news in the ticket's place, two lines at most
 fn draw_note(c: &mut Canvas, x: f32, y: f32, w: f32, text: &str, pal: &Palette) {
     c.card(x, y, w, TICKET_H, 9.0, pal.card, pal.border);
-    let f = &NUNITO_BOLD_11;
+    let f = &NUNITO_BOLD_12;
     let (l, r) = (x + 12.0, x + w - 12.0);
     let mut lines = wrap(f, text, r - l);
     if lines.len() > 2 {
@@ -386,14 +386,14 @@ fn draw_ticket(c: &mut Canvas, x: f32, y: f32, w: f32, path: &str, size: u64, in
     let (l, mut r) = (ix + ICON as f32 + 8.0, x + w - 10.0);
     if let Some(info) = info {
         let (kind, accent) = install_kind(info);
-        let p = &NUNITO_XBOLD_11;
+        let p = &NUNITO_XBOLD_12;
         let (kw, kh) = (p.width(kind, 0.0) + 14.0, p.height + 4.0);
         let ky = (y + (TICKET_H - kh) / 2.0).round();
         c.pill(r - kw, ky, kw, kh, if accent { pal.accent } else { pal.track });
         c.text(p, r - kw + 7.0, ky + 2.0 + p.ascent, kind, if accent { pal.on_accent } else { pal.soft }, 0.0);
         r -= kw + 8.0;
     }
-    let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_11);
+    let (f, d) = (&NUNITO_XBOLD_13, &NUNITO_BOLD_12);
     let top = (y + (TICKET_H - f.height - d.height) / 2.0).round();
     let title = info.map_or(base_name(path), |i| i.title.as_str());
     let title = f.fit(title, r - l);
@@ -611,7 +611,7 @@ impl Server {
             0.0,
         );
         // START left of the battery, leaving the room under the address free
-        let h = &NUNITO_BOLD_11;
+        let h = &NUNITO_BOLD_12;
         let w = glyph_size(Button::Start).0 + 4.0 + h.width("exit", 0.0);
         let tx = right - pw - 10.0 - w;
         let ty = (py + (ph - GLYPH) / 2.0).round();
@@ -620,7 +620,7 @@ impl Server {
         let room = tx - 8.0;
         // the protocol level says which Baguette goes with this Cement (they version apart);
         // a long -dev version is cut short before the hint
-        let v = &NUNITO_BOLD_11;
+        let v = &NUNITO_BOLD_12;
         let version = v.fit(&format!("v{VERSION} · protocol {PROTOCOL}"), room - end - 6.0);
         c.text(v, end + 6.0, y + f.ascent, &version, pal.dim, 0.0);
         y += f.height + 9.0;

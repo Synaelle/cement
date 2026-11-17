@@ -229,7 +229,7 @@ impl Server {
     /// returns how far up the list can go
     fn bottom_stack(&self, c: &mut Canvas, b: &Bottom, hints: &[(Button, &str)]) -> f32 {
         let pal = &self.ui.pal;
-        let f = &NUNITO_XBOLD_11;
+        let f = &NUNITO_XBOLD_12;
         let hy = 230.0 - (f.height + 6.0);
         let mut x = LEFT;
         for (k, &(button, label)) in hints.iter().enumerate() {
@@ -348,7 +348,7 @@ impl Server {
     /// the CIAs sent since Cement started, or found in the usual folders
     fn paint_recent(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
-        let s = &NUNITO_BOLD_11;
+        let s = &NUNITO_BOLD_12;
         let free = self.free_text();
         // the section marker, and the free space
         bite_dot(c, LEFT, CONTENT + ((s.height - 12.0) / 2.0).round(), pal);
@@ -384,7 +384,7 @@ impl Server {
     fn paint_browse(&self, c: &mut Canvas, b: &Bottom, hits: &mut Vec<Hit>) {
         let pal = &self.ui.pal;
         let br = &self.menu.browse;
-        let s = &NUNITO_BOLD_11;
+        let s = &NUNITO_BOLD_12;
         let count = self.browse_count();
         let cw = s.width(&count, 0.0);
         let p = &NUNITO_XBOLD_12;
@@ -457,7 +457,7 @@ impl Server {
                     match note {
                         Some(UpdateNote::Out(tag)) => {
                             // a newer release: its version in an accent pill
-                            let p = &NUNITO_XBOLD_11;
+                            let p = &NUNITO_XBOLD_12;
                             let text = format!("{tag} is out");
                             let (pw, ph) = (p.width(&text, 0.0) + 14.0, p.height + 1.0);
                             let py = (cy - ph / 2.0).round();

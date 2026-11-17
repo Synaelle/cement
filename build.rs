@@ -15,19 +15,15 @@ const SIZES: &[(&str, &str, f32)] = &[
     // the board's body sizes plus 1 px: smaller is hard to read on the real LCDs
     ("NUNITO_XBOLD_13", "nunito/Nunito-ExtraBold.ttf", 13.0),
     ("NUNITO_XBOLD_12", "nunito/Nunito-ExtraBold.ttf", 12.0),
-    ("NUNITO_XBOLD_11", "nunito/Nunito-ExtraBold.ttf", 11.0),
     ("NUNITO_BOLD_13", "nunito/Nunito-Bold.ttf", 13.0),
     ("NUNITO_BOLD_12", "nunito/Nunito-Bold.ttf", 12.0),
-    ("NUNITO_BOLD_11", "nunito/Nunito-Bold.ttf", 11.0),
-    // the Ficelle look: Hanken Grotesk at 400 and 600, 11 px at the smallest
+    // the Ficelle look: Hanken Grotesk at 400 and 600; 12 px is the smallest text in every look
     ("HANKEN_SEMI_30", "hanken/HankenGrotesk-SemiBold.ttf", 30.0),
     ("HANKEN_SEMI_18", "hanken/HankenGrotesk-SemiBold.ttf", 18.0),
     ("HANKEN_SEMI_13", "hanken/HankenGrotesk-SemiBold.ttf", 13.0),
     ("HANKEN_SEMI_12", "hanken/HankenGrotesk-SemiBold.ttf", 12.0),
-    ("HANKEN_SEMI_11", "hanken/HankenGrotesk-SemiBold.ttf", 11.0),
     ("HANKEN_REG_13", "hanken/HankenGrotesk-Regular.ttf", 13.0),
     ("HANKEN_REG_12", "hanken/HankenGrotesk-Regular.ttf", 12.0),
-    ("HANKEN_REG_11", "hanken/HankenGrotesk-Regular.ttf", 11.0),
 ];
 
 /// printable ASCII, Latin-1 and the ellipsis used to shorten long names

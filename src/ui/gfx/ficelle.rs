@@ -166,7 +166,7 @@ fn button(c: &mut Canvas, x: f32, cy: f32, b: Button, main: bool, pal: &Palette)
 }
 
 fn letter(c: &mut Canvas, cx: f32, cy: f32, ch: char, ink: Color) {
-    let f = &HANKEN_SEMI_11;
+    let f = &HANKEN_SEMI_12;
     let s = ch.to_string();
     let w = f.width(&s, 0.0);
     c.text(f, (cx - w / 2.0).round(), cap_baseline(f, ch, cy), &s, ink, 0.0);
@@ -266,7 +266,7 @@ impl Server {
             c.text(s, x, base, what, pal.dim, 0.0);
         }
         // START exits: an outlined key, quiet
-        let k = &HANKEN_SEMI_11;
+        let k = &HANKEN_SEMI_12;
         let kw = (k.width("START", 0.0) + 8.0).round();
         let ew = s.width("exit", 0.0);
         x -= 12.0 + ew;
@@ -406,7 +406,7 @@ impl Server {
         let pal = &self.ui.pal;
         hline(c, 0.0, HINT_TOP, 320.0, pal.border);
         let cy = HINT_TOP + 1.0 + (240.0 - HINT_TOP - 1.0) / 2.0;
-        let f = &HANKEN_REG_11;
+        let f = &HANKEN_REG_12;
         let mut x = 12.0;
         for (k, &(button_, label)) in hints.iter().enumerate() {
             let main = k == 0;
@@ -444,7 +444,7 @@ impl Server {
     /// the line under the tabs: what the list is, and a count or the free space
     fn section(&self, c: &mut Canvas, what: &str, count: &str) -> f32 {
         let pal = &self.ui.pal;
-        let s = &HANKEN_REG_11;
+        let s = &HANKEN_REG_12;
         let y = TAB_H + 1.0 + 7.0;
         let cw = s.width(count, 0.0);
         c.text(s, 12.0, y + s.ascent, &s.fit_start(what, 296.0 - cw - 10.0), pal.dim, 0.0);
@@ -462,7 +462,7 @@ impl Server {
         }
         let cy = y + h / 2.0;
         draw_glyph(c, L + 6.0, (cy - 7.0).round(), glyph, if sel { pal.accent } else { pal.dim }, bg);
-        let (f, s) = (if sel { &HANKEN_SEMI_13 } else { &HANKEN_REG_13 }, &HANKEN_REG_11);
+        let (f, s) = (if sel { &HANKEN_SEMI_13 } else { &HANKEN_REG_13 }, &HANKEN_REG_12);
         let r = R - 6.0;
         let l = L + 6.0 + 14.0 + 8.0;
         let sw = s.width(size, 0.0);
