@@ -1297,6 +1297,7 @@ impl Server {
                 let mode = if cmd == "RETR" { Mode::Retr } else { Mode::Stor };
                 let path = resolve(arg);
                 let low = self.battery_refusal();
+                let in_use = path.as_deref().is_some_and(|p| self.file_in_use(i, p, mode));
                 let s = &mut self.sess[i];
                 if s.pasv.is_none() && s.data.is_none() {
                     s.reply("425 Use PASV first\r\n");
@@ -1315,6 +1316,9 @@ impl Server {
                     if let Some(text) = low {
                         s.end_transfer();
                         s.reply(&text);
+                    } else if in_use {
+                        s.end_transfer();
+                        s.reply("450 Busy: another transfer is using this file\r\n");
                     } else if self.prepare_file(i, &path, mode, cmd == "APPE") {
                         let s = &mut self.sess[i];
                         s.mode = mode;
@@ -1634,6 +1638,19 @@ impl Server {
         s.allo = 0;
         s.bundle_base = s.batch_files_done;
         true
+    }
+
+    /// another session's transfer clashes with this one on `path`: a file being
+    /// written takes no other reader or writer, a file being read no writer,
+    /// or the file would end up, or be sent, as a mix of two versions. The SD
+    /// card ignores case, so the paths do too.
+    fn file_in_use(&self, i: usize, path: &str, mode: Mode) -> bool {
+        self.sess.iter().enumerate().any(|(j, s)| {
+            j != i
+                && s.ctrl.is_some()
+                && s.path.eq_ignore_ascii_case(path)
+                && (s.mode == Mode::Stor || (s.mode == Mode::Retr && mode == Mode::Stor))
+        })
     }
 
     /// the reply refusing a transfer while the battery is low
