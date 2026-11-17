@@ -19,7 +19,13 @@ use crate::{PROTOCOL, Server, VERSION, settings};
 pub const CTRL_PORT: u16 = 5000; // on the 3DS; the PC test server can move it (sys::ports)
 pub const MAX_SESSIONS: usize = 4;
 const MAX_PENDING: usize = 16;
-const SOCK_BUFSIZE: i32 = 32768; // same value ftpd uses on 3DS
+/// socket buffers: the value ftpd uses on the 3DS. A download sends at most a
+/// buffer's worth per main loop, so the PC test build takes bigger ones, or
+/// its downloads crawl at a few MB/s while uploads run at full speed.
+#[cfg(target_os = "horizon")]
+const SOCK_BUFSIZE: i32 = 32768;
+#[cfg(not(target_os = "horizon"))]
+const SOCK_BUFSIZE: i32 = 4 << 20;
 const CMD_SIZE: usize = 4096;
 const DATA_TIMEOUT: u64 = 15_000; // ms to wait for the data connection
 const IDLE_TIMEOUT: u64 = 300_000; // ms without any command before dropping a client
