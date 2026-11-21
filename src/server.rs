@@ -914,6 +914,14 @@ impl Server {
         let path = s.path.clone();
         if upload && ok && bundle.is_none() {
             self.cia_add(&path, size);
+            // as SITE INSTALL would: system titles refused, a reinstall or a
+            // downgrade waiting for A on the console
+            if self.prefs.ftp_install
+                && util::is_cia(&path)
+                && let InstallStart::Refused(_, why) = self.request_install(&path, true)
+            {
+                self.cia_message(why.into());
+            }
         }
         for (cia, size) in unpacked {
             self.cia_add(&cia, size);

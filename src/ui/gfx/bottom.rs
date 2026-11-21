@@ -79,6 +79,7 @@ pub(super) fn row_label(row: Row) -> &'static str {
     match row {
         Row::Login => "FTP login",
         Row::Ftp => "FTP server",
+        Row::FtpInstall => "Install CIAs once uploaded",
         Row::CiaInfo => "CIA details on the top screen",
         Row::Protect => "Protect important 3DS files",
         Row::ScreenIdle => "Screens off when idle",
@@ -119,6 +120,7 @@ impl Server {
     pub(super) fn row_value(&self, row: Row) -> RowValue {
         match row {
             Row::Ftp => RowValue::Switch(self.prefs.ftp),
+            Row::FtpInstall => RowValue::Switch(self.prefs.ftp_install),
             Row::CiaInfo => RowValue::Switch(self.prefs.cia_info),
             Row::Protect => RowValue::Switch(self.prefs.protect),
             Row::ScreenIdle => RowValue::Switch(self.prefs.screen_idle),

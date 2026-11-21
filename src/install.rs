@@ -101,6 +101,15 @@ impl Server {
     /// network, titles that go to the system memory are refused: FBI installs
     /// them, in the hands of whoever holds the console.
     pub fn request_install(&mut self, path: &str, remote: bool) -> InstallStart {
+        // already on its way, or even done, from an upload with "Install CIAs
+        // once uploaded" on (the install deletes the file)
+        let done = self.prefs.ftp_install && self.install_result.as_ref().is_some_and(|r| r.ok && r.path == path);
+        if self.inst.as_ref().is_some_and(|i| i.path == path) || (done && sys::file_size(path).is_none()) {
+            return InstallStart::Started;
+        }
+        if self.inst_queue.as_deref() == Some(path) {
+            return InstallStart::Queued;
+        }
         if self.inst.is_some() || self.inst_queue.is_some() {
             return InstallStart::Refused(450, "Busy: another install is running");
         }

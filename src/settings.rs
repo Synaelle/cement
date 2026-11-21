@@ -110,6 +110,7 @@ pub struct Settings {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Prefs {
     pub ftp: bool,         // the FTP server runs
+    pub ftp_install: bool, // a CIA uploaded over FTP installs once it's complete
     pub screen_idle: bool, // the screens turn off after an idle minute
     pub auto_off: u32,     // minutes without use before the console turns off, 0 = never
     pub cia_info: bool,    // the selected CIA's details on the top screen
@@ -122,6 +123,7 @@ impl Default for Prefs {
     fn default() -> Prefs {
         Prefs {
             ftp: true,
+            ftp_install: false,
             screen_idle: true,
             auto_off: 0,
             cia_info: true,
@@ -155,6 +157,7 @@ pub fn load() -> Settings {
     let auto_off = get(&text, "auto_off").and_then(|v| v.trim().parse().ok()).filter(|m| AUTO_OFF.contains(m));
     let prefs = Prefs {
         ftp: flag("ftp", d.ftp),
+        ftp_install: flag("ftp_install", d.ftp_install),
         screen_idle: flag("screen_idle", d.screen_idle),
         auto_off: auto_off.unwrap_or(d.auto_off),
         cia_info: flag("cia_info", d.cia_info),
@@ -170,6 +173,7 @@ pub fn save_prefs(p: &Prefs) -> bool {
     let auto_off = p.auto_off.to_string();
     set(&[
         ("ftp", Some(b(p.ftp))),
+        ("ftp_install", Some(b(p.ftp_install))),
         ("screen_idle", Some(b(p.screen_idle))),
         ("auto_off", Some(&auto_off)),
         ("cia_info", Some(b(p.cia_info))),
